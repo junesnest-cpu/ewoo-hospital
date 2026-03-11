@@ -24,16 +24,30 @@ const WARD_STRUCTURE = {
   ]},
 };
 
+// 모든 빈 병상 목록 (roomId, slotKey, capacity 포함)
+function getAllEmptySlots(slots, getRoomStats) {
+  const empty = [];
+  Object.values(WARD_STRUCTURE).forEach(ward =>
+    ward.rooms.forEach(room => {
+      const { bedList } = getRoomStats(room.id, room.capacity);
+      bedList.forEach((b, i) => {
+        if (!b.person && !b.hasReserve) {
+          empty.push({ roomId: room.id, slotKey: `${room.id}-${i+1}`, bedIndex: i, roomType: room.type });
+        }
+      });
+    })
+  );
+  return empty;
+}
+
 const TYPE_COLOR = { "1인실": "#6366f1", "2인실": "#0ea5e9", "4인실": "#10b981", "6인실": "#f59e0b" };
 const TYPE_BG    = { "1인실": "#eef2ff", "2인실": "#e0f2fe", "4인실": "#d1fae5", "6인실": "#fef3c7" };
 
-// ── 날짜 유틸 ──────────────────────────────────────────────────────────────────
 function parseDateStr(str) {
   if (!str || str === "미정") return null;
   const m = str.match(/(\d{1,2})\/(\d{1,2})/);
   if (!m) return null;
-  const year = new Date().getFullYear();
-  return new Date(year, parseInt(m[1]) - 1, parseInt(m[2]));
+  return new Date(new Date().getFullYear(), parseInt(m[1]) - 1, parseInt(m[2]));
 }
 function dateOnly(d) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 function toInputValue(date) { return date.toISOString().slice(0, 10); }
@@ -51,26 +65,9 @@ function getDdayLabel(discharge) {
   return { text: `D+${Math.abs(diff)}`, color: "#9ca3af", bg: "#f3f4f6" };
 }
 
-// ── 핵심: viewDate 기준으로 병상에 누가 있는지 반환 ────────────────────────────
-// 슬롯 데이터 구조:
-//   patients["201-1"] = {
-//     current: { name, discharge, note, bedPosition, scheduleAlert },  // 현재 입원 환자 (없으면 null)
-//     reservations: [                                                    // 예약 목록 (없으면 [])
-//       { name, admitDate, discharge, note, bedPosition, scheduleAlert }
-//     ]
-//   }
-//
-// getSlotOccupant(slot, viewDate) → 해당 날짜에 이 병상에 있는 사람 반환
-//   반환: { person, type }
-//   type: "current" | "reserved" | "discharging_today" | "admitting_today" | null
-
 function getSlotOccupant(slot, viewDate) {
   if (!slot) return { person: null, type: null };
   const vd = dateOnly(viewDate);
-  const today = todayDate();
-  const isToday = vd.getTime() === today.getTime();
-
-  // 현재 환자가 viewDate에도 입원 중인지 확인
   if (slot.current) {
     const dischargeD = parseDateStr(slot.current.discharge);
     const stillHere = !dischargeD || dateOnly(dischargeD) >= vd;
@@ -79,51 +76,35 @@ function getSlotOccupant(slot, viewDate) {
       return { person: slot.current, type: dischargingToday ? "discharging_today" : "current" };
     }
   }
-
-  // 현재 환자가 없거나 이미 퇴원 → 예약자 중 viewDate에 입원 중인 사람 찾기
   const reservations = slot.reservations || [];
   for (const r of reservations) {
-    const admitD    = parseDateStr(r.admitDate);
+    const admitD = parseDateStr(r.admitDate);
     const dischargeD = parseDateStr(r.discharge);
     if (!admitD) continue;
-    const admitDO = dateOnly(admitD);
     const stillHere = !dischargeD || dateOnly(dischargeD) >= vd;
-    if (admitDO <= vd && stillHere) {
-      const admittingToday = admitDO.getTime() === vd.getTime();
-      return { person: r, type: admittingToday ? "admitting_today" : "reserved" };
+    if (dateOnly(admitD) <= vd && stillHere) {
+      return { person: r, type: dateOnly(admitD).getTime() === vd.getTime() ? "admitting_today" : "reserved" };
     }
   }
-
   return { person: null, type: null };
 }
 
-// 오늘 기준으로 이 병상에 미래 예약이 있는지 확인
 function hasUpcomingReservation(slot) {
   if (!slot?.reservations?.length) return false;
-  const today = todayDate();
-  return slot.reservations.some(r => {
-    const d = parseDateStr(r.admitDate);
-    return d && dateOnly(d) > today;
-  });
+  return slot.reservations.some(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) > todayDate(); });
 }
 
-// ── 초기 데이터 ────────────────────────────────────────────────────────────────
+function countUpcomingReservations(slot) {
+  if (!slot?.reservations?.length) return 0;
+  return slot.reservations.filter(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) > todayDate(); }).length;
+}
+
 const INIT_SLOTS = {
-  "201-1": {
-    current: { name: "임순태", bedPosition: 1, discharge: "미정", note: "이뮤알파·이스카도(월수금)", scheduleAlert: true },
-    reservations: []
-  },
-  "201-2": {
-    current: { name: "황세영", bedPosition: 2, discharge: "3/17 점심후", note: "페인 2-3회, 퇴원약 메시마", scheduleAlert: true },
-    reservations: [
-      { name: "김예약", admitDate: "3/18", discharge: "3/25", note: "예약 입원 샘플", scheduleAlert: false, bedPosition: 2 }
-    ]
-  },
+  "201-1": { current: { name: "임순태", bedPosition: 1, discharge: "미정", note: "이뮤알파·이스카도(월수금)", scheduleAlert: true }, reservations: [] },
+  "201-2": { current: { name: "황세영", bedPosition: 2, discharge: "3/17 점심후", note: "페인 2-3회, 퇴원약 메시마", scheduleAlert: true },
+    reservations: [{ name: "김예약", admitDate: "3/18", discharge: "3/25", note: "예약 입원 샘플", scheduleAlert: false, bedPosition: 2 }] },
 };
 
-// Anthropic 공식 브라우저 직접 호출 방식 (dangerous-direct-browser-access 헤더 사용)
-
-// Next.js API Route를 통해 서버에서 Anthropic API 호출 (CORS 문제 없음)
 async function analyzeMessengerText(text) {
   const res = await fetch("/api/analyze", {
     method: "POST",
@@ -137,27 +118,30 @@ async function analyzeMessengerText(text) {
 
 // ════════════════════════════════════════════════════════════════════════════════
 export default function HospitalWardManager() {
-  const [slots,          setSlots]          = useState({});  // 병상 데이터 { "201-1": { current, reservations } }
+  const [slots,          setSlots]          = useState({});
   const [view,           setView]           = useState("ward");
   const [selectedRoom,   setSelectedRoom]   = useState(null);
-  const [editingSlot,    setEditingSlot]    = useState(null); // { slotKey, mode: "current"|"reservation", resIndex }
-  const [addingTo,       setAddingTo]       = useState(null); // { slotKey, mode: "current"|"reservation" }
+  const [editingSlot,    setEditingSlot]    = useState(null);
+  const [addingTo,       setAddingTo]       = useState(null);
+  const [movingPatient,  setMovingPatient]  = useState(null); // { slotKey, mode, data, resIndex }
   const [uploading,      setUploading]      = useState(false);
+  const [uploadResult,   setUploadResult]   = useState(null);
   const [jsonPasteOpen,  setJsonPasteOpen]  = useState(false);
   const [jsonPasteText,  setJsonPasteText]  = useState("");
-  const [uploadResult,   setUploadResult]   = useState(null);
   const [logs,           setLogs]           = useState([]);
   const [lastSync,       setLastSync]       = useState(null);
   const [syncing,        setSyncing]        = useState(true);
   const [previewDate,    setPreviewDate]    = useState(null);
   const [previewInput,   setPreviewInput]   = useState(toInputValue(todayDate()));
-  const [showReserved,   setShowReserved]   = useState(true); // 통계에 예약 포함 여부
+  const [showReserved,   setShowReserved]   = useState(true);
+  // 빈 병상 하이라이트
+  const [highlightEmpty, setHighlightEmpty] = useState(false);
+  const [emptySlotIdx,   setEmptySlotIdx]   = useState(0); // 현재 포커스된 빈 병상 인덱스
   const fileInputRef = useRef();
 
   const isPreview = previewDate !== null;
   const viewDate  = previewDate || todayDate();
 
-  // ── Firebase ──────────────────────────────────────────────────────────────
   useEffect(() => {
     setSyncing(true);
     const sRef = ref(db, "slots");
@@ -195,30 +179,23 @@ export default function HospitalWardManager() {
     setLastSync(new Date()); setSyncing(false);
   }, []);
 
-  // ── 미리보기 ──────────────────────────────────────────────────────────────
   const applyPreview = () => { setPreviewDate(new Date(previewInput + "T00:00:00")); setView("ward"); setSelectedRoom(null); };
   const clearPreview = () => { setPreviewDate(null); setPreviewInput(toInputValue(todayDate())); };
 
-  // ── 병실 통계 ─────────────────────────────────────────────────────────────
   const getRoomStats = useCallback((roomId, capacity) => {
-    const roomSlots = Array.from({ length: capacity }, (_, i) => {
+    const bedList = Array.from({ length: capacity }, (_, i) => {
       const key = `${roomId}-${i+1}`;
-      return { key, slot: slots[key] || null };
-    });
-
-    const bedList = roomSlots.map(({ key, slot }) => {
+      const slot = slots[key] || null;
       const { person, type } = getSlotOccupant(slot, viewDate);
       const hasReserve = !isPreview && hasUpcomingReservation(slot);
-      return { slotKey: key, person, type, hasReserve, slot };
+      const reserveCount = !isPreview ? countUpcomingReservations(slot) : 0;
+      return { slotKey: key, person, type, hasReserve, reserveCount, slot };
     });
-
-    // 통계: 오늘 현황에서 showReserved=true면 예약 포함 계산
     const occupied = bedList.filter(b => {
-      if (b.person) return true; // 해당 날짜에 사람 있음
-      if (!isPreview && showReserved && b.hasReserve) return true; // 예약 포함 계산
+      if (b.person) return true;
+      if (!isPreview && showReserved && b.hasReserve) return true;
       return false;
     }).length;
-
     return { occupied, available: capacity - occupied, bedList };
   }, [slots, viewDate, isPreview, showReserved]);
 
@@ -230,8 +207,66 @@ export default function HospitalWardManager() {
     return { total: 78, occupied: occ, available: 78 - occ };
   }, [getRoomStats]);
 
+  // ── 빈 병상 순환 하이라이트 ───────────────────────────────────────────────
+  const emptySlots = !isPreview ? getAllEmptySlots(slots, getRoomStats) : [];
+
+  const handleHighlightEmpty = () => {
+    if (!highlightEmpty) {
+      setHighlightEmpty(true);
+      setEmptySlotIdx(0);
+    } else {
+      const next = (emptySlotIdx + 1) % Math.max(emptySlots.length, 1);
+      setEmptySlotIdx(next);
+    }
+  };
+
+  const stopHighlight = () => { setHighlightEmpty(false); setEmptySlotIdx(0); };
+
+  // ── 환자 이동 ─────────────────────────────────────────────────────────────
+  // movingPatient: { slotKey, mode:"current"|"reservation", data, resIndex }
+  const startMove = (slotKey, mode, data, resIndex) => {
+    setMovingPatient({ slotKey, mode, data, resIndex });
+  };
+
+  const executeMove = async (targetSlotKey) => {
+    if (!movingPatient) return;
+    const { slotKey: fromKey, mode, data, resIndex } = movingPatient;
+    if (fromKey === targetSlotKey) { setMovingPatient(null); return; }
+
+    const newSlots = JSON.parse(JSON.stringify(slots)); // deep copy
+
+    // 원래 자리에서 제거
+    if (mode === "current") {
+      newSlots[fromKey] = { ...(newSlots[fromKey] || {}), current: null };
+    } else {
+      const oldRes = [...(newSlots[fromKey]?.reservations || [])];
+      oldRes.splice(resIndex, 1);
+      newSlots[fromKey] = { ...(newSlots[fromKey] || {}), reservations: oldRes };
+    }
+
+    // 새 자리에 추가
+    if (!newSlots[targetSlotKey]) newSlots[targetSlotKey] = { current: null, reservations: [] };
+    const targetSlot = newSlots[targetSlotKey];
+
+    if (mode === "current") {
+      if (targetSlot.current) {
+        // 이미 사람 있으면 예약으로 추가
+        if (!targetSlot.reservations) targetSlot.reservations = [];
+        targetSlot.reservations.push({ ...data });
+      } else {
+        targetSlot.current = { ...data };
+      }
+    } else {
+      if (!targetSlot.reservations) targetSlot.reservations = [];
+      targetSlot.reservations.push({ ...data });
+    }
+
+    await saveSlots(newSlots);
+    await addLog({ type: "edit", msg: `${data.name} 이동: ${fromKey} → ${targetSlotKey}` });
+    setMovingPatient(null);
+  };
+
   // ── CRUD ─────────────────────────────────────────────────────────────────
-  // 현재 환자 저장
   const saveCurrentPatient = async (slotKey, data) => {
     const newSlots = { ...slots, [slotKey]: { ...(slots[slotKey] || { reservations: [] }), current: data } };
     await saveSlots(newSlots);
@@ -239,15 +274,12 @@ export default function HospitalWardManager() {
     setEditingSlot(null); setAddingTo(null);
   };
 
-  // 현재 환자 퇴원
   const dischargeCurrentPatient = async (slotKey) => {
     if (!window.confirm("퇴원 처리하시겠습니까?")) return;
     const name = slots[slotKey]?.current?.name;
     const newSlot = { ...(slots[slotKey] || {}), current: null };
-    // 예약자 중 오늘 이후 입원 예정자가 있으면 첫번째를 current로 승격
     const reservations = newSlot.reservations || [];
-    const today = todayDate();
-    const nextIdx = reservations.findIndex(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) <= today; });
+    const nextIdx = reservations.findIndex(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) <= todayDate(); });
     if (nextIdx >= 0) {
       newSlot.current = { ...reservations[nextIdx] };
       delete newSlot.current.admitDate;
@@ -258,24 +290,17 @@ export default function HospitalWardManager() {
     setEditingSlot(null);
   };
 
-  // 예약 저장 (신규/수정)
   const saveReservation = async (slotKey, resData, resIndex) => {
     const oldSlot = slots[slotKey] || { current: null, reservations: [] };
     const reservations = [...(oldSlot.reservations || [])];
     if (resIndex !== undefined) reservations[resIndex] = resData;
     else reservations.push(resData);
-    // admitDate 기준 정렬
-    reservations.sort((a, b) => {
-      const da = parseDateStr(a.admitDate), db2 = parseDateStr(b.admitDate);
-      if (!da) return 1; if (!db2) return -1;
-      return da - db2;
-    });
+    reservations.sort((a, b) => { const da = parseDateStr(a.admitDate), db2 = parseDateStr(b.admitDate); if (!da) return 1; if (!db2) return -1; return da - db2; });
     await saveSlots({ ...slots, [slotKey]: { ...oldSlot, reservations } });
-    await addLog({ type: "reserve", msg: `${slotKey} ${resData.name} ${resIndex !== undefined ? "예약 수정" : "예약 입원 등록"} (${resData.admitDate})` });
+    await addLog({ type: "reserve", msg: `${slotKey} ${resData.name} ${resIndex !== undefined ? "예약 수정":"예약 등록"} (${resData.admitDate})` });
     setEditingSlot(null); setAddingTo(null);
   };
 
-  // 예약 취소
   const cancelReservation = async (slotKey, resIndex) => {
     if (!window.confirm("예약을 취소하시겠습니까?")) return;
     const oldSlot = slots[slotKey] || { current: null, reservations: [] };
@@ -286,7 +311,6 @@ export default function HospitalWardManager() {
     setEditingSlot(null);
   };
 
-  // 메신저 분석
   const handleFileUpload = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     setUploading(true); setUploadResult(null);
@@ -301,7 +325,6 @@ export default function HospitalWardManager() {
       if (!r.room || !r.name) return;
       let cap = 4;
       for (const ward of Object.values(WARD_STRUCTURE)) { const rm = ward.rooms.find(x => x.id === r.room); if (rm) { cap = rm.capacity; break; } }
-      // 이미 있는 환자면 업데이트
       for (let i = 1; i <= cap; i++) {
         const key = `${r.room}-${i}`;
         if (newSlots[key]?.current?.name === r.name) {
@@ -309,7 +332,6 @@ export default function HospitalWardManager() {
           applied++; return;
         }
       }
-      // 없으면 빈 슬롯에 추가
       for (let i = 1; i <= cap; i++) {
         const key = `${r.room}-${i}`;
         if (!newSlots[key]?.current) {
@@ -324,6 +346,7 @@ export default function HospitalWardManager() {
   };
 
   const stats = totalStats();
+  const currentEmptySlotKey = highlightEmpty && emptySlots.length > 0 ? emptySlots[emptySlotIdx % emptySlots.length]?.slotKey : null;
 
   if (syncing && Object.keys(slots).length === 0) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", flexDirection:"column", gap:16, background:"#f0f4f8" }}>
@@ -333,9 +356,17 @@ export default function HospitalWardManager() {
   );
 
   return (
-    <div style={S.app}>
+    <div style={S.app} onClick={movingPatient ? undefined : undefined}>
+      {/* 이동 중 오버레이 안내 */}
+      {movingPatient && (
+        <div style={S.movingBanner}>
+          🚚 <strong>{movingPatient.data.name}</strong> 이동 중 — 이동할 병상을 클릭하세요
+          <button style={S.movingCancelBtn} onClick={() => setMovingPatient(null)}>취소</button>
+        </div>
+      )}
+
       {/* 헤더 */}
-      <header style={{ ...S.header, background: isPreview ? "#0d3320":"#0f2744" }}>
+      <header style={{ ...S.header, background: isPreview ? "#0d3320" : movingPatient ? "#1e1b4b" : "#0f2744" }}>
         <div style={S.headerLeft}>
           <div style={S.logoMark}>🏥</div>
           <div><div style={S.title}>병동 현황 관리</div><div style={S.subtitle}>Ward Management System</div></div>
@@ -345,22 +376,30 @@ export default function HospitalWardManager() {
           <StatPill label="사용 중"    value={stats.occupied}  color={isPreview ? "#34d399":"#0ea5e9"} />
           <StatPill label="빈 병상"    value={stats.available} color={isPreview ? "#6ee7b7":"#10b981"} />
           {!isPreview && (
-            <button onClick={() => setShowReserved(v => !v)}
-              style={{ ...S.reserveToggle, background: showReserved ? "#312e81":"#1e293b", color: showReserved ? "#a5b4fc":"#94a3b8" }}>
-              📅 예약 {showReserved ? "포함":"미포함"}
-            </button>
+            <>
+              <button onClick={() => setShowReserved(v => !v)}
+                style={{ ...S.reserveToggle, background: showReserved ? "#312e81":"#1e293b", color: showReserved ? "#a5b4fc":"#94a3b8" }}>
+                📅 예약 {showReserved ? "포함":"미포함"}
+              </button>
+              {/* 빈 병상 하이라이트 버튼 */}
+              <button onClick={handleHighlightEmpty}
+                style={{ ...S.reserveToggle, background: highlightEmpty ? "#065f46":"#1e293b", color: highlightEmpty ? "#34d399":"#94a3b8", position:"relative" }}>
+                🔍 빈 병상 {highlightEmpty ? `(${emptySlotIdx + 1}/${emptySlots.length})` : `(${emptySlots.length})`}
+              </button>
+              {highlightEmpty && (
+                <button onClick={stopHighlight} style={{ ...S.reserveToggle, background:"#7f1d1d", color:"#fca5a5" }}>✕ 해제</button>
+              )}
+            </>
           )}
         </div>
         <div style={S.headerRight}>
           <span style={S.syncInfo}>{syncing ? "🔄 동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")} 저장됨` : ""}</span>
           <button style={S.btnRefresh} onClick={manualRefresh} title="새로고침">↻</button>
-          <button
-            style={{ ...S.navBtn, background: view==="ward" && !selectedRoom ? "#1e3a5f":"transparent", display:"flex", alignItems:"center", gap:5 }}
-            onClick={() => { setView("ward"); setSelectedRoom(null); clearPreview(); }}
-            title="처음 현황판으로">
+          <button style={{ ...S.navBtn, display:"flex", alignItems:"center", gap:5 }}
+            onClick={() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); }}>
             🏠 홈
           </button>
-          <button style={{ ...S.navBtn, background: view==="ward" && !selectedRoom ? "#1e3a5f":"transparent" }} onClick={() => { setView("ward"); setSelectedRoom(null); }}>병실 현황</button>
+          <button style={{ ...S.navBtn, background: view==="ward" ? "#1e3a5f":"transparent" }} onClick={() => { setView("ward"); setSelectedRoom(null); }}>병실 현황</button>
           <button style={{ ...S.navBtn, background: view==="log"  ? "#1e3a5f":"transparent" }} onClick={() => setView("log")}>변경 이력</button>
         </div>
       </header>
@@ -385,25 +424,25 @@ export default function HospitalWardManager() {
           <span style={S.uploadLabel}>📩 메신저 파일 분석</span>
           <input ref={fileInputRef} type="file" accept=".txt" style={{ display:"none" }} onChange={handleFileUpload} />
           <button style={S.btnUpload} onClick={() => fileInputRef.current.click()} disabled={uploading}>{uploading ? "⏳ 분석 중...":"📂 파일 업로드"}</button>
-      {uploadResult?.error && (
-        <div style={{ background:"#fef2f2", borderBottom:"1px solid #fecaca", padding:"10px 28px", fontSize:13, color:"#dc2626" }}>
-          ❌ {uploadResult.error}
-          {uploadResult.error.includes("API Key") && (
-            <span style={{ marginLeft:8, color:"#7f1d1d" }}>
-              → Vercel 대시보드 › Settings › Environment Variables 에서 <strong>VITE_ANTHROPIC_API_KEY</strong> 를 추가하세요.
-            </span>
-          )}
-        </div>
-      )}
+          <button style={{ ...S.btnUpload, background:"#7c3aed" }} onClick={() => setJsonPasteOpen(true)}>📋 JSON 붙여넣기</button>
+          {uploadResult?.error && <span style={{ color:"#dc2626", fontSize:13 }}>❌ {uploadResult.error}</span>}
         </div>
       )}
       {uploadResult?.results && <AnalysisPreview results={uploadResult.results} onApply={() => applyAnalysis(uploadResult.results)} onDiscard={() => setUploadResult(null)} />}
 
       {/* 본문 */}
       <main style={S.main}>
-        {view === "ward" && <WardView slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate} showReserved={showReserved} onSelectRoom={r => { setSelectedRoom(r); setView("room"); }} />}
+        {view === "ward" && (
+          <WardView
+            slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
+            showReserved={showReserved} highlightEmpty={highlightEmpty} currentEmptySlotKey={currentEmptySlotKey}
+            movingPatient={movingPatient} onMoveTarget={executeMove}
+            onSelectRoom={r => { if (!movingPatient) { setSelectedRoom(r); setView("room"); } }}
+          />
+        )}
         {view === "room" && selectedRoom && (
           <RoomDetailView room={selectedRoom} slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
+            movingPatient={movingPatient} onStartMove={startMove} onMoveTarget={executeMove}
             onEditCurrent={(sk, data) => setEditingSlot({ slotKey: sk, mode: "current", data })}
             onEditReservation={(sk, data, idx) => setEditingSlot({ slotKey: sk, mode: "reservation", data, resIndex: idx })}
             onAddCurrent={sk => setAddingTo({ slotKey: sk, mode: "current" })}
@@ -413,43 +452,26 @@ export default function HospitalWardManager() {
         {view === "log" && <LogView logs={logs} />}
       </main>
 
-      {/* 현재 환자 수정 모달 */}
+      {/* 모달들 */}
       {editingSlot?.mode === "current" && (
-        <PatientModal
-          title={`${editingSlot.slotKey} 현재 환자 수정`}
-          data={editingSlot.data}
-          mode="current"
+        <PatientModal title={`${editingSlot.slotKey} 현재 환자 수정`} data={editingSlot.data} mode="current"
           onSave={data => saveCurrentPatient(editingSlot.slotKey, data)}
           onDelete={() => dischargeCurrentPatient(editingSlot.slotKey)}
           onClose={() => setEditingSlot(null)} />
       )}
-      {/* 예약 수정 모달 */}
       {editingSlot?.mode === "reservation" && (
-        <PatientModal
-          title={`${editingSlot.slotKey} 예약 수정`}
-          data={editingSlot.data}
-          mode="reservation"
+        <PatientModal title={`${editingSlot.slotKey} 예약 수정`} data={editingSlot.data} mode="reservation"
           onSave={data => saveReservation(editingSlot.slotKey, data, editingSlot.resIndex)}
           onDelete={() => cancelReservation(editingSlot.slotKey, editingSlot.resIndex)}
           onClose={() => setEditingSlot(null)} />
       )}
-      {/* 신규 현재 환자 추가 */}
       {addingTo?.mode === "current" && (
-        <PatientModal
-          title={`${addingTo.slotKey} 입원 등록`}
-          data={{ name:"", bedPosition:"", discharge:"미정", note:"", scheduleAlert:false }}
-          mode="current" isNew
-          onSave={data => saveCurrentPatient(addingTo.slotKey, data)}
-          onClose={() => setAddingTo(null)} />
+        <PatientModal title={`${addingTo.slotKey} 입원 등록`} data={{ name:"", bedPosition:"", discharge:"미정", note:"", scheduleAlert:false }} mode="current" isNew
+          onSave={data => saveCurrentPatient(addingTo.slotKey, data)} onClose={() => setAddingTo(null)} />
       )}
-      {/* 신규 예약 추가 */}
       {addingTo?.mode === "reservation" && (
-        <PatientModal
-          title={`${addingTo.slotKey} 예약 입원 등록`}
-          data={{ name:"", bedPosition:"", admitDate:"", discharge:"미정", note:"", scheduleAlert:false }}
-          mode="reservation" isNew
-          onSave={data => saveReservation(addingTo.slotKey, data, undefined)}
-          onClose={() => setAddingTo(null)} />
+        <PatientModal title={`${addingTo.slotKey} 예약 입원 등록`} data={{ name:"", bedPosition:"", admitDate:"", discharge:"미정", note:"", scheduleAlert:false }} mode="reservation" isNew
+          onSave={data => saveReservation(addingTo.slotKey, data, undefined)} onClose={() => setAddingTo(null)} />
       )}
 
       {/* JSON 붙여넣기 모달 */}
@@ -458,34 +480,27 @@ export default function HospitalWardManager() {
           <div style={{ ...S.modal, maxWidth:540 }}>
             <div style={{ ...S.modalTitle, color:"#7c3aed" }}>📋 Claude.ai JSON 붙여넣기</div>
             <div style={{ fontSize:13, color:"#64748b", marginBottom:12, lineHeight:1.7 }}>
-              1. <a href="https://claude.ai" target="_blank" rel="noreferrer" style={{ color:"#7c3aed" }}>claude.ai</a> 에서 메신저 내용을 아래 프롬프트와 함께 붙여넣으세요.<br/>
-              2. Claude가 반환한 JSON을 아래에 붙여넣고 "반영" 클릭.
+              1. <a href="https://claude.ai" target="_blank" rel="noreferrer" style={{ color:"#7c3aed" }}>claude.ai</a>에서 아래 프롬프트와 메신저 내용을 함께 붙여넣으세요.<br/>
+              2. 반환된 JSON을 아래에 붙여넣고 "반영하기" 클릭.
             </div>
             <div style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, padding:12, fontSize:12, color:"#475569", marginBottom:12, lineHeight:1.8, userSelect:"all" }}>
-              아래 병원 메신저 내용을 분석해서 JSON만 출력해줘. 다른 말 없이 JSON만.<br/>
+              아래 병원 메신저 내용 분석해서 JSON만 출력해줘. 다른 말 없이 JSON만.<br/>
               병실: 2병동(201~206), 3병동(301~306), 5병동(501~506), 6병동(601~603)<br/>
-              형식: [{"{"}&#34;room&#34;:&#34;201&#34;,&#34;name&#34;:&#34;홍길동&#34;,&#34;discharge&#34;:&#34;3/20&#34;,&#34;note&#34;:&#34;요약&#34;,&#34;scheduleAlert&#34;:false{"}"}]<br/>
+              형식: [{"{"}"room":"201","name":"홍길동","discharge":"3/20","note":"요약","scheduleAlert":false{"}"}]<br/>
               메신저 내용: (여기에 붙여넣기)
             </div>
-            <label style={S.label}>Claude가 반환한 JSON 붙여넣기</label>
-            <textarea
-              style={{ ...S.input, height:160, resize:"vertical", fontFamily:"monospace", fontSize:12 }}
-              value={jsonPasteText}
-              onChange={e => setJsonPasteText(e.target.value)}
-              placeholder={'[{"room":"201","name":"홍길동","discharge":"3/20","note":"페인2회","scheduleAlert":false}]'}
-            />
+            <label style={S.label}>Claude가 반환한 JSON</label>
+            <textarea style={{ ...S.input, height:160, resize:"vertical", fontFamily:"monospace", fontSize:12 }}
+              value={jsonPasteText} onChange={e => setJsonPasteText(e.target.value)}
+              placeholder={'[{"room":"201","name":"홍길동","discharge":"3/20","note":"페인2회","scheduleAlert":false}]'} />
             <div style={S.modalBtns}>
               <button style={{ ...S.btnModal, background:"#f1f5f9", color:"#64748b" }} onClick={() => { setJsonPasteOpen(false); setJsonPasteText(""); }}>취소</button>
-              <button style={{ ...S.btnModal, background:"#7c3aed", color:"#fff" }} onClick={async () => {
+              <button style={{ ...S.btnModal, background:"#7c3aed", color:"#fff" }} onClick={() => {
                 try {
                   const results = JSON.parse(jsonPasteText.replace(/```json|```/g, "").trim());
                   if (!Array.isArray(results)) throw new Error("배열 형식이 아닙니다.");
-                  setUploadResult({ results });
-                  setJsonPasteOpen(false);
-                  setJsonPasteText("");
-                } catch(e) {
-                  alert("JSON 형식 오류: " + e.message + "\nClaude.ai에서 반환한 JSON을 그대로 붙여넣어 주세요.");
-                }
+                  setUploadResult({ results }); setJsonPasteOpen(false); setJsonPasteText("");
+                } catch(e) { alert("JSON 오류: " + e.message); }
               }}>반영하기</button>
             </div>
           </div>
@@ -496,7 +511,7 @@ export default function HospitalWardManager() {
 }
 
 // ── WardView ──────────────────────────────────────────────────────────────────
-function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, onSelectRoom }) {
+function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, highlightEmpty, currentEmptySlotKey, movingPatient, onMoveTarget, onSelectRoom }) {
   return (
     <div style={S.wardGrid}>
       {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => (
@@ -506,9 +521,24 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, onSe
             {ward.rooms.map(room => {
               const { occupied, available, bedList } = getRoomStats(room.id, room.capacity);
               const alertCount = bedList.filter(b => b.person?.scheduleAlert && b.type !== null).length;
+              const totalReserveCount = bedList.reduce((sum, b) => sum + (b.reserveCount || 0), 0);
+              // 이 방에 하이라이트된 빈 병상이 있는지
+              const hasHighlighted = highlightEmpty && bedList.some(b => b.slotKey === currentEmptySlotKey);
+              const isMoveTarget = !!movingPatient;
+
               return (
-                <div key={room.id} onClick={() => onSelectRoom(room)}
-                  style={{ ...S.roomCard, borderTop:`3px solid ${TYPE_COLOR[room.type]}`, background: available===0 ? "#fff5f5":"#fff" }}>
+                <div key={room.id}
+                  onClick={() => {
+                    if (movingPatient) return; // 이동 중엔 방 클릭 무시 (병상 클릭으로 처리)
+                    onSelectRoom(room);
+                  }}
+                  style={{ ...S.roomCard,
+                    borderTop:`3px solid ${TYPE_COLOR[room.type]}`,
+                    background: available===0 ? "#fff5f5":"#fff",
+                    outline: hasHighlighted ? "3px solid #10b981" : "none",
+                    boxShadow: hasHighlighted ? "0 0 0 4px #d1fae5, 0 1px 6px rgba(0,0,0,0.06)" : "0 1px 6px rgba(0,0,0,0.06)",
+                    transition: "all 0.2s",
+                  }}>
                   <div style={S.roomHeader}>
                     <span style={S.roomNo}>{room.id}호</span>
                     <span style={{ ...S.roomTypeBadge, background:TYPE_BG[room.type], color:TYPE_COLOR[room.type] }}>{room.type}</span>
@@ -516,24 +546,38 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, onSe
                   {/* 병상 도트 */}
                   <div style={S.bedBar}>
                     {bedList.map((b, i) => {
+                      const isHighlighted = highlightEmpty && b.slotKey === currentEmptySlotKey;
                       let bg = "#e2e8f0";
-                      if (b.type === "current")          bg = TYPE_COLOR[room.type];
+                      if (b.type === "current")               bg = TYPE_COLOR[room.type];
                       else if (b.type === "discharging_today") bg = "#fbbf24";
                       else if (b.type === "admitting_today")   bg = "#93c5fd";
-                      else if (b.type === "reserved")    bg = "#a78bfa";
-                      else if (!isPreview && b.hasReserve) bg = "#c4b5fd"; // 현재 공석이지만 예약있음
-                      return <div key={i} style={{ ...S.bedDot, background: bg }} />;
+                      else if (b.type === "reserved")          bg = "#a78bfa";
+                      else if (!isPreview && b.hasReserve)     bg = "#c4b5fd";
+                      else if (isHighlighted)                  bg = "#10b981";
+                      return (
+                        <div key={i} style={{ ...S.bedDot, background: bg,
+                          transform: isHighlighted ? "scale(1.5)" : "scale(1)",
+                          transition: "all 0.3s",
+                          boxShadow: isHighlighted ? "0 0 6px #10b981" : "none" }} />
+                      );
                     })}
                   </div>
-                  {/* 병상 수 */}
+                  {/* 병상 수 + 예약 수 */}
                   <div style={S.roomOccupancy}>
                     <span style={{ fontWeight:700 }}>{occupied}</span>
                     <span style={{ color:"#94a3b8" }}>/{room.capacity}</span>
+                    {!isPreview && totalReserveCount > 0 && (
+                      <span style={{ fontSize:12, fontWeight:700, color:"#7c3aed", marginLeft:6, background:"#f5f3ff", borderRadius:4, padding:"1px 6px" }}>
+                        📅{totalReserveCount}
+                      </span>
+                    )}
                   </div>
                   {/* 환자 목록 */}
                   <div style={S.patientList}>
                     {bedList.map((b, i) => {
-                      if (!b.person && !b.hasReserve) return null;
+                      const isHighlighted = highlightEmpty && b.slotKey === currentEmptySlotKey;
+                      if (!b.person && !b.hasReserve && !isHighlighted) return null;
+
                       const isDischarging = b.type === "discharging_today";
                       const isAdmitting   = b.type === "admitting_today";
                       const isReservedType= b.type === "reserved";
@@ -541,20 +585,25 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, onSe
                       const dday = isCurrentType && !isPreview ? getDdayLabel(b.person?.discharge) : null;
                       const posNum = b.person?.bedPosition ?? (i+1);
 
+                      if (!b.person && isHighlighted) {
+                        return (
+                          <div key={i} style={{ ...S.patientChip, background:"#d1fae5", borderRadius:6, padding:"2px 6px" }}>
+                            <span style={{ ...S.bedPositionBadge, background:"#10b981" }}>{i+1}</span>
+                            <span style={{ color:"#065f46", fontWeight:700, fontSize:12 }}>빈 병상</span>
+                          </div>
+                        );
+                      }
                       if (b.person) {
                         return (
                           <div key={i} style={S.patientChip}>
                             {isDischarging && <span style={{ fontSize:10 }}>🚪</span>}
                             {isAdmitting   && <span style={{ fontSize:10 }}>🛏</span>}
-                            <span style={{ ...S.bedPositionBadge, background:
-                              isAdmitting   ? "#2563eb" :
-                              isReservedType? "#7c3aed" :
-                              isDischarging ? "#d97706" : "#1e3a5f" }}>{posNum}</span>
-                            <span style={{ ...S.patientName, color:
-                              isAdmitting   ? "#2563eb" :
-                              isReservedType? "#7c3aed" :
-                              isDischarging ? "#d97706" : "#1e3a5f" }}>{b.person.name}</span>
+                            <span style={{ ...S.bedPositionBadge, background: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{posNum}</span>
+                            <span style={{ ...S.patientName, color: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{b.person.name}</span>
                             {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
+                            {b.reserveCount > 0 && !isPreview && (
+                              <span style={{ fontSize:10, fontWeight:800, color:"#7c3aed", background:"#f5f3ff", borderRadius:3, padding:"0 3px" }}>+{b.reserveCount}</span>
+                            )}
                             {b.person.discharge && b.person.discharge !== "미정" && (
                               <span style={S.dischargeDateWrap}>
                                 <span style={S.dischargeDate}>{b.person.discharge}</span>
@@ -564,8 +613,6 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, onSe
                           </div>
                         );
                       }
-
-                      // 현재 공석이지만 예약 있는 경우
                       if (!isPreview && b.hasReserve) {
                         const nextRes = b.slot?.reservations?.find(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) > todayDate(); });
                         return (
@@ -578,12 +625,6 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, onSe
                       return null;
                     })}
                   </div>
-                  {/* 현재 환자에 예약이 있는 경우 알림 */}
-                  {!isPreview && bedList.some(b => b.person && b.type === "current" && hasUpcomingReservation(b.slot)) && (
-                    <div style={S.reserveBadge}>
-                      📅 {bedList.filter(b => b.person && b.type === "current" && hasUpcomingReservation(b.slot)).length}개 병상 예약있음
-                    </div>
-                  )}
                   {alertCount > 0 && <div style={S.alertBadge}>⚠ {alertCount}건 확인필요</div>}
                 </div>
               );
@@ -596,7 +637,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, onSe
 }
 
 // ── RoomDetailView ────────────────────────────────────────────────────────────
-function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, onEditCurrent, onEditReservation, onAddCurrent, onAddReservation, onBack }) {
+function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, movingPatient, onStartMove, onMoveTarget, onEditCurrent, onEditReservation, onAddCurrent, onAddReservation, onBack }) {
   const { occupied, bedList } = getRoomStats(room.id, room.capacity);
   return (
     <div style={S.detailWrap}>
@@ -605,16 +646,15 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, onEdit
         <span style={S.detailRoomNo}>{room.id}호</span>
         <span style={{ ...S.roomTypeBadge, background:TYPE_BG[room.type], color:TYPE_COLOR[room.type] }}>{room.type}</span>
         <span style={{ color:"#64748b", fontSize:14 }}>{occupied}/{room.capacity} 병상 사용</span>
+        {movingPatient && <span style={{ fontSize:13, fontWeight:700, color:"#6d28d9", background:"#ede9fe", borderRadius:8, padding:"4px 12px" }}>🚚 {movingPatient.data.name} 이동 중 — 아래 병상 클릭</span>}
       </div>
-
-      {/* 범례 */}
       <div style={S.legend}>
         <span style={S.legendItem}><span style={{ ...S.legendDot, background:TYPE_COLOR[room.type] }}/>입원 중</span>
         <span style={S.legendItem}><span style={{ ...S.legendDot, background:"#a78bfa" }}/>예약 입원</span>
         {isPreview && <span style={S.legendItem}><span style={{ ...S.legendDot, background:"#93c5fd" }}/>당일 입원</span>}
         {isPreview && <span style={S.legendItem}><span style={{ ...S.legendDot, background:"#fbbf24" }}/>당일 퇴원</span>}
+        {!isPreview && <span style={S.legendItem}><span style={{ ...S.legendDot, background:"#10b981" }}/>이동 대상</span>}
       </div>
-
       <div style={S.bedGrid}>
         {Array.from({ length: room.capacity }).map((_, i) => {
           const slotKey = `${room.id}-${i+1}`;
@@ -624,55 +664,72 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, onEdit
           const isDischarging = b.type === "discharging_today";
           const isAdmitting   = b.type === "admitting_today";
           const isReservedType= b.type === "reserved";
+          const isMovingFrom  = movingPatient?.slotKey === slotKey;
+          const isMoveTarget  = !!movingPatient && !isMovingFrom;
+
           let borderColor = "#e2e8f0";
-          if (b.type === "current")          borderColor = TYPE_COLOR[room.type];
-          else if (isDischarging)            borderColor = "#fbbf24";
+          if (isMovingFrom)             borderColor = "#f59e0b";
+          else if (isMoveTarget)        borderColor = "#10b981";
+          else if (b.type === "current") borderColor = TYPE_COLOR[room.type];
+          else if (isDischarging)        borderColor = "#fbbf24";
           else if (isAdmitting || isReservedType) borderColor = "#a78bfa";
-          else if (!isPreview && b.hasReserve) borderColor = "#c4b5fd";
+          else if (!isPreview && b.hasReserve)    borderColor = "#c4b5fd";
 
           return (
-            <div key={i} style={{ ...S.bedCard, border:`2px ${b.person ? "solid":"dashed"} ${borderColor}`,
-              background: isAdmitting ? "#eff6ff" : isDischarging ? "#fffbeb" : isReservedType ? "#faf5ff" : "#fff" }}>
+            <div key={i}
+              onClick={() => { if (movingPatient && !isMovingFrom) onMoveTarget(slotKey); }}
+              style={{ ...S.bedCard,
+                border:`2px ${b.person ? "solid":"dashed"} ${borderColor}`,
+                background: isMovingFrom ? "#fffbeb" : isMoveTarget ? "#f0fdf4" : isAdmitting ? "#eff6ff" : isDischarging ? "#fffbeb" : isReservedType ? "#faf5ff" : "#fff",
+                cursor: movingPatient && !isMovingFrom ? "pointer" : "default",
+                transition: "all 0.2s",
+                transform: isMoveTarget ? "scale(1.02)" : "scale(1)",
+              }}>
               <div style={S.bedNum}>
                 {i+1}번 병상
+                {isMovingFrom  && <span style={{ color:"#d97706", fontWeight:700, marginLeft:4 }}>📦 이동 중</span>}
+                {isMoveTarget && !b.person && <span style={{ color:"#059669", fontWeight:700, marginLeft:4 }}>← 여기로 이동</span>}
                 {isDischarging && <span style={{ color:"#d97706", fontWeight:700, marginLeft:4 }}>🚪 당일 퇴원</span>}
                 {isAdmitting   && <span style={{ color:"#2563eb", fontWeight:700, marginLeft:4 }}>🛏 당일 입원</span>}
                 {isReservedType && <span style={{ color:"#7c3aed", fontWeight:700, marginLeft:4 }}>📅 예약 입원 중</span>}
               </div>
 
-              {/* 현재/예약 환자 정보 */}
               {b.person ? (
                 <>
-                  <div style={{ ...S.bedPatientName, color: isAdmitting||isReservedType ? "#7c3aed" : isDischarging ? "#d97706":"#0f2744" }}>{b.person.name}</div>
+                  <div style={{ ...S.bedPatientName, color: isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744" }}>{b.person.name}</div>
                   {b.person.admitDate && <div style={{ fontSize:12, color:"#7c3aed", marginBottom:4 }}>입원일: {b.person.admitDate}</div>}
                   <div style={S.bedDischarge}>퇴원: {b.person.discharge}</div>
                   {b.person.note && <div style={S.bedNote}>{b.person.note}</div>}
                   {b.person.scheduleAlert && <div style={S.scheduleAlert}>⚠ 스케줄 확인 필요</div>}
-                  {!isPreview && b.type === "current" && (
-                    <button style={S.btnEdit} onClick={() => onEditCurrent(slotKey, { ...b.person })}>수정</button>
+                  {!isPreview && !movingPatient && b.type === "current" && (
+                    <div style={{ display:"flex", gap:6, marginTop:"auto" }}>
+                      <button style={S.btnEdit} onClick={() => onEditCurrent(slotKey, { ...b.person })}>수정</button>
+                      <button style={{ ...S.btnEdit, background:"#7c3aed" }} onClick={() => onStartMove(slotKey, "current", b.person, undefined)}>🚚 이동</button>
+                    </div>
                   )}
                 </>
               ) : (
                 <div style={S.emptyBed}>
-                  <span style={{ color:"#cbd5e1", fontSize:28 }}>+</span>
-                  {!isPreview && (
-                    <div style={{ display:"flex", flexDirection:"column", gap:6, width:"100%" }}>
-                      <button style={S.btnAdmit} onClick={() => onAddCurrent(slotKey)}>입원 등록</button>
-                    </div>
+                  <span style={{ color: isMoveTarget ? "#10b981":"#cbd5e1", fontSize: isMoveTarget ? 32:28 }}>{isMoveTarget ? "↓":"+"}</span>
+                  {!isPreview && !movingPatient && (
+                    <button style={S.btnAdmit} onClick={() => onAddCurrent(slotKey)}>입원 등록</button>
                   )}
                   {isPreview && <span style={{ color:"#94a3b8", fontSize:12 }}>입원 가능</span>}
                 </div>
               )}
 
-              {/* 예약 목록 (현재 환자 유무와 무관하게 항상 표시) */}
+              {/* 예약 목록 */}
               {!isPreview && reservations.length > 0 && (
                 <div style={S.reservationList}>
-                  <div style={S.reservationListTitle}>📅 입원 예약</div>
+                  <div style={S.reservationListTitle}>📅 입원 예약 ({reservations.length}건)</div>
                   {reservations.map((r, ri) => (
                     <div key={ri} style={S.reservationItem}>
                       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                         <span style={{ fontWeight:700, color:"#7c3aed", fontSize:13 }}>{r.name}</span>
-                        <button style={S.btnEditSmall} onClick={() => onEditReservation(slotKey, { ...r }, ri)}>수정</button>
+                        <div style={{ display:"flex", gap:4 }}>
+                          {!movingPatient && <button style={{ ...S.btnEditSmall, color:"#7c3aed" }} onClick={() => onStartMove(slotKey, "reservation", r, ri)}>🚚</button>}
+                          {!movingPatient && <button style={S.btnEditSmall} onClick={() => onEditReservation(slotKey, { ...r }, ri)}>수정</button>}
+                        </div>
                       </div>
                       <div style={{ fontSize:11, color:"#64748b" }}>입원: {r.admitDate} → 퇴원: {r.discharge}</div>
                       {r.note && <div style={{ fontSize:11, color:"#94a3b8" }}>{r.note}</div>}
@@ -681,8 +738,7 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, onEdit
                 </div>
               )}
 
-              {/* 예약 추가 버튼 */}
-              {!isPreview && (
+              {!isPreview && !movingPatient && (
                 <button style={{ ...S.btnAdmit, background:"#f5f3ff", color:"#7c3aed", marginTop:8 }} onClick={() => onAddReservation(slotKey)}>
                   📅 예약 입원 추가
                 </button>
@@ -698,53 +754,44 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, onEdit
 // ── PatientModal ──────────────────────────────────────────────────────────────
 function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose }) {
   const [form, setForm] = useState({ ...data });
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const isReservation = mode === "reservation";
-
   const handleSave = () => {
     if (!form.name?.trim()) { alert("환자명을 입력해 주세요."); return; }
     if (isReservation && !form.admitDate?.trim()) { alert("입원 예정일을 입력해 주세요."); return; }
     onSave(form);
   };
-
   return (
     <div style={S.modalOverlay}>
       <div style={S.modal}>
         <div style={{ ...S.modalTitle, color: isReservation ? "#7c3aed":"#0f2744" }}>{title}</div>
-
         {isReservation && (
           <>
             <label style={{ ...S.label, color:"#7c3aed" }}>입원 예정일 ★</label>
-            <input style={{ ...S.input, borderColor:"#a78bfa" }} value={form.admitDate||""} onChange={e => set("admitDate", e.target.value)} placeholder="예: 3/18" />
-            <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>M/D 형식 (예: 3/18) — 미리보기에서 이 날짜부터 표시됩니다</div>
+            <input style={{ ...S.input, borderColor:"#a78bfa" }} value={form.admitDate||""} onChange={e => setF("admitDate", e.target.value)} placeholder="예: 3/18" />
+            <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>M/D 형식 (예: 3/18)</div>
           </>
         )}
-
         <label style={S.label}>환자명</label>
-        <input style={S.input} value={form.name||""} onChange={e => set("name", e.target.value)} placeholder="홍길동" />
+        <input style={S.input} value={form.name||""} onChange={e => setF("name", e.target.value)} placeholder="홍길동" />
         <label style={S.label}>퇴원 예정일</label>
-        <input style={S.input} value={form.discharge||""} onChange={e => set("discharge", e.target.value)} placeholder="예: 3/28, 미정" />
+        <input style={S.input} value={form.discharge||""} onChange={e => setF("discharge", e.target.value)} placeholder="예: 3/28, 미정" />
         <label style={S.label}>메모</label>
-        <textarea style={{ ...S.input, height:80, resize:"vertical" }} value={form.note||""} onChange={e => set("note", e.target.value)} placeholder="치료 내용, 약품, 스케줄 등" />
+        <textarea style={{ ...S.input, height:80, resize:"vertical" }} value={form.note||""} onChange={e => setF("note", e.target.value)} placeholder="치료 내용, 약품, 스케줄 등" />
         <label style={S.labelCheck}>
-          <input type="checkbox" checked={!!form.scheduleAlert} onChange={e => set("scheduleAlert", e.target.checked)} />
+          <input type="checkbox" checked={!!form.scheduleAlert} onChange={e => setF("scheduleAlert", e.target.checked)} />
           <span style={{ marginLeft:6 }}>⚠ 스케줄 확인 필요</span>
         </label>
         <div style={S.modalBtns}>
-          {!isNew && onDelete && (
-            <button style={{ ...S.btnModal, background:"#fee2e2", color:"#dc2626" }} onClick={onDelete}>
-              {isReservation ? "예약 취소":"퇴원 처리"}
-            </button>
-          )}
+          {!isNew && onDelete && <button style={{ ...S.btnModal, background:"#fee2e2", color:"#dc2626" }} onClick={onDelete}>{isReservation?"예약 취소":"퇴원 처리"}</button>}
           <button style={{ ...S.btnModal, background:"#f1f5f9", color:"#64748b" }} onClick={onClose}>취소</button>
-          <button style={{ ...S.btnModal, background: isReservation ? "#7c3aed":"#1e3a5f", color:"#fff" }} onClick={handleSave}>저장</button>
+          <button style={{ ...S.btnModal, background: isReservation?"#7c3aed":"#1e3a5f", color:"#fff" }} onClick={handleSave}>저장</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ── AnalysisPreview, LogView, StatPill ────────────────────────────────────────
 function AnalysisPreview({ results, onApply, onDiscard }) {
   return (
     <div style={S.analysisBar}>
@@ -794,14 +841,16 @@ function StatPill({ label, value, color }) {
 
 const S = {
   app: { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", minHeight:"100vh", color:"#0f172a" },
+  movingBanner: { position:"sticky", top:0, zIndex:200, background:"#1e1b4b", color:"#e0e7ff", padding:"10px 24px", fontSize:14, fontWeight:600, display:"flex", alignItems:"center", gap:12 },
+  movingCancelBtn: { marginLeft:"auto", background:"#4c1d95", color:"#e9d5ff", border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:13, fontWeight:700 },
   header: { color:"#fff", display:"flex", alignItems:"center", padding:"12px 24px", gap:20, flexWrap:"wrap", boxShadow:"0 2px 12px rgba(0,0,0,0.18)", transition:"background 0.4s" },
   headerLeft: { display:"flex", alignItems:"center", gap:12, minWidth:180 },
   logoMark: { fontSize:28 }, title: { fontSize:18, fontWeight:800, letterSpacing:-0.5 }, subtitle: { fontSize:11, color:"#7dd3fc", letterSpacing:1 },
-  headerCenter: { display:"flex", gap:10, flex:1, justifyContent:"center", alignItems:"center" },
+  headerCenter: { display:"flex", gap:8, flex:1, justifyContent:"center", alignItems:"center", flexWrap:"wrap" },
   headerRight: { display:"flex", alignItems:"center", gap:8 },
   syncInfo: { fontSize:11, color:"#94a3b8" },
   btnRefresh: { background:"none", border:"1px solid #334155", color:"#94a3b8", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:16 },
-  navBtn: { border:"1px solid #334155", color:"#e2e8f0", borderRadius:6, padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight:600 },
+  navBtn: { border:"1px solid #334155", color:"#e2e8f0", borderRadius:6, padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight:600, background:"transparent" },
   reserveToggle: { border:"none", borderRadius:8, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:700 },
   statPill: { border:"1.5px solid", borderRadius:10, padding:"4px 14px", textAlign:"center", minWidth:70, background:"rgba(255,255,255,0.06)" },
   statVal: { display:"block", fontSize:22, fontWeight:800, lineHeight:1.1 }, statLabel: { display:"block", fontSize:11, color:"#94a3b8" },
@@ -831,7 +880,7 @@ const S = {
   roomTypeBadge: { fontSize:11, fontWeight:700, borderRadius:6, padding:"2px 8px" },
   bedBar: { display:"flex", gap:4, marginBottom:6 },
   bedDot: { width:12, height:12, borderRadius:"50%" },
-  roomOccupancy: { fontSize:20, fontWeight:800, marginBottom:6 },
+  roomOccupancy: { fontSize:20, fontWeight:800, marginBottom:6, display:"flex", alignItems:"center", gap:0 },
   patientList: { display:"flex", flexDirection:"column", gap:4 },
   patientChip: { display:"flex", alignItems:"center", gap:4, fontSize:12, flexWrap:"wrap" },
   bedPositionBadge: { color:"#fff", borderRadius:4, width:16, height:16, fontSize:10, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
@@ -849,14 +898,14 @@ const S = {
   legend: { display:"flex", gap:16, marginBottom:14, background:"#f8fafc", borderRadius:8, padding:"8px 14px", flexWrap:"wrap" },
   legendItem: { display:"flex", alignItems:"center", gap:6, fontSize:12, color:"#475569" },
   legendDot: { width:12, height:12, borderRadius:"50%", display:"inline-block" },
-  bedGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))", gap:16 },
+  bedGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:16 },
   bedCard: { background:"#fff", borderRadius:12, padding:"16px", minHeight:140, display:"flex", flexDirection:"column" },
   bedNum: { fontSize:11, color:"#94a3b8", fontWeight:600, marginBottom:8 },
   bedPatientName: { fontSize:18, fontWeight:800, marginBottom:4 },
   bedDischarge: { fontSize:12, color:"#64748b", marginBottom:6 },
   bedNote: { fontSize:12, color:"#475569", background:"#f8fafc", borderRadius:6, padding:"6px 8px", marginBottom:6, lineHeight:1.5 },
   scheduleAlert: { background:"#fef3c7", color:"#92400e", borderRadius:6, padding:"4px 8px", fontSize:12, fontWeight:700, marginBottom:6 },
-  btnEdit: { background:"#0f2744", color:"#fff", border:"none", borderRadius:6, padding:"5px 14px", cursor:"pointer", fontSize:12, fontWeight:600, marginTop:"auto" },
+  btnEdit: { background:"#0f2744", color:"#fff", border:"none", borderRadius:6, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:600 },
   btnEditSmall: { background:"#f1f5f9", color:"#64748b", border:"none", borderRadius:5, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:600 },
   emptyBed: { flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:6 },
   btnAdmit: { background:"#dcfce7", color:"#166534", border:"none", borderRadius:6, padding:"5px 14px", cursor:"pointer", fontSize:12, fontWeight:600, width:"100%", textAlign:"center" },
