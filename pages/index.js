@@ -224,8 +224,10 @@ export default function HospitalWardManager() {
 
   // ── 환자 이동 ─────────────────────────────────────────────────────────────
   // movingPatient: { slotKey, mode:"current"|"reservation", data, resIndex }
+  // 이동 시작하면 병실 현황으로 돌아가서 어느 병실로든 이동 가능
   const startMove = (slotKey, mode, data, resIndex) => {
     setMovingPatient({ slotKey, mode, data, resIndex });
+    setView("ward"); // 현황판으로 돌아가서 병실 선택
   };
 
   const executeMove = async (targetSlotKey) => {
@@ -360,7 +362,7 @@ export default function HospitalWardManager() {
       {/* 이동 중 오버레이 안내 */}
       {movingPatient && (
         <div style={S.movingBanner}>
-          🚚 <strong>{movingPatient.data.name}</strong> 이동 중 — 이동할 병상을 클릭하세요
+          🚚 <strong>{movingPatient.data.name}</strong> 이동 중 — 병실을 선택하고 이동할 병상을 클릭하세요
           <button style={S.movingCancelBtn} onClick={() => setMovingPatient(null)}>취소</button>
         </div>
       )}
@@ -437,7 +439,7 @@ export default function HospitalWardManager() {
             slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
             showReserved={showReserved} highlightEmpty={highlightEmpty} currentEmptySlotKey={currentEmptySlotKey}
             movingPatient={movingPatient} onMoveTarget={executeMove}
-            onSelectRoom={r => { if (!movingPatient) { setSelectedRoom(r); setView("room"); } }}
+            onSelectRoom={r => { setSelectedRoom(r); setView("room"); }}
           />
         )}
         {view === "room" && selectedRoom && (
@@ -528,15 +530,13 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
 
               return (
                 <div key={room.id}
-                  onClick={() => {
-                    if (movingPatient) return; // 이동 중엔 방 클릭 무시 (병상 클릭으로 처리)
-                    onSelectRoom(room);
-                  }}
+                  onClick={() => onSelectRoom(room)}
                   style={{ ...S.roomCard,
                     borderTop:`3px solid ${TYPE_COLOR[room.type]}`,
                     background: available===0 ? "#fff5f5":"#fff",
-                    outline: hasHighlighted ? "3px solid #10b981" : "none",
+                    outline: hasHighlighted ? "3px solid #10b981" : isMoveTarget ? "2px dashed #7c3aed" : "none",
                     boxShadow: hasHighlighted ? "0 0 0 4px #d1fae5, 0 1px 6px rgba(0,0,0,0.06)" : "0 1px 6px rgba(0,0,0,0.06)",
+                    cursor: isMoveTarget ? "pointer" : "pointer",
                     transition: "all 0.2s",
                   }}>
                   <div style={S.roomHeader}>
@@ -583,7 +583,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                       const isReservedType= b.type === "reserved";
                       const isCurrentType = b.type === "current";
                       const dday = isCurrentType && !isPreview ? getDdayLabel(b.person?.discharge) : null;
-                      const posNum = b.person?.bedPosition ?? (i+1);
+                      const posNum = (b.person?.bedPosition > 0 ? b.person.bedPosition : null) ?? (i+1);
 
                       if (!b.person && isHighlighted) {
                         return (
@@ -685,13 +685,14 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
                 transition: "all 0.2s",
                 transform: isMoveTarget ? "scale(1.02)" : "scale(1)",
               }}>
-              <div style={S.bedNum}>
-                {i+1}번 병상
-                {isMovingFrom  && <span style={{ color:"#d97706", fontWeight:700, marginLeft:4 }}>📦 이동 중</span>}
-                {isMoveTarget && !b.person && <span style={{ color:"#059669", fontWeight:700, marginLeft:4 }}>← 여기로 이동</span>}
-                {isDischarging && <span style={{ color:"#d97706", fontWeight:700, marginLeft:4 }}>🚪 당일 퇴원</span>}
-                {isAdmitting   && <span style={{ color:"#2563eb", fontWeight:700, marginLeft:4 }}>🛏 당일 입원</span>}
-                {isReservedType && <span style={{ color:"#7c3aed", fontWeight:700, marginLeft:4 }}>📅 예약 입원 중</span>}
+              <div style={{ ...S.bedNum, display:"flex", alignItems:"center", gap:6 }}>
+                <span style={{ background:"#1e3a5f", color:"#fff", borderRadius:5, padding:"1px 7px", fontSize:12, fontWeight:800 }}>{i+1}</span>
+                <span>번 병상</span>
+                {isMovingFrom  && <span style={{ color:"#d97706", fontWeight:700 }}>📦 이동 중</span>}
+                {isMoveTarget && !b.person && <span style={{ color:"#059669", fontWeight:700 }}>← 여기로 이동</span>}
+                {isDischarging && <span style={{ color:"#d97706", fontWeight:700 }}>🚪 당일 퇴원</span>}
+                {isAdmitting   && <span style={{ color:"#2563eb", fontWeight:700 }}>🛏 당일 입원</span>}
+                {isReservedType && <span style={{ color:"#7c3aed", fontWeight:700 }}>📅 예약 입원 중</span>}
               </div>
 
               {b.person ? (
