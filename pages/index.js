@@ -576,7 +576,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                   <div style={S.patientList}>
                     {bedList.map((b, i) => {
                       const isHighlighted = highlightEmpty && b.slotKey === currentEmptySlotKey;
-                      if (!b.person && !b.hasReserve && !isHighlighted) return null;
+                      // 빈 병상도 번호 배지와 함께 표시
 
                       const isDischarging = b.type === "discharging_today";
                       const isAdmitting   = b.type === "admitting_today";
@@ -622,7 +622,13 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                           </div>
                         );
                       }
-                      return null;
+                      // 빈 자리 표시
+                      return (
+                        <div key={i} style={S.patientChip}>
+                          <span style={{ ...S.bedPositionBadge, background:"#cbd5e1" }}>{i+1}</span>
+                          <span style={{ color:"#cbd5e1", fontSize:12, fontWeight:500 }}>빈 자리</span>
+                        </div>
+                      );
                     })}
                   </div>
                   {alertCount > 0 && <div style={S.alertBadge}>⚠ {alertCount}건 확인필요</div>}
