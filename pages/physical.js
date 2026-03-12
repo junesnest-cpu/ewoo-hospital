@@ -46,6 +46,7 @@ export default function PhysicalPage() {
   // 인쇄
   const [printMode,   setPrintMode]   = useState(false);
   const [printSel,    setPrintSel]    = useState({});
+  const scheduleRef = React.useRef({});
 
   const wk        = weekKey(weekStart);
   const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -53,7 +54,11 @@ export default function PhysicalPage() {
   useEffect(() => {
     const u1 = onValue(ref(db, "slots"),            s => setSlots(s.val() || {}));
     const u2 = onValue(ref(db, "treatmentPlans"),   s => setTreatPlans(s.val() || {}));
-    const u3 = onValue(ref(db, "physicalSchedule"), s => setSchedule(s.val() || {}));
+    const u3 = onValue(ref(db, "physicalSchedule"), s => {
+      const v = s.val() || {};
+      setSchedule(v);
+      scheduleRef.current = v;
+    });
     const u4 = onValue(ref(db, "settings"), s => {
       const v = s.val() || {};
       const th1 = v.therapist1 || "치료사1";
@@ -68,15 +73,16 @@ export default function PhysicalPage() {
   [schedule, wk]);
 
   const saveCell = useCallback(async (th, dayIdx, time, data) => {
-    const nxt = JSON.parse(JSON.stringify(schedule));
+    const nxt = JSON.parse(JSON.stringify(scheduleRef.current));
     if (!nxt[wk])             nxt[wk] = {};
     if (!nxt[wk][th])         nxt[wk][th] = {};
     if (!nxt[wk][th][dayIdx]) nxt[wk][th][dayIdx] = {};
     if (data === null) delete nxt[wk][th][dayIdx][time];
     else               nxt[wk][th][dayIdx][time] = data;
+    scheduleRef.current = nxt;
     setSchedule(nxt);
     await set(ref(db, `physicalSchedule/${wk}`), nxt[wk] || {});
-  }, [schedule, wk]);
+  }, [wk]);
 
   // 대기 환자: 해당 주 치료계획에 물리치료 있고 미배정
   const pendingPatients = (() => {
@@ -141,15 +147,19 @@ export default function PhysicalPage() {
     // 예정 환자 직접 입력 처리
     let slotKey = selSlot;
     let name    = "";
+    let roomId  = "";
+    let bedNum  = "";
     if (selSlot === "__pending__") {
       if (!pendingName.trim()) return;
       slotKey = `pending_${Date.now()}`;
       name    = pendingName.trim();
     } else {
-      name = slots[selSlot]?.current?.name || "";
+      name   = slots[selSlot]?.current?.name || "";
+      roomId = selSlot.split("-")[0] || "";
+      bedNum = selSlot.split("-")[1] || "";
     }
     if (!slotKey) return;
-    await saveCell(th, dayIdx, time, { slotKey, patientName: name, treatmentId: selTreat, isPending: selSlot === "__pending__" });
+    await saveCell(th, dayIdx, time, { slotKey, patientName: name, treatmentId: selTreat, isPending: selSlot === "__pending__", roomId, bedNum });
     setModal(null);
   };
 
