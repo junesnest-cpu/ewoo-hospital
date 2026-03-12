@@ -199,6 +199,7 @@ export default function TreatmentPage() {
           <span style={TS.monthLabel}>{year}년 {month+1}월</span>
           <button style={TS.btnMonth} onClick={() => { if(month===11){setYear(y=>y+1);setMonth(0);}else setMonth(m=>m+1); }}>›</button>
         </div>
+        <button style={TS.btnPrint} onClick={() => window.print()}>🖨 인쇄</button>
       </header>
 
       {/* 합계 바 */}
@@ -431,9 +432,106 @@ export default function TreatmentPage() {
           </div>
         </div>
       )}
+      {/* 인쇄 전용 영역 — 화면에선 숨김, 인쇄시만 표시 */}
+      <PrintView
+        name={name} roomId={roomId} bedNum={bedNum}
+        year={year} month={month} monthData={monthData}
+        firstDow={firstDow} daysInMonth={daysInMonth}
+      />
     </div>
   );
 }
+
+// ── 인쇄 전용 컴포넌트 (달력 형태) ─────────────────────────────────────────
+function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, daysInMonth }) {
+  const allItems = TREATMENT_GROUPS.flatMap(g => g.items);
+
+  // 달력 셀 생성
+  const calCells = [];
+  for (let i = 0; i < firstDow; i++) calCells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) calCells.push(d);
+  while (calCells.length % 7 !== 0) calCells.push(null);
+  const weeks = [];
+  for (let i = 0; i < calCells.length; i += 7) weeks.push(calCells.slice(i, i+7));
+
+  return (
+    <div className="print-only" style={{ display:"none" }}>
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 12mm 10mm; }
+          body * { visibility: hidden !important; }
+          .print-only, .print-only * { visibility: visible !important; }
+          .print-only { position: fixed; top: 0; left: 0; width: 100%; background: white; z-index: 9999; display: block !important; }
+        }
+      `}</style>
+      <div style={{ fontFamily:"'Noto Sans KR', sans-serif", color:"#000" }}>
+
+        {/* 헤더 */}
+        <div style={{ textAlign:"center", marginBottom:12, borderBottom:"2px solid #222", paddingBottom:8 }}>
+          <div style={{ fontSize:18, fontWeight:800, letterSpacing:-0.5 }}>치료 일정표</div>
+          <div style={{ fontSize:12, fontWeight:600, marginTop:3, color:"#333" }}>
+            {roomId}호 {bedNum}번 병상 &nbsp;·&nbsp; {name}님 &nbsp;·&nbsp; {year}년 {month+1}월
+          </div>
+        </div>
+
+        {/* 달력 */}
+        <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed" }}>
+          <thead>
+            <tr>
+              {DAY_KO.map((d, i) => (
+                <th key={d} style={{ border:"1px solid #bbb", padding:"4px 0", fontSize:11, fontWeight:700, textAlign:"center", background:"#f0f0f0", color: i===0?"#cc0000":i===6?"#0033cc":"#222", width:"14.28%" }}>
+                  {d}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {weeks.map((week, wi) => (
+              <tr key={wi}>
+                {week.map((day, di) => {
+                  if (!day) return <td key={di} style={{ border:"1px solid #bbb", verticalAlign:"top", height:70, background:"#fafafa" }} />;
+                  const dow   = (firstDow + day - 1) % 7;
+                  const items = monthData[String(day)] || [];
+                  return (
+                    <td key={di} style={{ border:"1px solid #bbb", verticalAlign:"top", height:70, padding:"3px 4px", background:"#fff" }}>
+                      {/* 날짜 숫자 */}
+                      <div style={{ fontSize:11, fontWeight:800, marginBottom:3, color: dow===0?"#cc0000":dow===6?"#0033cc":"#222" }}>
+                        {day}
+                      </div>
+                      {/* 치료 항목 */}
+                      {items.map(e => {
+                        const item = allItems.find(i => i.id === e.id);
+                        if (!item) return null;
+                        const label = item.custom==="vitc" ? `비타민C ${e.qty}g`
+                                    : item.custom==="qty"  ? `${item.name} ${e.qty}개`
+                                    : item.name;
+                        return (
+                          <div key={e.id} style={{ fontSize:8.5, lineHeight:1.4, color:"#111", borderLeft:"2px solid #555", paddingLeft:3, marginBottom:1 }}>
+                            {label}
+                          </div>
+                        );
+                      })}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* 푸터 */}
+        <div style={{ marginTop:8, fontSize:9, color:"#888", textAlign:"right" }}>
+          출력일: {new Date().toLocaleDateString("ko-KR")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PS = {
+  th: { border:"1px solid #ccc", padding:"7px 10px", fontWeight:700, textAlign:"center", background:"#f0f0f0" },
+  td: { border:"1px solid #ccc", padding:"7px 10px", verticalAlign:"middle" },
+};
 
 const TS = {
   page: { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", minHeight:"100vh", color:"#0f172a" },
@@ -486,4 +584,5 @@ const TS = {
   qtyInput: { border:"1.5px solid #e2e8f0", borderRadius:7, padding:"4px 8px", fontSize:12, outline:"none", width:60, fontFamily:"inherit" },
   registerBar: { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 18px", background:"#f0fdf4", borderTop:"1px solid #bbf7d0" },
   btnRegister: { background:"#16a34a", color:"#fff", border:"none", borderRadius:8, padding:"8px 20px", cursor:"pointer", fontSize:14, fontWeight:800 },
+  btnPrint: { background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.3)", color:"#fff", borderRadius:7, padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight:600, flexShrink:0 },
 };
