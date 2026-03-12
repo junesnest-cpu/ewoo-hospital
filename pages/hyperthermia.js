@@ -33,6 +33,7 @@ export default function HyperthermiaPage() {
   const [slots,        setSlots]        = useState({});
   const [treatPlans,   setTreatPlans]   = useState({});
   const [operatorName, setOperatorName] = useState("운용기사");
+  const scheduleRef = React.useRef({});
 
   // 모달: 클릭한 셀 (dayIdx, time) — 두 치료 동시 편집
   const [modal,     setModal]     = useState(null);
@@ -51,7 +52,11 @@ export default function HyperthermiaPage() {
   useEffect(() => {
     const u1 = onValue(ref(db,"slots"),                 s => setSlots(s.val()||{}));
     const u2 = onValue(ref(db,"treatmentPlans"),        s => setTreatPlans(s.val()||{}));
-    const u3 = onValue(ref(db,"hyperthermiaSchedule"), s => setSchedule(s.val()||{}));
+    const u3 = onValue(ref(db,"hyperthermiaSchedule"), s => {
+      const v = s.val()||{};
+      setSchedule(v);
+      scheduleRef.current = v;
+    });
     const u4 = onValue(ref(db,"settings"), s => {
       const v = s.val()||{};
       if (v.hyperOperator) setOperatorName(v.hyperOperator);
@@ -65,15 +70,16 @@ export default function HyperthermiaPage() {
   [schedule, wk]);
 
   const saveCell = useCallback(async (roomType, dayIdx, time, data) => {
-    const nxt = JSON.parse(JSON.stringify(schedule));
+    const nxt = JSON.parse(JSON.stringify(scheduleRef.current));
     if (!nxt[wk])               nxt[wk]={};
     if (!nxt[wk][roomType])     nxt[wk][roomType]={};
     if (!nxt[wk][roomType][dayIdx]) nxt[wk][roomType][dayIdx]={};
     if (data===null) delete nxt[wk][roomType][dayIdx][time];
     else             nxt[wk][roomType][dayIdx][time]=data;
+    scheduleRef.current = nxt;
     setSchedule(nxt);
     await set(ref(db,`hyperthermiaSchedule/${wk}`), nxt[wk]||{});
-  }, [schedule, wk]);
+  }, [wk]);
 
   // 모달 열기 — 두 치료 현재값 로드
   const openModal = (dayIdx, time) => {
@@ -267,13 +273,15 @@ export default function HyperthermiaPage() {
                               style={{...S.tdCell, background:cell?rt.bg:"#fff"}}
                               onClick={()=>openModal(dayIdx, time)}>
                               {cell ? (
-                                <div style={S.cellIn}>
+                                <div style={{...S.cellIn, position:"relative"}}>
                                   <div style={{fontWeight:700, fontSize:11, color:rt.color, lineHeight:1.2}}>
                                     {cell.patientName}
                                   </div>
                                   <div style={{fontSize:9, color:"#64748b"}}>
                                     {cell.roomId}호 {cell.bedNum}번
                                   </div>
+                                  <button style={S.xBtn}
+                                    onClick={e=>{ e.stopPropagation(); saveCell(rt.id, dayIdx, time, null); }}>✕</button>
                                 </div>
                               ):(
                                 <div style={S.plusCell}>+</div>
@@ -451,4 +459,5 @@ const S = {
   sel:     {width:"100%", border:"1.5px solid", borderRadius:7, padding:"7px 10px", fontSize:13, outline:"none", fontFamily:"inherit"},
   btnOk:   {background:"#dc2626", color:"#fff", border:"none", borderRadius:8, padding:"8px 18px", cursor:"pointer", fontSize:13, fontWeight:700},
   btnDel:  {background:"#fee2e2", color:"#dc2626", border:"none", borderRadius:8, padding:"8px 14px", cursor:"pointer", fontSize:13, fontWeight:700},
+  xBtn:    {position:"absolute", top:1, right:1, background:"#fee2e2", border:"none", color:"#dc2626", borderRadius:3, width:14, height:14, cursor:"pointer", fontSize:8, lineHeight:"14px", textAlign:"center", padding:0},
 };
