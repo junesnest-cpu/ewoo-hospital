@@ -470,7 +470,7 @@ export default function HospitalWardManager() {
           onClose={() => setEditingSlot(null)} />
       )}
       {addingTo?.mode === "current" && (
-        <PatientModal title={`${addingTo.slotKey} 입원 등록`} data={{ name:"", bedPosition:"", discharge:"미정", note:"", scheduleAlert:false }} mode="current" isNew
+        <PatientModal title={`${addingTo.slotKey} 입원 등록`} data={{ name:"", bedPosition:"", admitDate:"", discharge:"미정", note:"", scheduleAlert:false }} mode="current" isNew
           onSave={data => saveCurrentPatient(addingTo.slotKey, data)} onClose={() => setAddingTo(null)} />
       )}
       {addingTo?.mode === "reservation" && (
@@ -784,6 +784,13 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose }) {
             <label style={{ ...S.label, color:"#7c3aed" }}>입원 예정일 ★</label>
             <input style={{ ...S.input, borderColor:"#a78bfa" }} value={form.admitDate||""} onChange={e => setF("admitDate", e.target.value)} placeholder="예: 3/18" />
             <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>M/D 형식 (예: 3/18)</div>
+          </>
+        )}
+        {!isReservation && (
+          <>
+            <label style={S.label}>입원일</label>
+            <input style={S.input} value={form.admitDate||""} onChange={e => setF("admitDate", e.target.value)} placeholder="예: 3/10" />
+            <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>M/D 형식 (예: 3/10) — 치료 일정표 주차 계산에 사용됩니다</div>
           </>
         )}
         <label style={S.label}>환자명</label>
