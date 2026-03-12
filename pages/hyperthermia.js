@@ -412,7 +412,6 @@ function HyperPrintCards({ patients, selected, weekDates }) {
   );
 }
 
-function fmtDate(d) { return `${d.getMonth()+1}/${d.getDate()}`; }
 
 const S = {
   page:    {fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", minHeight:"100vh", display:"flex", flexDirection:"column"},
