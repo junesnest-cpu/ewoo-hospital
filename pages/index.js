@@ -646,6 +646,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
 
 // ── RoomDetailView ────────────────────────────────────────────────────────────
 function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, movingPatient, onStartMove, onMoveTarget, onEditCurrent, onEditReservation, onAddCurrent, onAddReservation, onBack }) {
+  const router = useRouter();
   const { occupied, bedList } = getRoomStats(room.id, room.capacity);
   return (
     <div style={S.detailWrap}>
