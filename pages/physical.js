@@ -294,6 +294,7 @@ export default function PhysicalPage() {
                                     {cell.isPending && <span style={{ fontSize: 9, color: "#f59e0b", marginLeft: 3 }}>예정</span>}
                                   </div>
                                   <div style={{ fontSize: 9, color: tr?.color }}>{tr?.name}</div>
+                                  {cell.roomId && <div style={{ fontSize: 9, color: "#64748b" }}>{cell.roomId}호 {cell.bedNum}번</div>}
                                   <button style={S.xBtn} onClick={e => { e.stopPropagation(); doRemove(th, dayIdx, time); }}>✕</button>
                                 </div>
                               ) : (
@@ -399,14 +400,14 @@ function PrintCards({ patients, selected, weekDates }) {
           body * { visibility: hidden !important; }
           .print-only, .print-only * { visibility: visible !important; }
           .print-only { position:fixed; top:0; left:0; width:100%; background:#fff; z-index:9999; display:block !important; }
-          .pcard { break-inside:avoid; border:1.5px solid #aaa; border-radius:6px; padding:8px 10px; margin-bottom:5px; }
+          .pcard { break-inside:avoid; border:1.5px solid #aaa; border-radius:6px; padding:8px 10px; margin-bottom:10mm; }
         }
       `}</style>
       <div style={{ fontFamily: "'Noto Sans KR',sans-serif", columns: 2, columnGap: "6mm", fontSize: 11 }}>
         {list.map(p => {
           const sorted = [...p.entries].sort((a, b) => a.dayIdx - b.dayIdx || a.time.localeCompare(b.time));
           return (
-            <div key={p.slotKey} className="pcard">
+            <div key={p.slotKey} className="pcard" style={{ marginBottom: "10mm" }}>
               <div style={{ fontWeight: 800, fontSize: 13, borderBottom: "1px solid #ccc", paddingBottom: 4, marginBottom: 5 }}>
                 {p.name}님 <span style={{ fontSize: 9, color: "#888", fontWeight: 400 }}>{p.slotKey}</span>
               </div>
@@ -434,6 +435,9 @@ function PrintCards({ patients, selected, weekDates }) {
                   ))}
                 </tbody>
               </table>
+              <div style={{ marginTop: 6, paddingTop: 5, borderTop: "1px dashed #ccc", fontSize: 9, color: "#555", textAlign: "center" }}>
+                치료 시간에 맞춰 지하 1층 통합치료실로 방문해 주세요.
+              </div>
             </div>
           );
         })}
