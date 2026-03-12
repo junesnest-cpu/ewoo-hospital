@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
@@ -277,7 +277,7 @@ export default function PhysicalPage() {
                       {isLunch && <span style={{ fontSize: 8, display: "block", color: "#94a3b8" }}>점심</span>}
                     </td>
                     {therapists.map((th, ti) => (
-                      <>
+                      <React.Fragment key={ti}>
                         {ti === 1 && <td key="div" style={S.tdDiv} />}
                         {weekDates.map((_, dayIdx) => {
                           if (isLunch) return <td key={`${ti}-${dayIdx}`} style={S.tdLunch}>—</td>;
@@ -302,7 +302,7 @@ export default function PhysicalPage() {
                             </td>
                           );
                         })}
-                      </>
+                      </React.Fragment>
                     ))}
                   </tr>
                 );
