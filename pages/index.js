@@ -406,6 +406,9 @@ export default function HospitalWardManager() {
           <button style={{ ...S.navBtn, background: view==="ward" ? "#1e3a5f":"transparent" }} onClick={() => { setView("ward"); setSelectedRoom(null); }}>병실 현황</button>
           <button style={{ ...S.navBtn, background: view==="log"  ? "#1e3a5f":"transparent" }} onClick={() => setView("log")}>변경 이력</button>
           <button style={{ ...S.navBtn, background:"#065f46", color:"#6ee7b7" }} onClick={() => router.push("/daily")}>📋 일일 치료</button>
+          <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/physical")}>🏃 물리치료</button>
+          <button style={{ ...S.navBtn, background:"#7f1d1d", color:"#fca5a5" }} onClick={() => router.push("/hyperthermia")}>⚡ 고주파치료</button>
+          <button style={{ ...S.navBtn, background:"#334155", color:"#cbd5e1" }} onClick={() => router.push("/settings")}>⚙️ 설정</button>
         </div>
       </header>
 
