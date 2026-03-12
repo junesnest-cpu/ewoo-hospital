@@ -716,7 +716,7 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
                       <button style={S.btnEdit} onClick={() => onEditCurrent(slotKey, { ...b.person })}>수정</button>
                       <button style={{ ...S.btnEdit, background:"#7c3aed" }} onClick={() => onStartMove(slotKey, "current", b.person, undefined)}>🚚 이동</button>
                       <button style={{ ...S.btnEdit, background:"#dc2626", width:"100%", marginTop:2 }}
-                        onClick={() => router.push("/treatment?slotKey=" + encodeURIComponent(slotKey) + "&name=" + encodeURIComponent(b.person.name))}>
+                        onClick={() => router.push("/treatment?slotKey=" + encodeURIComponent(slotKey) + "&name=" + encodeURIComponent(b.person.name) + "&discharge=" + encodeURIComponent(b.person.discharge||"") + "&admitDate=" + encodeURIComponent(b.person.admitDate||""))}>
                         📋 치료 일정표
                       </button>
                     </div>
