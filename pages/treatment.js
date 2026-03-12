@@ -39,6 +39,12 @@ const TREATMENT_GROUPS = [
     ],
   },
   {
+    group: "고압산소치료", color: "#0ea5e9", bg: "#f0f9ff",
+    items: [
+      { id: "hyperbaric", name: "고압산소치료", price: 0 },
+    ],
+  },
+  {
     group: "경구제", color: "#d97706", bg: "#fffbeb",
     items: [
       { id: "meshima",    name: "메시마F",      price: 18000, custom: "qty" },
@@ -190,7 +196,12 @@ export default function TreatmentPage() {
         <button style={TS.btnBack} onClick={() => router.back()}>← 병실로</button>
         <div style={TS.headerCenter}>
           <div style={TS.roomLabel}>{roomId}호 {bedNum}번 병상</div>
-          <div style={TS.patientLabel}>{name || slotKey}님</div>
+          <div style={TS.patientLabel}>
+            {name || slotKey}님
+            <span style={{ fontSize:13, fontWeight:600, color:"#7dd3fc", marginLeft:8, verticalAlign:"middle" }}>
+              ({roomId}호 {bedNum}번 병상)
+            </span>
+          </div>
           {admitDate && <div style={TS.subLabel}>입원일: {admitDate}</div>}
           {discharge && discharge !== "미정" && <div style={{ ...TS.subLabel, color:"#fbbf24" }}>퇴원 예정: {discharge}</div>}
         </div>
