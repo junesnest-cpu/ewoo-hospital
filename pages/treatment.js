@@ -458,7 +458,7 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
     <div className="print-only" style={{ display:"none" }}>
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 12mm 10mm; }
+          @page { size: A4 portrait; margin: 8mm 10mm; }
           body * { visibility: hidden !important; }
           .print-only, .print-only * { visibility: visible !important; }
           .print-only { position: fixed; top: 0; left: 0; width: 100%; background: white; z-index: 9999; display: block !important; }
@@ -467,7 +467,7 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
       <div style={{ fontFamily:"'Noto Sans KR', sans-serif", color:"#000" }}>
 
         {/* 헤더 */}
-        <div style={{ textAlign:"center", marginBottom:12, borderBottom:"2px solid #222", paddingBottom:8 }}>
+        <div style={{ textAlign:"center", marginBottom:8, borderBottom:"2px solid #222", paddingBottom:6 }}>
           <div style={{ fontSize:18, fontWeight:800, letterSpacing:-0.5 }}>치료 일정표</div>
           <div style={{ fontSize:12, fontWeight:600, marginTop:3, color:"#333" }}>
             {roomId}호 {bedNum}번 병상 &nbsp;·&nbsp; {name}님 &nbsp;·&nbsp; {year}년 {month+1}월
@@ -475,11 +475,11 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
         </div>
 
         {/* 달력 */}
-        <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed", height:"calc(100vh - 80px)" }}>
           <thead>
             <tr>
               {DAY_KO.map((d, i) => (
-                <th key={d} style={{ border:"1px solid #bbb", padding:"4px 0", fontSize:11, fontWeight:700, textAlign:"center", background:"#f0f0f0", color: i===0?"#cc0000":i===6?"#0033cc":"#222", width:"14.28%" }}>
+                <th key={d} style={{ border:"1px solid #bbb", padding:"5px 0", fontSize:11, fontWeight:700, textAlign:"center", background:"#f0f0f0", color: i===0?"#cc0000":i===6?"#0033cc":"#222", width:"14.28%" }}>
                   {d}
                 </th>
               ))}
@@ -487,15 +487,15 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
           </thead>
           <tbody>
             {weeks.map((week, wi) => (
-              <tr key={wi}>
+              <tr key={wi} style={{ height: `${Math.floor(100/weeks.length)}%` }}>
                 {week.map((day, di) => {
-                  if (!day) return <td key={di} style={{ border:"1px solid #bbb", verticalAlign:"top", height:70, background:"#fafafa" }} />;
+                  if (!day) return <td key={di} style={{ border:"1px solid #bbb", verticalAlign:"top", background:"#fafafa" }} />;
                   const dow   = (firstDow + day - 1) % 7;
                   const items = monthData[String(day)] || [];
                   return (
-                    <td key={di} style={{ border:"1px solid #bbb", verticalAlign:"top", height:70, padding:"3px 4px", background:"#fff" }}>
+                    <td key={di} style={{ border:"1px solid #bbb", verticalAlign:"top", padding:"4px 5px", background:"#fff" }}>
                       {/* 날짜 숫자 */}
-                      <div style={{ fontSize:11, fontWeight:800, marginBottom:3, color: dow===0?"#cc0000":dow===6?"#0033cc":"#222" }}>
+                      <div style={{ fontSize:12, fontWeight:800, marginBottom:3, color: dow===0?"#cc0000":dow===6?"#0033cc":"#222" }}>
                         {day}
                       </div>
                       {/* 치료 항목 */}
@@ -506,7 +506,7 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                                     : item.custom==="qty"  ? `${item.name} ${e.qty}개`
                                     : item.name;
                         return (
-                          <div key={e.id} style={{ fontSize:8.5, lineHeight:1.4, color:"#111", borderLeft:"2px solid #555", paddingLeft:3, marginBottom:1 }}>
+                          <div key={e.id} style={{ fontSize:9.5, lineHeight:1.5, color:"#111", borderLeft:"2px solid #555", paddingLeft:3, marginBottom:2 }}>
                             {label}
                           </div>
                         );
