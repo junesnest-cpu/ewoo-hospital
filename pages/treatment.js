@@ -215,7 +215,7 @@ export default function TreatmentPage() {
             return (
               <div key={day} style={{ ...TS.dayCell, border: isToday ? "2px solid #0ea5e9" : "1px solid #e2e8f0", background: items.length > 0 ? "#fff" : "#fafafa" }}
                 onClick={() => setModalDay(day)}>
-                <div style={{ ...TS.dayNum, color: dow===0?"#dc2626":dow===6?"#2563eb":"#374151", background: isToday?"#0ea5e9":undefined, color: isToday?"#fff":dow===0?"#dc2626":dow===6?"#2563eb":"#374151" }}>
+                <div style={{ ...TS.dayNum, background: isToday?"#0ea5e9":undefined, color: isToday?"#fff":dow===0?"#dc2626":dow===6?"#2563eb":"#374151" }}>
                   {day}
                 </div>
                 {/* 치료 태그들 */}
