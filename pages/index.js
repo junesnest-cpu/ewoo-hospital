@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/router";
 import { ref, onValue, set, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 
@@ -118,6 +119,7 @@ async function analyzeMessengerText(text) {
 
 // ════════════════════════════════════════════════════════════════════════════════
 export default function HospitalWardManager() {
+  const router = useRouter();
   const [slots,          setSlots]          = useState({});
   const [view,           setView]           = useState("ward");
   const [selectedRoom,   setSelectedRoom]   = useState(null);
@@ -709,9 +711,13 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
                   {b.person.note && <div style={S.bedNote}>{b.person.note}</div>}
                   {b.person.scheduleAlert && <div style={S.scheduleAlert}>⚠ 스케줄 확인 필요</div>}
                   {!isPreview && !movingPatient && b.type === "current" && (
-                    <div style={{ display:"flex", gap:6, marginTop:"auto" }}>
+                    <div style={{ display:"flex", gap:6, marginTop:"auto", flexWrap:"wrap" }}>
                       <button style={S.btnEdit} onClick={() => onEditCurrent(slotKey, { ...b.person })}>수정</button>
                       <button style={{ ...S.btnEdit, background:"#7c3aed" }} onClick={() => onStartMove(slotKey, "current", b.person, undefined)}>🚚 이동</button>
+                      <button style={{ ...S.btnEdit, background:"#dc2626", width:"100%", marginTop:2 }}
+                        onClick={() => router.push("/treatment?slotKey=" + encodeURIComponent(slotKey) + "&name=" + encodeURIComponent(b.person.name))}>
+                        📋 치료 일정표
+                      </button>
                     </div>
                   )}
                 </>
