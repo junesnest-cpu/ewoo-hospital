@@ -163,59 +163,6 @@ export default function HospitalWardManager() {
     return () => { unsubS(); unsubL(); };
   }, []);
 
-  // 자동 입원: slots 로드 후 1회만 실행 (무한루프 방지)
-  const autoAdmitRef = React.useRef(false);
-  useEffect(() => {
-    if (autoAdmitRef.current) return;
-    if (!Object.keys(slots).length) return;
-    autoAdmitRef.current = true;
-
-    const today = dateOnly(new Date());
-    const updated = JSON.parse(JSON.stringify(slots));
-    let changed = false;
-
-    Object.entries(updated).forEach(([slotKey, slot]) => {
-      if (!slot?.reservations?.length) return;
-      const dueTodayIdx = slot.reservations.findIndex(r => {
-        const d = parseDateStr(r.admitDate);
-        return d && dateOnly(d).getTime() <= today.getTime();
-      });
-      if (dueTodayIdx === -1) return;
-      const incoming = slot.reservations[dueTodayIdx];
-
-      if (!slot.current?.name) {
-        // 빈 병상 → 바로 입원
-        const { admitDate: _, ...rest } = incoming;
-        updated[slotKey] = {
-          ...slot,
-          current: rest,
-          reservations: slot.reservations.filter((_, i) => i !== dueTodayIdx),
-        };
-        changed = true;
-      } else {
-        // 기존 환자 있음 → 같은 병실 내 빈 병상 탐색
-        const roomId = slotKey.split("-")[0];
-        for (let bed = 1; bed <= 10; bed++) {
-          const altKey = `${roomId}-${bed}`;
-          if (altKey === slotKey) continue;
-          const altSlot = updated[altKey];
-          if (altSlot && !altSlot.current?.name) {
-            const { admitDate: _, ...rest } = incoming;
-            updated[altKey] = { ...altSlot, current: rest, reservations: altSlot.reservations || [] };
-            updated[slotKey] = { ...slot, reservations: slot.reservations.filter((_, i) => i !== dueTodayIdx) };
-            changed = true;
-            break;
-          }
-        }
-      }
-    });
-
-    if (changed) {
-      setSlots(updated);
-      set(ref(db, "slots"), updated).catch(console.error);
-    }
-  }, [slots]);
-
   const saveSlots = useCallback(async (newS) => {
     setSlots(newS);
     await set(ref(db, "slots"), newS);
