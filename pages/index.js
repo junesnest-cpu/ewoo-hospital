@@ -400,8 +400,7 @@ export default function HospitalWardManager() {
                         { label:"🏥 병실 현황", action:() => setView("ward") },
                         { label:"📜 변경 이력", action:() => setView("log") },
                         { label:"📋 일일 치료", action:() => router.push("/daily") },
-                        { label:"🏃 물리치료", action:() => router.push("/physical") },
-                        { label:"⚡ 고주파치료", action:() => router.push("/hyperthermia") },
+                        { label:"🏥 치료실", action:() => router.push("/therapy") },
                         { label:"⚙️ 설정", action:() => router.push("/settings") },
                         { label:"📋 상담일지", action:() => router.push("/consultation") },
                       ].map(item => (
@@ -453,8 +452,7 @@ export default function HospitalWardManager() {
             <button style={{ ...S.navBtn, background: view==="ward" ? "#1e3a5f":"transparent" }} onClick={() => { setView("ward"); setSelectedRoom(null); }}>병실 현황</button>
             <button style={{ ...S.navBtn, background: view==="log"  ? "#1e3a5f":"transparent" }} onClick={() => setView("log")}>변경 이력</button>
             <button style={{ ...S.navBtn, background:"#065f46", color:"#6ee7b7" }} onClick={() => router.push("/daily")}>📋 일일 치료</button>
-            <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/physical")}>🏃 물리치료</button>
-            <button style={{ ...S.navBtn, background:"#7f1d1d", color:"#fca5a5" }} onClick={() => router.push("/hyperthermia")}>⚡ 고주파치료</button>
+            <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/therapy")}>🏥 치료실</button>
             <button style={{ ...S.navBtn, background:"#334155", color:"#cbd5e1" }} onClick={() => router.push("/settings")}>⚙️ 설정</button>
             <button style={{ ...S.navBtn, background:"#713f12", color:"#fef08a" }} onClick={() => router.push("/consultation")}>📋 상담일지</button>
           </div>
