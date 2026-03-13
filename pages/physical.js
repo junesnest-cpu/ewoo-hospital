@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
+import useIsMobile from "../lib/useIsMobile";
 
 const DAYS  = ["월","화","수","목","금","토","일"];
 const TIMES = ["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00"];
@@ -26,6 +27,8 @@ function fmtDate(d)   { return `${d.getMonth()+1}/${d.getDate()}`; }
 
 export default function PhysicalPage() {
   const router = useRouter();
+  const isMobile = useIsMobile();
+  const [mobileTh, setMobileTh] = useState(0);
   const today  = new Date();
 
   const [weekStart,   setWeekStart]   = useState(() => getWeekStart(today));
@@ -306,21 +309,31 @@ export default function PhysicalPage() {
           }
         </div>
 
-        {/* 시간표: 두 치료사 나란히 */}
+        {/* 모바일 치료사 탭 선택 */}
+        {isMobile && (
+          <div style={{ display:"flex", gap:0, margin:"8px 0", borderRadius:8, overflow:"hidden", border:"1px solid #e2e8f0" }}>
+            {therapists.map((th, i) => (
+              <button key={i} style={{ flex:1, padding:"9px 0", fontSize:13, fontWeight:700, border:"none", cursor:"pointer",
+                background: mobileTh === i ? "#0f4c35" : "#f8fafc", color: mobileTh === i ? "#fff" : "#475569" }}
+                onClick={() => setMobileTh(i)}>{th}</button>
+            ))}
+          </div>
+        )}
+        {/* 시간표: 두 치료사 나란히 (데스크탑) / 한명씩 (모바일) */}
         <div style={S.tableArea}>
-          <table style={S.tbl}>
+          <table style={{ ...S.tbl, minWidth: isMobile ? 380 : 900 }}>
             <colgroup>
-              <col style={{ width: 52 }} />
-              {weekDates.map((_, i) => <col key={`a${i}`} />)}
-              <col style={{ width: 6 }} />
-              {weekDates.map((_, i) => <col key={`b${i}`} />)}
+              <col style={{ width: 48 }} />
+              {(!isMobile || mobileTh === 0) && weekDates.map((_, i) => <col key={`a${i}`} />)}
+              {!isMobile && <col style={{ width: 6 }} />}
+              {(!isMobile || mobileTh === 1) && weekDates.map((_, i) => <col key={`b${i}`} />)}
             </colgroup>
             <thead>
               <tr>
                 <th style={S.thTime} rowSpan={2}>시간</th>
-                <th colSpan={7} style={{ ...S.thTh, background: "#0f4c35" }}>{therapists[0]}</th>
-                <th rowSpan={2} style={S.thDiv} />
-                <th colSpan={7} style={{ ...S.thTh, background: "#1e3a5f" }}>{therapists[1]}</th>
+                {(!isMobile || mobileTh === 0) && <th colSpan={7} style={{ ...S.thTh, background: "#0f4c35" }}>{therapists[0]}</th>}
+                {!isMobile && <th rowSpan={2} style={S.thDiv} />}
+                {(!isMobile || mobileTh === 1) && <th colSpan={7} style={{ ...S.thTh, background: "#1e3a5f" }}>{therapists[1]}</th>}
               </tr>
               <tr>
                 {[0, 1].map(ti =>
@@ -342,9 +355,11 @@ export default function PhysicalPage() {
                       {time}
                       {isLunch && <span style={{ fontSize: 8, display: "block", color: "#94a3b8" }}>점심</span>}
                     </td>
-                    {therapists.map((th, ti) => (
+                    {therapists.map((th, ti) => {
+                      if (isMobile && ti !== mobileTh) return null;
+                      return (
                       <React.Fragment key={ti}>
-                        {ti === 1 && <td key="div" style={S.tdDiv} />}
+                        {ti === 1 && !isMobile && <td key="div" style={S.tdDiv} />}
                         {weekDates.map((_, dayIdx) => {
                           if (isLunch) return <td key={`${ti}-${dayIdx}`} style={S.tdLunch}>—</td>;
                           const cell = getCell(th, dayIdx, time);
@@ -370,7 +385,8 @@ export default function PhysicalPage() {
                           );
                         })}
                       </React.Fragment>
-                    ))}
+                      );
+                    })}
                   </tr>
                 );
               })}
