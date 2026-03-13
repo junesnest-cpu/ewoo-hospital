@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
+import useIsMobile from "../lib/useIsMobile";
 
 const TREATMENT_GROUPS = [
   {
@@ -558,7 +559,7 @@ const TS = {
   totalBar: { background:"#fff", borderBottom:"1px solid #e2e8f0", display:"flex", alignItems:"center", flexWrap:"wrap", gap:16, padding:"10px 20px" },
   totalItem: { fontSize:13, color:"#0f2744", display:"flex", alignItems:"center", gap:4 },
   btnClearCopy: { background:"none", border:"none", color:"#7c3aed", cursor:"pointer", fontSize:13, marginLeft:4 },
-  calWrap: { padding:"14px 14px 0" },
+  calWrap: { padding:"14px 10px 0", overflowX:"auto" },
   calGrid: { display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:3 },
   dowCell: { textAlign:"center", fontSize:12, fontWeight:700, padding:"6px 0" },
   emptyCell: { minHeight:90 },
