@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
-import useIsMobile from "../lib/useIsMobile";
+import useIsMobile from "../lib/useismobile";
 
 const DAYS  = ["월","화","수","목","금","토","일"];
 const TIMES = ["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00"];
