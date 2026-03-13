@@ -98,6 +98,7 @@ function getWeekNumber(admitDateStr, targetDate) {
 
 export default function TreatmentPage() {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const { slotKey, name, discharge, admitDate } = router.query;
 
   const roomId = slotKey ? slotKey.split("-")[0] : "";
@@ -193,25 +194,24 @@ export default function TreatmentPage() {
 
   return (
     <div style={TS.page}>
-      <header style={TS.header}>
-        <button style={TS.btnBack} onClick={() => router.back()}>← 병실로</button>
-        <div style={TS.headerCenter}>
-          <div style={TS.roomLabel}>{roomId}호 {bedNum}번 병상</div>
-          <div style={TS.patientLabel}>
-            {name || slotKey}님
-            <span style={{ fontSize:13, fontWeight:600, color:"#7dd3fc", marginLeft:8, verticalAlign:"middle" }}>
-              ({roomId}호 {bedNum}번 병상)
-            </span>
+      <header style={{ ...TS.header, flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", padding: isMobile ? "10px 14px" : "12px 20px", gap: isMobile ? 6 : 16 }}>
+        {/* 모바일: 상단 한 줄 — 뒤로 + 환자명 + 인쇄 */}
+        <div style={{ display:"flex", alignItems:"center", width:"100%", gap:8 }}>
+          <button style={TS.btnBack} onClick={() => router.back()}>← 병실로</button>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize: isMobile ? 16 : 20, fontWeight:800, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+              {name || slotKey}님
+            </div>
+            <div style={{ fontSize:11, color:"#7dd3fc", fontWeight:600 }}>{roomId}호 {bedNum}번 병상{admitDate ? ` · 입원 ${admitDate}` : ""}{discharge && discharge !== "미정" ? ` · 퇴원 ${discharge}` : ""}</div>
           </div>
-          {admitDate && <div style={TS.subLabel}>입원일: {admitDate}</div>}
-          {discharge && discharge !== "미정" && <div style={{ ...TS.subLabel, color:"#fbbf24" }}>퇴원 예정: {discharge}</div>}
+          <button style={TS.btnPrint} onClick={() => window.print()}>🖨 인쇄</button>
         </div>
-        <div style={TS.monthNav}>
+        {/* 월 네비 */}
+        <div style={{ ...TS.monthNav, width: isMobile ? "100%" : "auto", justifyContent: isMobile ? "center" : "flex-start" }}>
           <button style={TS.btnMonth} onClick={() => { if(month===0){setYear(y=>y-1);setMonth(11);}else setMonth(m=>m-1); }}>‹</button>
           <span style={TS.monthLabel}>{year}년 {month+1}월</span>
           <button style={TS.btnMonth} onClick={() => { if(month===11){setYear(y=>y+1);setMonth(0);}else setMonth(m=>m+1); }}>›</button>
         </div>
-        <button style={TS.btnPrint} onClick={() => window.print()}>🖨 인쇄</button>
       </header>
 
       {/* 합계 바 */}
