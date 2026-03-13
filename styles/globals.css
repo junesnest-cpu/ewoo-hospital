@@ -6,4 +6,24 @@
 
 body {
   background: #f0f4f8;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* 모바일 터치 최적화 */
+button, input, select, textarea {
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 테이블 가로 스크롤 */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 모달이 키보드 올라올 때 대응 */
+@media (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important; /* iOS 자동 줌 방지 */
+  }
 }
