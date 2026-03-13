@@ -29,6 +29,10 @@ export default function PhysicalPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const [mobileTh, setMobileTh] = useState(0);
+  const [mobileDayIdx, setMobileDayIdx] = useState(() => {
+    const today = new Date().getDay();
+    return today === 0 ? 6 : today - 1; // 월=0 ~ 일=6
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const today  = new Date();
 
@@ -314,9 +318,9 @@ export default function PhysicalPage() {
           }
         </div>
 
-        {/* 모바일 치료사 탭 선택 */}
+        {/* 모바일 치료사 탭 */}
         {isMobile && (
-          <div style={{ display:"flex", gap:0, margin:"8px 0", borderRadius:8, overflow:"hidden", border:"1px solid #e2e8f0" }}>
+          <div style={{ display:"flex", gap:0, margin:"8px 0 4px", borderRadius:8, overflow:"hidden", border:"1px solid #e2e8f0" }}>
             {therapists.map((th, i) => (
               <button key={i} style={{ flex:1, padding:"9px 0", fontSize:13, fontWeight:700, border:"none", cursor:"pointer",
                 background: mobileTh === i ? "#0f4c35" : "#f8fafc", color: mobileTh === i ? "#fff" : "#475569" }}
@@ -324,32 +328,67 @@ export default function PhysicalPage() {
             ))}
           </div>
         )}
+        {/* 모바일 요일 탭 */}
+        {isMobile && (
+          <div style={{ display:"flex", gap:0, marginBottom:8, borderRadius:8, overflow:"hidden", border:"1px solid #e2e8f0" }}>
+            {DAYS.map((day, di) => {
+              const date = weekDates[di];
+              const isWeekend = di >= 5;
+              const isSelected = mobileDayIdx === di;
+              const hasCell = TIMES.some(t => getCell(therapists[mobileTh], di, t));
+              return (
+                <button key={di} style={{ flex:1, padding:"6px 2px", fontSize:11, fontWeight:700, border:"none", cursor:"pointer", position:"relative",
+                  background: isSelected ? (isWeekend ? "#1d4ed8" : "#0f4c35") : (isWeekend ? "#eff6ff" : "#f8fafc"),
+                  color: isSelected ? "#fff" : (isWeekend ? "#2563eb" : "#374151") }}
+                  onClick={() => setMobileDayIdx(di)}>
+                  <div>{day}</div>
+                  <div style={{ fontSize:9, fontWeight:400, opacity:0.8 }}>{date ? `${date.getMonth()+1}/${date.getDate()}` : ""}</div>
+                  {hasCell && !isSelected && <div style={{ position:"absolute", top:3, right:3, width:5, height:5, borderRadius:"50%", background:"#f59e0b" }}/>}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {/* 시간표: 두 치료사 나란히 (데스크탑) / 한명씩 (모바일) */}
         <div style={{ ...S.tableArea, overflow: isMobile ? "visible" : "auto" }}>
-          <table style={{ ...S.tbl, minWidth: isMobile ? 380 : 900 }}>
+          <table style={{ ...S.tbl, minWidth: isMobile ? 120 : 900 }}>
             <colgroup>
-              <col style={{ width: 48 }} />
-              {(!isMobile || mobileTh === 0) && weekDates.map((_, i) => <col key={`a${i}`} />)}
-              {!isMobile && <col style={{ width: 6 }} />}
-              {(!isMobile || mobileTh === 1) && weekDates.map((_, i) => <col key={`b${i}`} />)}
+              <col style={{ width: 52 }} />
+              {isMobile
+                ? <col />
+                : (<>
+                    {weekDates.map((_, i) => <col key={`a${i}`} />)}
+                    <col style={{ width: 6 }} />
+                    {weekDates.map((_, i) => <col key={`b${i}`} />)}
+                  </>)
+              }
             </colgroup>
             <thead>
               <tr>
                 <th style={S.thTime} rowSpan={2}>시간</th>
-                {(!isMobile || mobileTh === 0) && <th colSpan={7} style={{ ...S.thTh, background: "#0f4c35" }}>{therapists[0]}</th>}
-                {!isMobile && <th rowSpan={2} style={S.thDiv} />}
-                {(!isMobile || mobileTh === 1) && <th colSpan={7} style={{ ...S.thTh, background: "#1e3a5f" }}>{therapists[1]}</th>}
-              </tr>
-              <tr>
-                {[0, 1].map(ti =>
-                  weekDates.map((date, di) => (
-                    <th key={`${ti}-${di}`} style={{ ...S.thDay, color: di >= 5 ? "#2563eb" : "#374151", background: di >= 5 ? "#eff6ff" : "#f8fafc" }}>
-                      <div style={{ fontSize: 11 }}>{DAYS[di]}</div>
-                      <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 400 }}>{fmtDate(date)}</div>
+                {isMobile
+                  ? <th style={{ ...S.thTh, background: mobileTh === 0 ? "#0f4c35" : "#1e3a5f" }}>
+                      {therapists[mobileTh]} — {DAYS[mobileDayIdx]} ({weekDates[mobileDayIdx] ? `${weekDates[mobileDayIdx].getMonth()+1}/${weekDates[mobileDayIdx].getDate()}` : ""})
                     </th>
-                  ))
-                )}
+                  : (<>
+                      <th colSpan={7} style={{ ...S.thTh, background: "#0f4c35" }}>{therapists[0]}</th>
+                      <th rowSpan={2} style={S.thDiv} />
+                      <th colSpan={7} style={{ ...S.thTh, background: "#1e3a5f" }}>{therapists[1]}</th>
+                    </>)
+                }
               </tr>
+              {!isMobile && (
+                <tr>
+                  {[0, 1].map(ti =>
+                    weekDates.map((date, di) => (
+                      <th key={`${ti}-${di}`} style={{ ...S.thDay, color: di >= 5 ? "#2563eb" : "#374151", background: di >= 5 ? "#eff6ff" : "#f8fafc" }}>
+                        <div style={{ fontSize: 11 }}>{DAYS[di]}</div>
+                        <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 400 }}>{fmtDate(date)}</div>
+                      </th>
+                    ))
+                  )}
+                </tr>
+              )}
             </thead>
             <tbody>
               {TIMES.map(time => {
@@ -365,22 +404,22 @@ export default function PhysicalPage() {
                       return (
                       <React.Fragment key={ti}>
                         {ti === 1 && !isMobile && <td key="div" style={S.tdDiv} />}
-                        {weekDates.map((_, dayIdx) => {
+                        {(isMobile ? [mobileDayIdx] : weekDates.map((_, i) => i)).map(dayIdx => {
                           if (isLunch) return <td key={`${ti}-${dayIdx}`} style={S.tdLunch}>—</td>;
                           const cell = getCell(th, dayIdx, time);
                           const tr   = cell ? PHYS_TREATS.find(t => t.id === cell.treatmentId) : null;
                           return (
                             <td key={`${ti}-${dayIdx}`}
-                              style={{ ...S.tdCell, background: cell ? tr?.bg : "#fff" }}
+                              style={{ ...S.tdCell, background: cell ? tr?.bg : "#fff", minWidth: isMobile ? 120 : undefined }}
                               onClick={() => openModal(th, dayIdx, time)}>
                               {cell ? (
                                 <div style={S.cellIn}>
-                                  <div style={{ fontWeight: 700, fontSize: 11, color: tr?.color, lineHeight: 1.2 }}>
+                                  <div style={{ fontWeight: 700, fontSize: isMobile ? 13 : 11, color: tr?.color, lineHeight: 1.2 }}>
                                     {cell.patientName}
                                     {cell.isPending && <span style={{ fontSize: 9, color: "#f59e0b", marginLeft: 3 }}>예정</span>}
                                   </div>
-                                  <div style={{ fontSize: 9, color: tr?.color }}>{tr?.name}</div>
-                                  {cell.roomId && <div style={{ fontSize: 9, color: "#64748b" }}>{cell.roomId}호 {cell.bedNum}번</div>}
+                                  <div style={{ fontSize: isMobile ? 11 : 9, color: tr?.color }}>{tr?.name}</div>
+                                  {cell.roomId && <div style={{ fontSize: isMobile ? 10 : 9, color: "#64748b" }}>{cell.roomId}호 {cell.bedNum}번</div>}
                                   <button style={S.xBtn} onClick={e => { e.stopPropagation(); doRemove(th, dayIdx, time); }}>✕</button>
                                 </div>
                               ) : (
