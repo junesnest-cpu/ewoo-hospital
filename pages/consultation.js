@@ -137,7 +137,7 @@ export default function ConsultationPage() {
 
   // 필터링된 목록
   const allList = Object.entries(consultations).map(([id,c])=>({id,...c}))
-    .sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
+    .sort((a,b) => (a.createdAt||"").localeCompare(b.createdAt||""));
 
   const months = [...new Set(allList.map(c=>monthKey(c.createdAt)).filter(Boolean))].sort().reverse();
 
@@ -153,6 +153,25 @@ export default function ConsultationPage() {
     }
     return true;
   });
+
+  // 월별 순번 계산 (전체 목록 기준)
+  const monthSeqMap = {};
+  allList.forEach(c => {
+    const mk = monthKey(c.createdAt);
+    if (!mk) return;
+    if (!monthSeqMap[mk]) monthSeqMap[mk] = 0;
+    monthSeqMap[mk]++;
+    c._monthSeq = monthSeqMap[mk];
+  });
+
+  // 표시용: 월 구분선 삽입 위해 이전 카드와 월 비교
+  const filteredWithDivider = filtered.reduce((acc, c, i) => {
+    const mk = monthKey(c.createdAt);
+    const prevMk = i > 0 ? monthKey(filtered[i-1].createdAt) : null;
+    if (mk !== prevMk) acc.push({ _divider: true, monthKey: mk });
+    acc.push(c);
+    return acc;
+  }, []);
 
   // 오늘 이후 입원예약일이 있는 상담 (대기 배지용)
   const pendingAdmits = allList.filter(c => {
@@ -421,43 +440,86 @@ export default function ConsultationPage() {
         {filtered.length === 0 && (
           <div style={{textAlign:"center", color:"#94a3b8", padding:40, fontSize:14}}>상담 기록이 없습니다.</div>
         )}
-        {filtered.map(c=>(
-          <div key={c.id} style={S.card} onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setView("form"); }}>
-            <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:4}}>
-              <span style={{fontSize:16, fontWeight:800, color:"#0f2744"}}>{c.name}</span>
-              {c.birthYear && <span style={{fontSize:12, color:"#64748b"}}>{c.birthYear}년생</span>}
-              {c.age && <span style={{fontSize:12, color:"#64748b"}}>({c.age})</span>}
-              {c.recontact && c.status !== "입원완료" && c.status !== "취소" && (
-                <span style={{fontSize:10, fontWeight:700, borderRadius:5, padding:"2px 7px",
-                  background: c.recontactDate && c.recontactDate < today() ? "#fef2f2" : "#fff7ed",
-                  color: c.recontactDate && c.recontactDate < today() ? "#dc2626" : "#ea580c"}}>
-                  📞{c.recontactDate ? " "+c.recontactDate : " 재연락"}
+        {filteredWithDivider.map((item, idx) => {
+          // 월 구분선
+          if (item._divider) {
+            const totalInMonth = allList.filter(c => monthKey(c.createdAt) === item.monthKey).length;
+            return (
+              <div key={`div-${item.monthKey}`} style={S.monthDivider}>
+                <span style={S.monthDividerLabel}>{korMonth(item.monthKey)}</span>
+                <span style={S.monthDividerCount}>{totalInMonth}건</span>
+                <div style={S.monthDividerLine}/>
+              </div>
+            );
+          }
+          const c = item;
+          const hasAdmit = !!(c.admitDate);
+          const isReserved = c.status === "예약완료" || c.reservedSlot;
+          const isAdmitted = c.status === "입원완료";
+
+          let cardStyle = { ...S.card };
+          if (isAdmitted) {
+            cardStyle = { ...cardStyle, background:"#f0fdf4", border:"1.5px solid #86efac", boxShadow:"0 2px 10px rgba(16,185,129,0.12)" };
+          } else if (isReserved) {
+            cardStyle = { ...cardStyle, background:"#eff6ff", border:"1.5px solid #93c5fd", boxShadow:"0 2px 10px rgba(59,130,246,0.12)" };
+          } else if (hasAdmit) {
+            cardStyle = { ...cardStyle, background:"#fefce8", border:"1.5px solid #fde68a", boxShadow:"0 2px 8px rgba(245,158,11,0.1)" };
+          }
+
+          return (
+            <div key={c.id} style={cardStyle} onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setView("form"); }}>
+              {/* 이름 + 순번 + 상태 */}
+              <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:5}}>
+                {c._monthSeq && (
+                  <span style={{ fontSize:10, fontWeight:800, borderRadius:5, padding:"2px 7px", minWidth:28, textAlign:"center",
+                    background: isAdmitted?"#10b981":isReserved?"#3b82f6":"#94a3b8", color:"#fff" }}>
+                    {c._monthSeq}
+                  </span>
+                )}
+                <span style={{fontSize:16, fontWeight:800, color: isAdmitted?"#065f46":isReserved?"#1e40af":"#0f2744"}}>{c.name}</span>
+                {c.birthYear && <span style={{fontSize:12, color:"#64748b"}}>{c.birthYear}년생</span>}
+                {c.age && <span style={{fontSize:12, color:"#64748b"}}>({c.age})</span>}
+                {c.recontact && c.status !== "입원완료" && c.status !== "취소" && (
+                  <span style={{fontSize:10, fontWeight:700, borderRadius:5, padding:"2px 7px",
+                    background: c.recontactDate && c.recontactDate < today() ? "#fef2f2" : "#fff7ed",
+                    color: c.recontactDate && c.recontactDate < today() ? "#dc2626" : "#ea580c"}}>
+                    📞{c.recontactDate ? " "+c.recontactDate : " 재연락"}
+                  </span>
+                )}
+                <span style={{marginLeft:"auto", fontSize:11, fontWeight:700, borderRadius:6, padding:"2px 8px",
+                  background: statusColor[c.status]+"33", color: statusColor[c.status]}}>
+                  {c.status||"상담중"}
                 </span>
-              )}
-              <span style={{marginLeft:"auto", fontSize:11, fontWeight:700, borderRadius:6, padding:"2px 8px",
-                background: statusColor[c.status]+"22", color: statusColor[c.status]}}>
-                {c.status||"상담중"}
-              </span>
+              </div>
+              {/* 연락처 + 진단 + 병원 */}
+              <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:5}}>
+                {c.phone && <span style={S.tag}>📞 {c.phone}{c.phoneNote ? ` (${c.phoneNote})`:""}</span>}
+                {c.diagnosis && <span style={{...S.tag, fontWeight:600}}>{c.diagnosis}</span>}
+                {c.hospital && <span style={S.tag}>🏨 {c.hospital}</span>}
+              </div>
+              {/* 입원 + 병실 + 치료 */}
+              <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center"}}>
+                {hasAdmit && (
+                  <span style={{...S.tag,
+                    background: isAdmitted?"#bbf7d0":isReserved?"#bfdbfe":"#fef08a",
+                    color: isAdmitted?"#065f46":isReserved?"#1d4ed8":"#92400e",
+                    fontWeight:700}}>
+                    📅 {fmtDate(c.admitDate)} 입원{isAdmitted?"완료":isReserved?"예약":"예정"}
+                  </span>
+                )}
+                {c.roomTypes?.map(rt=>(
+                  <span key={rt} style={{...S.tag, background:TYPE_BG[rt], color:TYPE_COLOR[rt]}}>{rt}</span>
+                ))}
+                {c.surgery && <span style={{...S.tag, background:"#fef2f2", color:"#dc2626"}}>수술{c.surgeryDate?" "+fmtDate(c.surgeryDate):""}</span>}
+                {c.chemo && <span style={{...S.tag, background:"#fff7ed", color:"#ea580c"}}>항암{c.chemoDate?" "+fmtDate(c.chemoDate):""}</span>}
+                {c.radiation && <span style={{...S.tag, background:"#faf5ff", color:"#9333ea"}}>방사선</span>}
+                <span style={{marginLeft:"auto", fontSize:10, color:"#94a3b8"}}>{c.createdAt}</span>
+              </div>
+              {c.memo && <div style={{marginTop:6, fontSize:12, color:"#475569", background:"rgba(0,0,0,0.03)", borderRadius:6, padding:"5px 8px", lineHeight:1.5}}>{c.memo}</div>}
+              {c.reservedSlot && <div style={{marginTop:4, fontSize:11, color:"#059669", fontWeight:700}}>✅ {c.reservedSlot} 병상 배정완료</div>}
             </div>
-            <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:4}}>
-              {c.phone && <span style={S.tag}>📞 {c.phone}{c.phoneNote ? ` (${c.phoneNote})`:""}</span>}
-              {c.diagnosis && <span style={S.tag}>🔬 {c.diagnosis}</span>}
-              {c.hospital && <span style={S.tag}>🏨 {c.hospital}</span>}
-            </div>
-            <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center"}}>
-              {c.admitDate && <span style={{...S.tag, background:"#dbeafe", color:"#1d4ed8"}}>📅 {fmtDate(c.admitDate)} 입원예정</span>}
-              {c.roomTypes?.map(rt=>(
-                <span key={rt} style={{...S.tag, background:TYPE_BG[rt], color:TYPE_COLOR[rt]}}>{rt}</span>
-              ))}
-              {c.surgery && <span style={{...S.tag, background:"#fef2f2", color:"#dc2626"}}>수술 {c.surgeryDate?fmtDate(c.surgeryDate):""}</span>}
-              {c.chemo && <span style={{...S.tag, background:"#fff7ed", color:"#ea580c"}}>항암 {c.chemoDate?fmtDate(c.chemoDate):""}</span>}
-              {c.radiation && <span style={{...S.tag, background:"#faf5ff", color:"#9333ea"}}>방사선 {c.radiationDate?fmtDate(c.radiationDate):""}</span>}
-              <span style={{marginLeft:"auto", fontSize:10, color:"#94a3b8"}}>{c.createdAt}</span>
-            </div>
-            {c.memo && <div style={{marginTop:6, fontSize:12, color:"#475569", background:"#f8fafc", borderRadius:6, padding:"4px 8px"}}>{c.memo}</div>}
-            {c.reservedSlot && <div style={{marginTop:4, fontSize:11, color:"#059669", fontWeight:700}}>✅ {c.reservedSlot} 예약등록 완료</div>}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* 예약 등록 모달 */}
@@ -550,4 +612,10 @@ const S = {
   // modal
   overlay: { position:"fixed", inset:0, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 },
   modal: { background:"#fff", borderRadius:14, padding:"20px", width:"100%", maxWidth:440, maxHeight:"88vh", overflowY:"auto", boxShadow:"0 8px 40px rgba(0,0,0,0.2)" },
+
+  // 월 구분선
+  monthDivider: { display:"flex", alignItems:"center", gap:10, margin:"6px 0 2px", padding:"0 2px" },
+  monthDividerLabel: { fontSize:14, fontWeight:900, color:"#0f2744", whiteSpace:"nowrap", letterSpacing:-0.5 },
+  monthDividerCount: { fontSize:11, fontWeight:700, color:"#fff", background:"#94a3b8", borderRadius:10, padding:"1px 8px", whiteSpace:"nowrap" },
+  monthDividerLine: { flex:1, height:1, background:"#e2e8f0" },
 };
