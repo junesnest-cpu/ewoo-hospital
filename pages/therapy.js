@@ -142,6 +142,10 @@ export default function TherapyPage() {
     if(!nxt[cWk][th])     nxt[cWk][th]={};
     if(!nxt[cWk][th][di]) nxt[cWk][th][di]={};
     if(data===null) delete nxt[cWk][th][di][time]; else nxt[cWk][th][di][time]=data;
+    // 빈 객체 정리 (커스텀 시간 행 자동 제거)
+    if(data===null){
+      if(Object.keys(nxt[cWk][th][di]||{}).length===0) delete nxt[cWk][th][di];
+    }
     physRef.current=nxt; setPhysSched(nxt);
     await set(ref(db,`physicalSchedule/${cWk}`),nxt[cWk]||{});
     if(data?.slotKey&&data?.treatmentId){
@@ -164,11 +168,17 @@ export default function TherapyPage() {
       if(!nxt[cWk][roomType][di][time]) nxt[cWk][roomType][di][time]={};
       if(data===null) delete nxt[cWk][roomType][di][time][hbSlot];
       else nxt[cWk][roomType][di][time][hbSlot]=data;
+      // a/b 모두 비면 time 키도 삭제
+      if(data===null && Object.keys(nxt[cWk][roomType][di][time]||{}).length===0)
+        delete nxt[cWk][roomType][di][time];
     } else {
       old=hyperRef.current[cWk]?.[roomType]?.[di]?.[time]||null;
       if(data===null) delete nxt[cWk][roomType][di][time];
       else nxt[cWk][roomType][di][time]=data;
     }
+    // 빈 dayIdx 정리 (커스텀 시간 행 자동 제거)
+    if(data===null && Object.keys(nxt[cWk]?.[roomType]?.[di]||{}).length===0)
+      delete nxt[cWk][roomType][di];
     hyperRef.current=nxt; setHyperSched(nxt);
     await set(ref(db,`hyperthermiaSchedule/${cWk}`),nxt[cWk]||{});
     const tid=roomType==="hyperthermia"?"hyperthermia":"hyperbaric";
