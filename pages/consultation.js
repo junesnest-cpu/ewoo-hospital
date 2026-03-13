@@ -137,7 +137,7 @@ export default function ConsultationPage() {
 
   // 필터링된 목록
   const allList = Object.entries(consultations).map(([id,c])=>({id,...c}))
-    .sort((a,b) => (a.createdAt||"").localeCompare(b.createdAt||""));
+    .sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
 
   const months = [...new Set(allList.map(c=>monthKey(c.createdAt)).filter(Boolean))].sort().reverse();
 
@@ -146,10 +146,11 @@ export default function ConsultationPage() {
     if (filterStatus !== "전체" && c.status !== filterStatus) return false;
     if (search) {
       const q = search.toLowerCase();
-      if (!(c.name||"").toLowerCase().includes(q) &&
-          !(c.phone||"").includes(q) &&
-          !(c.diagnosis||"").toLowerCase().includes(q) &&
-          !(c.hospital||"").toLowerCase().includes(q)) return false;
+      const all = [c.name,c.phone,c.phoneNote,c.diagnosis,c.hospital,c.birthYear,
+                   c.age,c.memo,c.recontactMemo,c.route,c.reservedSlot,
+                   c.surgeryDate,c.chemoDate,c.admitDate]
+        .filter(Boolean).join(" ").toLowerCase();
+      if (!all.includes(q)) return false;
     }
     return true;
   });
