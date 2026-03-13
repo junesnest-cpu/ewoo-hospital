@@ -136,8 +136,22 @@ export default function ConsultationPage() {
   };
 
   // 필터링된 목록
-  const allList = Object.entries(consultations).map(([id,c])=>({id,...c}))
-    .sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
+  // 순번 계산용: 오래된 순(오름차순) - 이달 1번이 가장 먼저 전화온 사람
+  const allListAsc = Object.entries(consultations).map(([id,c])=>({id,...c}))
+    .sort((a,b) => (a.createdAt||"").localeCompare(b.createdAt||""));
+
+  // 월별 순번 계산 (오름차순 기준 → 1번 = 이달 첫 상담)
+  const monthSeqMap = {};
+  allListAsc.forEach(c => {
+    const mk = monthKey(c.createdAt);
+    if (!mk) return;
+    if (!monthSeqMap[mk]) monthSeqMap[mk] = 0;
+    monthSeqMap[mk]++;
+    c._monthSeq = monthSeqMap[mk];
+  });
+
+  // 화면 표시용: 최신순(내림차순) — 최근 상담이 위에
+  const allList = [...allListAsc].sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
 
   const months = [...new Set(allList.map(c=>monthKey(c.createdAt)).filter(Boolean))].sort().reverse();
 
@@ -153,16 +167,6 @@ export default function ConsultationPage() {
       if (!all.includes(q)) return false;
     }
     return true;
-  });
-
-  // 월별 순번 계산 (전체 목록 기준)
-  const monthSeqMap = {};
-  allList.forEach(c => {
-    const mk = monthKey(c.createdAt);
-    if (!mk) return;
-    if (!monthSeqMap[mk]) monthSeqMap[mk] = 0;
-    monthSeqMap[mk]++;
-    c._monthSeq = monthSeqMap[mk];
   });
 
   // 표시용: 월 구분선 삽입 위해 이전 카드와 월 비교
