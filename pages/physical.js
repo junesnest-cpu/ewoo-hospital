@@ -46,14 +46,21 @@ export default function PhysicalPage() {
   // 인쇄
   const [printMode,   setPrintMode]   = useState(false);
   const [printSel,    setPrintSel]    = useState({});
-  const scheduleRef = React.useRef({});
+  const scheduleRef   = React.useRef({});
+  const treatPlansRef = React.useRef({});
 
   const wk        = weekKey(weekStart);
+  const weekStartRef = React.useRef(weekStart);
+  React.useEffect(() => { weekStartRef.current = weekStart; }, [weekStart]);
   const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   useEffect(() => {
     const u1 = onValue(ref(db, "slots"),            s => setSlots(s.val() || {}));
-    const u2 = onValue(ref(db, "treatmentPlans"),   s => setTreatPlans(s.val() || {}));
+    const u2 = onValue(ref(db, "treatmentPlans"), s => {
+      const v = s.val() || {};
+      setTreatPlans(v);
+      treatPlansRef.current = v;
+    });
     const u3 = onValue(ref(db, "physicalSchedule"), s => {
       const v = s.val() || {};
       setSchedule(v);
@@ -72,17 +79,60 @@ export default function PhysicalPage() {
     schedule[wk]?.[th]?.[dayIdx]?.[time] || null,
   [schedule, wk]);
 
-  const saveCell = useCallback(async (th, dayIdx, time, data) => {
+  const saveCellAndSync = useCallback(async (th, dayIdx, time, data) => {
+    const currentWk = weekKey(weekStartRef.current);
+
+    // 1. 삭제 전에 기존 셀 데이터 먼저 저장 (삭제 후엔 찾을 수 없음)
+    const oldCell = scheduleRef.current[currentWk]?.[th]?.[dayIdx]?.[time] || null;
+
+    // 2. physicalSchedule 업데이트
     const nxt = JSON.parse(JSON.stringify(scheduleRef.current));
-    if (!nxt[wk])             nxt[wk] = {};
-    if (!nxt[wk][th])         nxt[wk][th] = {};
-    if (!nxt[wk][th][dayIdx]) nxt[wk][th][dayIdx] = {};
-    if (data === null) delete nxt[wk][th][dayIdx][time];
-    else               nxt[wk][th][dayIdx][time] = data;
+    if (!nxt[currentWk])             nxt[currentWk] = {};
+    if (!nxt[currentWk][th])         nxt[currentWk][th] = {};
+    if (!nxt[currentWk][th][dayIdx]) nxt[currentWk][th][dayIdx] = {};
+    if (data === null) delete nxt[currentWk][th][dayIdx][time];
+    else               nxt[currentWk][th][dayIdx][time] = data;
     scheduleRef.current = nxt;
     setSchedule(nxt);
-    await set(ref(db, `physicalSchedule/${wk}`), nxt[wk] || {});
-  }, [wk]);
+    await set(ref(db, `physicalSchedule/${currentWk}`), nxt[currentWk] || {});
+
+    // 3. treatmentPlans 역방향 연동
+    if (data?.slotKey && data?.treatmentId) {
+      // 등록: treatmentPlans에 추가
+      // 기존 셀에 다른 환자가 있었다면 그 환자 것은 먼저 제거
+      if (oldCell?.slotKey && oldCell?.treatmentId &&
+          (oldCell.slotKey !== data.slotKey || oldCell.treatmentId !== data.treatmentId)) {
+        await syncToTreatmentPlan(oldCell.slotKey, dayIdx, oldCell.treatmentId, "remove");
+      }
+      await syncToTreatmentPlan(data.slotKey, dayIdx, data.treatmentId, "add");
+    } else if (data === null && oldCell?.slotKey && oldCell?.treatmentId) {
+      // 삭제: treatmentPlans에서 제거
+      await syncToTreatmentPlan(oldCell.slotKey, dayIdx, oldCell.treatmentId, "remove");
+    }
+  }, []);
+
+  const syncToTreatmentPlan = useCallback(async (slotKey, dayIdx, treatmentId, action) => {
+    const date  = addDays(weekStartRef.current, dayIdx);
+    const mKey  = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
+    const dKey  = String(date.getDate());
+    const tp    = JSON.parse(JSON.stringify(treatPlansRef.current));
+    if (!tp[slotKey])         tp[slotKey] = {};
+    if (!tp[slotKey][mKey])   tp[slotKey][mKey] = {};
+    const existing = tp[slotKey][mKey][dKey] || [];
+    if (action === "add") {
+      if (!existing.some(e => e.id === treatmentId)) {
+        tp[slotKey][mKey][dKey] = [...existing, { id: treatmentId, qty: "1" }];
+      }
+    } else {
+      tp[slotKey][mKey][dKey] = existing.filter(e => e.id !== treatmentId);
+    }
+    treatPlansRef.current = tp;
+    setTreatPlans(tp);
+    await set(ref(db, `treatmentPlans/${slotKey}/${mKey}/${dKey}`), tp[slotKey][mKey][dKey]);
+  }, []);
+
+  // saveCell은 alias로 유지
+  const saveCell = saveCellAndSync;
 
   // 대기 환자: 해당 주 치료계획에 물리치료 있고 미배정
   const pendingPatients = (() => {
@@ -165,6 +215,12 @@ export default function PhysicalPage() {
 
   const doRemove = async (th, dayIdx, time) => {
     if (!confirm("삭제하시겠습니까?")) return;
+    // 삭제 전 기존 cell 정보로 treatmentPlan에서도 제거
+    const currentWk = weekKey(weekStartRef.current);
+    const oldCell = scheduleRef.current[currentWk]?.[th]?.[dayIdx]?.[time];
+    if (oldCell?.slotKey && oldCell?.treatmentId) {
+      await syncToTreatmentPlan(oldCell.slotKey, dayIdx, oldCell.treatmentId, "remove");
+    }
     await saveCell(th, dayIdx, time, null);
   };
 
