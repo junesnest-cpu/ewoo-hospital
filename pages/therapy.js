@@ -91,36 +91,36 @@ export default function TherapyPage() {
 
   // ── 셀 조회 ────────────────────────────────────────────────────────────────
   const getCell=useCallback((roomId,dayIdx,time)=>{
+    const di=String(dayIdx);
     if(roomId==="th1"||roomId==="th2"){
       const th=roomId==="th1"?therapists[0]:therapists[1];
-      return physSched[wk]?.[th]?.[dayIdx]?.[time]||null;
+      return physSched[wk]?.[th]?.[di]?.[time]||null;
     }
-    if(roomId==="hyperbaric") return null; // 고압산소는 getHBCell 사용
-    return hyperSched[wk]?.[roomId]?.[dayIdx]?.[time]||null;
+    if(roomId==="hyperbaric") return null;
+    return hyperSched[wk]?.[roomId]?.[di]?.[time]||null;
   },[physSched,hyperSched,wk,therapists]);
 
   // 고압산소: a=정시, b=+30분
   const getHBCell=useCallback((dayIdx,time,slot)=>
-    hyperSched[wk]?.["hyperbaric"]?.[dayIdx]?.[time]?.[slot]||null,
+    hyperSched[wk]?.["hyperbaric"]?.[String(dayIdx)]?.[time]?.[slot]||null,
   [hyperSched,wk]);
 
   // ── 동적 시간 목록 (커스텀 시간 포함) ────────────────────────────────────
   const getAllTimes=useCallback((dayIdx)=>{
+    const di=String(dayIdx);
     const set_=new Set(TIMES);
-    // physicalSchedule에서 커스텀 시간 수집
     therapists.forEach(th=>{
-      Object.keys(physSched[wk]?.[th]?.[dayIdx]||{}).forEach(t=>set_.add(t));
+      Object.keys(physSched[wk]?.[th]?.[di]||{}).forEach(t=>set_.add(t));
     });
-    // hyperthermiaSchedule에서 커스텀 시간 수집
     ["hyperthermia","hyperbaric"].forEach(rt=>{
-      Object.keys(hyperSched[wk]?.[rt]?.[dayIdx]||{}).forEach(t=>set_.add(t));
+      Object.keys(hyperSched[wk]?.[rt]?.[di]||{}).forEach(t=>set_.add(t));
     });
     return Array.from(set_).sort((a,b)=>timeVal(a)-timeVal(b));
   },[physSched,hyperSched,wk,therapists]);
 
   // ── treatmentPlan 동기화 ────────────────────────────────────────────────────
   const syncTreat=useCallback(async(slotKey,dayIdx,treatmentId,action)=>{
-    const date=addDays(weekStartRef.current,dayIdx);
+    const date=addDays(weekStartRef.current,parseInt(dayIdx));
     const mKey=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
     const dKey=String(date.getDate());
     const tp=JSON.parse(JSON.stringify(treatRef.current));
@@ -135,43 +135,45 @@ export default function TherapyPage() {
   // ── 물리치료 저장 ───────────────────────────────────────────────────────────
   const savePhys=useCallback(async(th,dayIdx,time,data)=>{
     const cWk=weekKey(weekStartRef.current);
-    const old=physRef.current[cWk]?.[th]?.[dayIdx]?.[time]||null;
+    const di=String(dayIdx);
+    const old=physRef.current[cWk]?.[th]?.[di]?.[time]||null;
     const nxt=JSON.parse(JSON.stringify(physRef.current));
-    if(!nxt[cWk])             nxt[cWk]={};
-    if(!nxt[cWk][th])         nxt[cWk][th]={};
-    if(!nxt[cWk][th][dayIdx]) nxt[cWk][th][dayIdx]={};
-    if(data===null) delete nxt[cWk][th][dayIdx][time]; else nxt[cWk][th][dayIdx][time]=data;
+    if(!nxt[cWk])         nxt[cWk]={};
+    if(!nxt[cWk][th])     nxt[cWk][th]={};
+    if(!nxt[cWk][th][di]) nxt[cWk][th][di]={};
+    if(data===null) delete nxt[cWk][th][di][time]; else nxt[cWk][th][di][time]=data;
     physRef.current=nxt; setPhysSched(nxt);
     await set(ref(db,`physicalSchedule/${cWk}`),nxt[cWk]||{});
     if(data?.slotKey&&data?.treatmentId){
-      if(old?.slotKey&&old?.treatmentId&&(old.slotKey!==data.slotKey||old.treatmentId!==data.treatmentId)) await syncTreat(old.slotKey,dayIdx,old.treatmentId,"remove");
-      await syncTreat(data.slotKey,dayIdx,data.treatmentId,"add");
-    } else if(data===null&&old?.slotKey&&old?.treatmentId){ await syncTreat(old.slotKey,dayIdx,old.treatmentId,"remove"); }
+      if(old?.slotKey&&old?.treatmentId&&(old.slotKey!==data.slotKey||old.treatmentId!==data.treatmentId)) await syncTreat(old.slotKey,di,old.treatmentId,"remove");
+      await syncTreat(data.slotKey,di,data.treatmentId,"add");
+    } else if(data===null&&old?.slotKey&&old?.treatmentId){ await syncTreat(old.slotKey,di,old.treatmentId,"remove"); }
   },[syncTreat]);
 
   // ── 고주파 저장 (hyperbaric: hbSlot="a"|"b") ────────────────────────────────
   const saveHyper=useCallback(async(roomType,dayIdx,time,data,hbSlot)=>{
     const cWk=weekKey(weekStartRef.current);
+    const di=String(dayIdx);
     const nxt=JSON.parse(JSON.stringify(hyperRef.current));
-    if(!nxt[cWk])                   nxt[cWk]={};
-    if(!nxt[cWk][roomType])         nxt[cWk][roomType]={};
-    if(!nxt[cWk][roomType][dayIdx]) nxt[cWk][roomType][dayIdx]={};
+    if(!nxt[cWk])              nxt[cWk]={};
+    if(!nxt[cWk][roomType])    nxt[cWk][roomType]={};
+    if(!nxt[cWk][roomType][di])nxt[cWk][roomType][di]={};
     let old=null;
     if(roomType==="hyperbaric"&&hbSlot){
-      old=hyperRef.current[cWk]?.[roomType]?.[dayIdx]?.[time]?.[hbSlot]||null;
-      if(!nxt[cWk][roomType][dayIdx][time]) nxt[cWk][roomType][dayIdx][time]={};
-      if(data===null) delete nxt[cWk][roomType][dayIdx][time][hbSlot];
-      else nxt[cWk][roomType][dayIdx][time][hbSlot]=data;
+      old=hyperRef.current[cWk]?.[roomType]?.[di]?.[time]?.[hbSlot]||null;
+      if(!nxt[cWk][roomType][di][time]) nxt[cWk][roomType][di][time]={};
+      if(data===null) delete nxt[cWk][roomType][di][time][hbSlot];
+      else nxt[cWk][roomType][di][time][hbSlot]=data;
     } else {
-      old=hyperRef.current[cWk]?.[roomType]?.[dayIdx]?.[time]||null;
-      if(data===null) delete nxt[cWk][roomType][dayIdx][time];
-      else nxt[cWk][roomType][dayIdx][time]=data;
+      old=hyperRef.current[cWk]?.[roomType]?.[di]?.[time]||null;
+      if(data===null) delete nxt[cWk][roomType][di][time];
+      else nxt[cWk][roomType][di][time]=data;
     }
     hyperRef.current=nxt; setHyperSched(nxt);
     await set(ref(db,`hyperthermiaSchedule/${cWk}`),nxt[cWk]||{});
     const tid=roomType==="hyperthermia"?"hyperthermia":"hyperbaric";
-    if(data?.slotKey){ if(old?.slotKey&&old.slotKey!==data.slotKey) await syncTreat(old.slotKey,dayIdx,tid,"remove"); await syncTreat(data.slotKey,dayIdx,tid,"add"); }
-    else if(data===null&&old?.slotKey){ await syncTreat(old.slotKey,dayIdx,tid,"remove"); }
+    if(data?.slotKey){ if(old?.slotKey&&old.slotKey!==data.slotKey) await syncTreat(old.slotKey,di,tid,"remove"); await syncTreat(data.slotKey,di,tid,"add"); }
+    else if(data===null&&old?.slotKey){ await syncTreat(old.slotKey,di,tid,"remove"); }
   },[syncTreat]);
 
   // ── 모달 열기 ───────────────────────────────────────────────────────────────
@@ -209,9 +211,10 @@ export default function TherapyPage() {
     if(!confirm("삭제하시겠습니까?")) return;
     const th=roomId==="th1"?therapists[0]:therapists[1];
     const cWk=weekKey(weekStartRef.current);
-    const old=physRef.current[cWk]?.[th]?.[dayIdx]?.[time];
-    if(old?.slotKey&&old?.treatmentId) await syncTreat(old.slotKey,dayIdx,old.treatmentId,"remove");
-    await savePhys(th,dayIdx,time,null);
+    const di=String(dayIdx);
+    const old=physRef.current[cWk]?.[th]?.[di]?.[time];
+    if(old?.slotKey&&old?.treatmentId) await syncTreat(old.slotKey,di,old.treatmentId,"remove");
+    await savePhys(th,di,time,null);
   };
 
   // ── 고주파/고압산소 등록 ────────────────────────────────────────────────────
