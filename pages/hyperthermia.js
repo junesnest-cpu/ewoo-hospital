@@ -33,7 +33,8 @@ export default function HyperthermiaPage() {
   const [slots,        setSlots]        = useState({});
   const [treatPlans,   setTreatPlans]   = useState({});
   const [operatorName, setOperatorName] = useState("운용기사");
-  const scheduleRef = React.useRef({});
+  const scheduleRef   = React.useRef({});
+  const treatPlansRef = React.useRef({});
 
   // 모달: 클릭한 셀 (dayIdx, time) — 두 치료 동시 편집
   const [modal,     setModal]     = useState(null);
@@ -47,11 +48,17 @@ export default function HyperthermiaPage() {
   const [printSel,  setPrintSel]  = useState({});
 
   const wk        = weekKey(weekStart);
+  const weekStartRef = React.useRef(weekStart);
+  React.useEffect(() => { weekStartRef.current = weekStart; }, [weekStart]);
   const weekDates = Array.from({length:7}, (_,i) => addDays(weekStart, i));
 
   useEffect(() => {
     const u1 = onValue(ref(db,"slots"),                 s => setSlots(s.val()||{}));
-    const u2 = onValue(ref(db,"treatmentPlans"),        s => setTreatPlans(s.val()||{}));
+    const u2 = onValue(ref(db,"treatmentPlans"), s => {
+      const v = s.val()||{};
+      setTreatPlans(v);
+      treatPlansRef.current = v;
+    });
     const u3 = onValue(ref(db,"hyperthermiaSchedule"), s => {
       const v = s.val()||{};
       setSchedule(v);
@@ -70,16 +77,56 @@ export default function HyperthermiaPage() {
   [schedule, wk]);
 
   const saveCell = useCallback(async (roomType, dayIdx, time, data) => {
+    const currentWk = weekKey(weekStartRef.current);
+
+    // 1. 삭제 전 기존 셀 저장
+    const oldCell = scheduleRef.current[currentWk]?.[roomType]?.[dayIdx]?.[time] || null;
+
+    // 2. hyperthermiaSchedule 업데이트
     const nxt = JSON.parse(JSON.stringify(scheduleRef.current));
-    if (!nxt[wk])               nxt[wk]={};
-    if (!nxt[wk][roomType])     nxt[wk][roomType]={};
-    if (!nxt[wk][roomType][dayIdx]) nxt[wk][roomType][dayIdx]={};
-    if (data===null) delete nxt[wk][roomType][dayIdx][time];
-    else             nxt[wk][roomType][dayIdx][time]=data;
+    if (!nxt[currentWk])                        nxt[currentWk]={};
+    if (!nxt[currentWk][roomType])              nxt[currentWk][roomType]={};
+    if (!nxt[currentWk][roomType][dayIdx])      nxt[currentWk][roomType][dayIdx]={};
+    if (data===null) delete nxt[currentWk][roomType][dayIdx][time];
+    else             nxt[currentWk][roomType][dayIdx][time]=data;
     scheduleRef.current = nxt;
     setSchedule(nxt);
-    await set(ref(db,`hyperthermiaSchedule/${wk}`), nxt[wk]||{});
-  }, [wk]);
+    await set(ref(db,`hyperthermiaSchedule/${currentWk}`), nxt[currentWk]||{});
+
+    // 3. treatmentPlans 역방향 연동
+    // roomType별 치료 ID 매핑
+    const treatId = roomType === "hyperthermia" ? "hyperthermia" : "hyperbaric";
+
+    if (data?.slotKey) {
+      // 기존에 다른 환자가 있었다면 제거
+      if (oldCell?.slotKey && oldCell.slotKey !== data.slotKey) {
+        await syncToTreatmentPlan(oldCell.slotKey, dayIdx, treatId, "remove");
+      }
+      await syncToTreatmentPlan(data.slotKey, dayIdx, treatId, "add");
+    } else if (data === null && oldCell?.slotKey) {
+      await syncToTreatmentPlan(oldCell.slotKey, dayIdx, treatId, "remove");
+    }
+  }, []);
+
+  const syncToTreatmentPlan = useCallback(async (slotKey, dayIdx, treatmentId, action) => {
+    const date = addDays(weekStartRef.current, dayIdx);
+    const mKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
+    const dKey = String(date.getDate());
+    const tp   = JSON.parse(JSON.stringify(treatPlansRef.current));
+    if (!tp[slotKey])       tp[slotKey] = {};
+    if (!tp[slotKey][mKey]) tp[slotKey][mKey] = {};
+    const existing = tp[slotKey][mKey][dKey] || [];
+    if (action === "add") {
+      if (!existing.some(e => e.id === treatmentId)) {
+        tp[slotKey][mKey][dKey] = [...existing, { id: treatmentId, qty: "1" }];
+      }
+    } else {
+      tp[slotKey][mKey][dKey] = existing.filter(e => e.id !== treatmentId);
+    }
+    treatPlansRef.current = tp;
+    setTreatPlans(tp);
+    await set(ref(db, `treatmentPlans/${slotKey}/${mKey}/${dKey}`), tp[slotKey][mKey][dKey]);
+  }, []);
 
   // 모달 열기 — 두 치료 현재값 로드
   const openModal = (dayIdx, time) => {
