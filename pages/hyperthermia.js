@@ -29,6 +29,7 @@ export default function HyperthermiaPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const [mobileRt, setMobileRt] = useState(0); // 0=고주파, 1=고압산소
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const today  = new Date();
 
   const [weekStart,    setWeekStart]    = useState(() => getWeekStart(today));
@@ -273,12 +274,16 @@ export default function HyperthermiaPage() {
         </div>
       )}
 
-      <div style={S.body}>
+      <div style={{...S.body, flexDirection: isMobile ? "column" : "row"}}>
         {/* 대기 사이드바 */}
-        <div style={S.sidebar}>
-          <div style={S.sbTitle}>📋 배정 대기</div>
-          <div style={{fontSize:10, color:"#94a3b8", marginBottom:6}}>고주파 치료계획 연동</div>
-          {pendingPatients.length===0
+        <div style={isMobile ? {background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"8px 12px"} : S.sidebar}>
+          <div style={{...S.sbTitle, display:"flex", alignItems:"center", justifyContent:"space-between", cursor: isMobile?"pointer":"default"}}
+            onClick={() => isMobile && setSidebarOpen(v=>!v)}>
+            📋 배정 대기 {pendingPatients.length > 0 && <span style={{fontWeight:400, fontSize:11, color:"#6b7280"}}>({pendingPatients.length}명)</span>}
+            {isMobile && <span style={{fontSize:12}}>{sidebarOpen?"▲":"▼"}</span>}
+          </div>
+          {!isMobile && <div style={{fontSize:10, color:"#94a3b8", marginBottom:6}}>고주파 치료계획 연동</div>}
+          {(!isMobile || sidebarOpen) && (pendingPatients.length===0
             ? <div style={{color:"#94a3b8", fontSize:11}}>없음</div>
             : pendingPatients.map((p,i)=>(
                 <div key={i} style={S.pendCard}>
@@ -287,7 +292,7 @@ export default function HyperthermiaPage() {
                   <span style={{fontSize:9, color:"#dc2626"}}>고주파 온열</span>
                 </div>
               ))
-          }
+          )}
         </div>
 
         {/* 모바일 치료 탭 */}
