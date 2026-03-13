@@ -29,6 +29,7 @@ export default function PhysicalPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const [mobileTh, setMobileTh] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const today  = new Date();
 
   const [weekStart,   setWeekStart]   = useState(() => getWeekStart(today));
@@ -290,13 +291,17 @@ export default function PhysicalPage() {
       )}
 
       {/* 본문 */}
-      <div style={S.body}>
-        {/* 사이드바: 대기 환자 */}
-        <div style={S.sidebar}>
-          <div style={S.sbTitle}>📋 배정 대기</div>
-          {pendingPatients.length === 0
+      <div style={{ ...S.body, flexDirection: isMobile ? "column" : "row" }}>
+        {/* 사이드바: 대기 환자 — 모바일에서는 접이식 */}
+        <div style={isMobile ? { background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"8px 12px" } : S.sidebar}>
+          <div style={{ ...S.sbTitle, display:"flex", alignItems:"center", justifyContent:"space-between", cursor: isMobile?"pointer":"default" }}
+            onClick={() => isMobile && setSidebarOpen(v=>!v)}>
+            📋 배정 대기 {pendingPatients.length > 0 && <span style={{fontWeight:400, fontSize:11, color:"#6b7280"}}>({pendingPatients.length}명)</span>}
+            {isMobile && <span style={{fontSize:12}}>{sidebarOpen?"▲":"▼"}</span>}
+          </div>
+          {(!isMobile || sidebarOpen) && pendingPatients.length === 0
             ? <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 6 }}>없음</div>
-            : pendingPatients.map((p, i) => {
+            : (!isMobile || sidebarOpen) && pendingPatients.map((p, i) => {
                 const tr = PHYS_TREATS.find(t => t.id === p.treatmentId);
                 return (
                   <div key={i} style={S.pendCard}>
@@ -320,7 +325,7 @@ export default function PhysicalPage() {
           </div>
         )}
         {/* 시간표: 두 치료사 나란히 (데스크탑) / 한명씩 (모바일) */}
-        <div style={S.tableArea}>
+        <div style={{ ...S.tableArea, overflow: isMobile ? "visible" : "auto" }}>
           <table style={{ ...S.tbl, minWidth: isMobile ? 380 : 900 }}>
             <colgroup>
               <col style={{ width: 48 }} />
