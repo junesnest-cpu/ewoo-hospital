@@ -354,7 +354,7 @@ export default function HospitalWardManager() {
 
   if (syncing && Object.keys(slots).length === 0) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", flexDirection:"column", gap:16, background:"#f0f4f8" }}>
-      <div style={{ fontSize:40 }}>🏥</div>
+      <img src="/favicon.png" style={{ width:48, height:48, objectFit:"contain" }} />
       <div style={{ fontSize:16, fontWeight:700, color:"#0f2744" }}>병동 현황 불러오는 중...</div>
     </div>
   );
@@ -372,8 +372,8 @@ export default function HospitalWardManager() {
       {/* 헤더 */}
       <header style={{ ...S.header, background: isPreview ? "#0d3320" : movingPatient ? "#1e1b4b" : "#0f2744" }}>
         <div style={S.headerLeft}>
-          <div style={S.logoMark}>🏥</div>
-          <div><div style={S.title}>병동 현황 관리</div><div style={S.subtitle}>Ward Management System</div></div>
+          <img src="/favicon.png" style={{ width:44, height:44, objectFit:"contain", filter:"brightness(10)" }} />
+          <div><div style={S.title}>이우 병동 현황 관리</div><div style={S.subtitle}>EWOO Ward Management System</div></div>
         </div>
         <div style={S.headerCenter}>
           <StatPill label="전체 병상"  value={stats.total}     color="#64748b" />
