@@ -373,12 +373,54 @@ export default function HospitalWardManager() {
       )}
 
       {/* 헤더 */}
-      <header style={{ ...S.header, background: isPreview ? "#0d3320" : movingPatient ? "#1e1b4b" : "#0f2744" }}>
-        <div style={S.headerLeft}>
-          <img src="/favicon.png" style={{ width:44, height:44, objectFit:"contain", filter:"brightness(10)" }} />
-          <div><div style={S.title}>이우 병동 현황 관리</div><div style={S.subtitle}>EWOO Ward Management System</div></div>
+      <header style={{ ...S.header, background: isPreview ? "#0d3320" : movingPatient ? "#1e1b4b" : "#0f2744",
+        flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center",
+        padding: isMobile ? "8px 12px" : "10px 16px", gap: isMobile ? 6 : 12 }}>
+        {/* 첫 줄: 로고+타이틀 + 새로고침 + 햄버거 */}
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <img src="/favicon.png" style={{ width: isMobile?32:40, height: isMobile?32:40, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
+          <div style={{ flex:1 }}>
+            <div style={{ ...S.title, fontSize: isMobile ? 13 : 15 }}>이우 병동 현황 관리</div>
+            {!isMobile && <div style={S.subtitle}>EWOO Ward Management System</div>}
+          </div>
+          {isMobile && (
+            <>
+              <button style={S.btnRefresh} onClick={manualRefresh} title="새로고침">↻</button>
+              <div style={{ position:"relative" }}>
+                <button style={{ ...S.navBtn, fontSize:18, padding:"4px 10px" }}
+                  onClick={() => setMobileMenuOpen(v => !v)}>☰</button>
+                {mobileMenuOpen && (
+                  <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, zIndex:999 }}
+                    onClick={() => setMobileMenuOpen(false)}>
+                    <div style={{ position:"absolute", top:54, right:8, background:"#1e293b", borderRadius:10,
+                      boxShadow:"0 8px 32px rgba(0,0,0,0.4)", minWidth:180, overflow:"hidden" }}
+                      onClick={e => e.stopPropagation()}>
+                      {[
+                        { label:"🏠 홈", action:() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); } },
+                        { label:"🏥 병실 현황", action:() => setView("ward") },
+                        { label:"📜 변경 이력", action:() => setView("log") },
+                        { label:"📋 일일 치료", action:() => router.push("/daily") },
+                        { label:"🏃 물리치료", action:() => router.push("/physical") },
+                        { label:"⚡ 고주파치료", action:() => router.push("/hyperthermia") },
+                        { label:"⚙️ 설정", action:() => router.push("/settings") },
+                      ].map(item => (
+                        <button key={item.label}
+                          style={{ display:"block", width:"100%", textAlign:"left", padding:"12px 18px",
+                            background:"none", border:"none", borderBottom:"1px solid #334155",
+                            color:"#e2e8f0", fontSize:14, fontWeight:600, cursor:"pointer" }}
+                          onClick={() => { item.action(); setMobileMenuOpen(false); }}>
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
-        <div style={S.headerCenter}>
+        {/* 통계 필 + 토글 버튼 */}
+        <div style={{ ...S.headerCenter, justifyContent: isMobile ? "flex-start" : "center" }}>
           <StatPill label="전체 병상"  value={stats.total}     color="#64748b" />
           <StatPill label="사용 중"    value={stats.occupied}  color={isPreview ? "#34d399":"#0ea5e9"} />
           <StatPill label="빈 병상"    value={stats.available} color={isPreview ? "#6ee7b7":"#10b981"} />
@@ -388,7 +430,6 @@ export default function HospitalWardManager() {
                 style={{ ...S.reserveToggle, background: showReserved ? "#312e81":"#1e293b", color: showReserved ? "#a5b4fc":"#94a3b8" }}>
                 📅 예약 {showReserved ? "포함":"미포함"}
               </button>
-              {/* 빈 병상 하이라이트 버튼 */}
               <button onClick={handleHighlightEmpty}
                 style={{ ...S.reserveToggle, background: highlightEmpty ? "#065f46":"#1e293b", color: highlightEmpty ? "#34d399":"#94a3b8", position:"relative" }}>
                 🔍 빈 병상 {highlightEmpty ? `(${emptySlotIdx + 1}/${emptySlots.length})` : `(${emptySlots.length})`}
@@ -399,11 +440,11 @@ export default function HospitalWardManager() {
             </>
           )}
         </div>
-        <div style={S.headerRight}>
-          <span style={{ ...S.syncInfo, display: isMobile ? "none" : "inline" }}>{syncing ? "🔄 동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")} 저장됨` : ""}</span>
-          <button style={S.btnRefresh} onClick={manualRefresh} title="새로고침">↻</button>
-          {/* 데스크탑 네비 */}
-          {!isMobile && (<>
+        {/* 데스크탑 전용 네비 */}
+        {!isMobile && (
+          <div style={S.headerRight}>
+            <span style={S.syncInfo}>{syncing ? "🔄 동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")} 저장됨` : ""}</span>
+            <button style={S.btnRefresh} onClick={manualRefresh} title="새로고침">↻</button>
             <button style={{ ...S.navBtn, display:"flex", alignItems:"center", gap:5 }}
               onClick={() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); }}>
               🏠 홈
@@ -414,41 +455,8 @@ export default function HospitalWardManager() {
             <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/physical")}>🏃 물리치료</button>
             <button style={{ ...S.navBtn, background:"#7f1d1d", color:"#fca5a5" }} onClick={() => router.push("/hyperthermia")}>⚡ 고주파치료</button>
             <button style={{ ...S.navBtn, background:"#334155", color:"#cbd5e1" }} onClick={() => router.push("/settings")}>⚙️ 설정</button>
-          </>)}
-          {/* 모바일 햄버거 메뉴 */}
-          {isMobile && (
-            <div style={{ position:"relative" }}>
-              <button style={{ ...S.navBtn, fontSize:18, padding:"4px 10px" }}
-                onClick={() => setMobileMenuOpen(v => !v)}>☰</button>
-              {mobileMenuOpen && (
-                <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, zIndex:999 }}
-                  onClick={() => setMobileMenuOpen(false)}>
-                  <div style={{ position:"absolute", top:54, right:8, background:"#1e293b", borderRadius:10,
-                    boxShadow:"0 8px 32px rgba(0,0,0,0.4)", minWidth:180, overflow:"hidden" }}
-                    onClick={e => e.stopPropagation()}>
-                    {[
-                      { label:"🏠 홈", action:() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); } },
-                      { label:"🏥 병실 현황", action:() => setView("ward") },
-                      { label:"📜 변경 이력", action:() => setView("log") },
-                      { label:"📋 일일 치료", action:() => router.push("/daily") },
-                      { label:"🏃 물리치료", action:() => router.push("/physical") },
-                      { label:"⚡ 고주파치료", action:() => router.push("/hyperthermia") },
-                      { label:"⚙️ 설정", action:() => router.push("/settings") },
-                    ].map(item => (
-                      <button key={item.label}
-                        style={{ display:"block", width:"100%", textAlign:"left", padding:"12px 18px",
-                          background:"none", border:"none", borderBottom:"1px solid #334155",
-                          color:"#e2e8f0", fontSize:14, fontWeight:600, cursor:"pointer" }}
-                        onClick={() => { item.action(); setMobileMenuOpen(false); }}>
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </header>
 
       {/* 날짜 바 */}
@@ -465,8 +473,8 @@ export default function HospitalWardManager() {
         </div>
       </div>
 
-      {/* 업로드 바 */}
-      {!isPreview && (
+      {/* 업로드 바 — 일시 숨김 */}
+      {false && !isPreview && (
         <div style={S.uploadBar}>
           <span style={S.uploadLabel}>📩 메신저 파일 분석</span>
           <input ref={fileInputRef} type="file" accept=".txt" style={{ display:"none" }} onChange={handleFileUpload} />
@@ -475,7 +483,7 @@ export default function HospitalWardManager() {
           {uploadResult?.error && <span style={{ color:"#dc2626", fontSize:13 }}>❌ {uploadResult.error}</span>}
         </div>
       )}
-      {uploadResult?.results && <AnalysisPreview results={uploadResult.results} onApply={() => applyAnalysis(uploadResult.results)} onDiscard={() => setUploadResult(null)} />}
+      {false && uploadResult?.results && <AnalysisPreview results={uploadResult.results} onApply={() => applyAnalysis(uploadResult.results)} onDiscard={() => setUploadResult(null)} />}
 
       {/* 본문 */}
       <main style={S.main}>
