@@ -108,27 +108,37 @@ export default function DailyPage() {
   const timeMap = {};
   // 물리치료 (치료사1·2)
   therapists.forEach(th => {
-    Object.entries(physSched[wk]?.[th]?.[dayIdx] || {}).forEach(([time, data]) => {
+    const phDay = physSched[wk]?.[th];
+    const phDayData = phDay?.[dayIdx] || phDay?.[parseInt(dayIdx)] || {};
+    Object.entries(phDayData).forEach(([time, data]) => {
       if (!data?.slotKey) return;
       if (!timeMap[data.slotKey]) timeMap[data.slotKey] = {};
       if (!timeMap[data.slotKey].physical) timeMap[data.slotKey].physical = time.slice(0,5);
     });
   });
-  // 고주파
-  Object.entries(hyperSched[wk]?.["hyperthermia"]?.[dayIdx] || {}).forEach(([time, data]) => {
+  // 고주파 — dayIdx 숫자/문자열 모두 커버
+  const htDay = hyperSched[wk]?.["hyperthermia"];
+  const htDayData = htDay?.[dayIdx] || htDay?.[parseInt(dayIdx)] || {};
+  Object.entries(htDayData).forEach(([time, data]) => {
     if (!data?.slotKey) return;
     if (!timeMap[data.slotKey]) timeMap[data.slotKey] = {};
     timeMap[data.slotKey].hyperthermia = time.slice(0,5);
   });
-  // 고압산소 (a/b 슬롯)
-  Object.entries(hyperSched[wk]?.["hyperbaric"]?.[dayIdx] || {}).forEach(([time, slots_]) => {
-    ["a","b"].forEach(s => {
-      const data = slots_?.[s];
+  // 고압산소 (a/b 슬롯) — dayIdx 숫자/문자열 모두 커버
+  const hbDay = hyperSched[wk]?.["hyperbaric"];
+  const hbDayData = hbDay?.[dayIdx] || hbDay?.[parseInt(dayIdx)] || {};
+  Object.entries(hbDayData).forEach(([time, slots_]) => {
+    // slots_가 {a:{...}, b:{...}} 형태인지 확인
+    // 구형 저장 방식(직접 객체)도 처리
+    const entries = (slots_ && (slots_.a || slots_.b))
+      ? [["a", slots_.a], ["b", slots_.b]]
+      : [["_", slots_]];
+    entries.forEach(([, data]) => {
       if (!data?.slotKey) return;
       if (!timeMap[data.slotKey]) timeMap[data.slotKey] = {};
       const t = (data.subTime || time).slice(0,5);
       if (!timeMap[data.slotKey].hyperbaric) timeMap[data.slotKey].hyperbaric = t;
-      else timeMap[data.slotKey].hyperbaric += `·${t}`;
+      else if (!timeMap[data.slotKey].hyperbaric.includes(t)) timeMap[data.slotKey].hyperbaric += `·${t}`;
     });
   });
 
