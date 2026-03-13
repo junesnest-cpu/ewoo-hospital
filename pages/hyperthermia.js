@@ -40,6 +40,8 @@ export default function HyperthermiaPage() {
   const [modal,     setModal]     = useState(null);
   const [selHyper,  setSelHyper]  = useState("");   // 고주파 환자 slotKey
   const [selHyperB, setSelHyperB] = useState("");   // 고압산소 환자 slotKey
+  const [pendingNameH,  setPendingNameH]  = useState(""); // 고주파 예정 환자 이름
+  const [pendingNameHB, setPendingNameHB] = useState(""); // 고압산소 예정 환자 이름
   const [showExtra, setShowExtra] = useState(false);
   const [extraTime, setExtraTime] = useState("");
 
@@ -135,6 +137,8 @@ export default function HyperthermiaPage() {
     setModal({ dayIdx, time });
     setSelHyper(exH?.slotKey   || "");
     setSelHyperB(exHB?.slotKey || "");
+    setPendingNameH("");
+    setPendingNameHB("");
     setShowExtra(false);
     setExtraTime("");
   };
@@ -146,7 +150,12 @@ export default function HyperthermiaPage() {
     const time = showExtra && extraTime ? extraTime : base;
 
     // 고주파
-    if (selHyper) {
+    if (selHyper === "__pending__") {
+      if (pendingNameH.trim())
+        await saveCell("hyperthermia", dayIdx, time, { slotKey:"__pending__", patientName:pendingNameH.trim(), roomId:"", bedNum:"", isPending:true });
+      else
+        await saveCell("hyperthermia", dayIdx, time, null);
+    } else if (selHyper) {
       const name = slots[selHyper]?.current?.name || "";
       const room = selHyper.split("-")[0];
       const bed  = selHyper.split("-")[1];
@@ -155,7 +164,12 @@ export default function HyperthermiaPage() {
       await saveCell("hyperthermia", dayIdx, time, null);
     }
     // 고압산소
-    if (selHyperB) {
+    if (selHyperB === "__pending__") {
+      if (pendingNameHB.trim())
+        await saveCell("hyperbaric", dayIdx, time, { slotKey:"__pending__", patientName:pendingNameHB.trim(), roomId:"", bedNum:"", isPending:true });
+      else
+        await saveCell("hyperbaric", dayIdx, time, null);
+    } else if (selHyperB) {
       const name = slots[selHyperB]?.current?.name || "";
       const room = selHyperB.split("-")[0];
       const bed  = selHyperB.split("-")[1];
@@ -323,10 +337,13 @@ export default function HyperthermiaPage() {
                                 <div style={{...S.cellIn, position:"relative"}}>
                                   <div style={{fontWeight:700, fontSize:11, color:rt.color, lineHeight:1.2}}>
                                     {cell.patientName}
+                                    {cell.isPending && <span style={{fontSize:9, color:"#f59e0b", marginLeft:3}}>예정</span>}
                                   </div>
+                                  {!cell.isPending && (
                                   <div style={{fontSize:9, color:"#64748b"}}>
                                     {cell.roomId}호 {cell.bedNum}번
                                   </div>
+                                  )}
                                   <button style={S.xBtn}
                                     onClick={e=>{ e.stopPropagation(); saveCell(rt.id, dayIdx, time, null); }}>✕</button>
                                 </div>
@@ -360,27 +377,43 @@ export default function HyperthermiaPage() {
               {/* 고주파 온열 */}
               <div style={S.treatSection}>
                 <div style={{...S.treatLabel, color:"#dc2626"}}>⚡ 고주파 온열치료</div>
-                <select style={{...S.sel, borderColor:"#fca5a5"}} value={selHyper} onChange={e=>setSelHyper(e.target.value)}>
+                <select style={{...S.sel, borderColor:"#fca5a5"}} value={selHyper} onChange={e=>{ setSelHyper(e.target.value); setPendingNameH(""); }}>
                   <option value="">— 없음 —</option>
-                  {allPatients.map(p=>(
-                    <option key={p.slotKey} value={p.slotKey}>
-                      {p.name} ({p.roomId}호 {p.bedNum}번)
-                    </option>
-                  ))}
+                  <option value="__pending__">✏️ 예정 환자 직접 입력</option>
+                  <optgroup label="── 입원 중 ──">
+                    {allPatients.map(p=>(
+                      <option key={p.slotKey} value={p.slotKey}>
+                        {p.name} ({p.roomId}호 {p.bedNum}번)
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
+                {selHyper === "__pending__" && (
+                  <input style={{...S.inp, marginTop:6}} value={pendingNameH}
+                    onChange={e=>setPendingNameH(e.target.value)}
+                    placeholder="환자 이름 입력" />
+                )}
               </div>
 
               {/* 고압산소 */}
               <div style={{...S.treatSection, marginTop:14}}>
                 <div style={{...S.treatLabel, color:"#0ea5e9"}}>🫧 고압산소치료</div>
-                <select style={{...S.sel, borderColor:"#7dd3fc"}} value={selHyperB} onChange={e=>setSelHyperB(e.target.value)}>
+                <select style={{...S.sel, borderColor:"#7dd3fc"}} value={selHyperB} onChange={e=>{ setSelHyperB(e.target.value); setPendingNameHB(""); }}>
                   <option value="">— 없음 —</option>
-                  {allPatients.map(p=>(
-                    <option key={p.slotKey} value={p.slotKey}>
-                      {p.name} ({p.roomId}호 {p.bedNum}번)
-                    </option>
-                  ))}
+                  <option value="__pending__">✏️ 예정 환자 직접 입력</option>
+                  <optgroup label="── 입원 중 ──">
+                    {allPatients.map(p=>(
+                      <option key={p.slotKey} value={p.slotKey}>
+                        {p.name} ({p.roomId}호 {p.bedNum}번)
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
+                {selHyperB === "__pending__" && (
+                  <input style={{...S.inp, marginTop:6}} value={pendingNameHB}
+                    onChange={e=>setPendingNameHB(e.target.value)}
+                    placeholder="환자 이름 입력" />
+                )}
               </div>
 
               <label style={{display:"flex", alignItems:"center", gap:6, marginTop:14, fontSize:13, cursor:"pointer"}}>
