@@ -397,12 +397,11 @@ export default function HospitalWardManager() {
                       onClick={e => e.stopPropagation()}>
                       {[
                         { label:"🏠 홈", action:() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); } },
-                        { label:"🏥 병실 현황", action:() => setView("ward") },
                         { label:"📜 변경 이력", action:() => setView("log") },
                         { label:"📋 일일 치료", action:() => router.push("/daily") },
                         { label:"🏥 치료실", action:() => router.push("/therapy") },
-                        { label:"⚙️ 설정", action:() => router.push("/settings") },
                         { label:"📋 상담일지", action:() => router.push("/consultation") },
+                        { label:"⚙️ 설정", action:() => router.push("/settings") },
                       ].map(item => (
                         <button key={item.label}
                           style={{ display:"block", width:"100%", textAlign:"left", padding:"12px 18px",
@@ -449,12 +448,11 @@ export default function HospitalWardManager() {
               onClick={() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); }}>
               🏠 홈
             </button>
-            <button style={{ ...S.navBtn, background: view==="ward" ? "#1e3a5f":"transparent" }} onClick={() => { setView("ward"); setSelectedRoom(null); }}>병실 현황</button>
-            <button style={{ ...S.navBtn, background: view==="log"  ? "#1e3a5f":"transparent" }} onClick={() => setView("log")}>변경 이력</button>
+            <button style={{ ...S.navBtn, background: view==="log" ? "#1e3a5f":"transparent" }} onClick={() => setView("log")}>변경 이력</button>
             <button style={{ ...S.navBtn, background:"#065f46", color:"#6ee7b7" }} onClick={() => router.push("/daily")}>📋 일일 치료</button>
             <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/therapy")}>🏥 치료실</button>
-            <button style={{ ...S.navBtn, background:"#334155", color:"#cbd5e1" }} onClick={() => router.push("/settings")}>⚙️ 설정</button>
             <button style={{ ...S.navBtn, background:"#713f12", color:"#fef08a" }} onClick={() => router.push("/consultation")}>📋 상담일지</button>
+            <button style={{ ...S.navBtn, background:"#334155", color:"#cbd5e1" }} onClick={() => router.push("/settings")}>⚙️ 설정</button>
           </div>
         )}
       </header>
