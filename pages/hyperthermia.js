@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
+import useIsMobile from "../lib/useIsMobile";
 
 const DAYS  = ["월","화","수","목","금","토","일"];
 const TIMES = ["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00"];
@@ -26,6 +27,8 @@ function fmtDate(d)   { return `${d.getMonth()+1}/${d.getDate()}`; }
 
 export default function HyperthermiaPage() {
   const router = useRouter();
+  const isMobile = useIsMobile();
+  const [mobileRt, setMobileRt] = useState(0); // 0=고주파, 1=고압산소
   const today  = new Date();
 
   const [weekStart,    setWeekStart]    = useState(() => getWeekStart(today));
@@ -287,24 +290,34 @@ export default function HyperthermiaPage() {
           }
         </div>
 
-        {/* 시간표 — 두 치료 나란히 */}
+        {/* 모바일 치료 탭 */}
+        {isMobile && (
+          <div style={{display:"flex", gap:0, margin:"8px 0", borderRadius:8, overflow:"hidden", border:"1px solid #e2e8f0"}}>
+            {[{label:"⚡ 고주파 온열", bg:"#991b1b"}, {label:"🫧 고압산소", bg:"#0c4a6e"}].map((item, i) => (
+              <button key={i} style={{flex:1, padding:"9px 0", fontSize:13, fontWeight:700, border:"none", cursor:"pointer",
+                background: mobileRt === i ? item.bg : "#f8fafc", color: mobileRt === i ? "#fff" : "#475569"}}
+                onClick={() => setMobileRt(i)}>{item.label}</button>
+            ))}
+          </div>
+        )}
+        {/* 시간표 — 두 치료 나란히 (데스크탑) / 탭 선택 (모바일) */}
         <div style={S.tableArea}>
-          <table style={S.tbl}>
+          <table style={{...S.tbl, minWidth: isMobile ? 380 : 900}}>
             <colgroup>
-              <col style={{width:52}}/>
-              {weekDates.map((_,i)=><col key={`a${i}`}/>)}
-              <col style={{width:6}}/>
-              {weekDates.map((_,i)=><col key={`b${i}`}/>)}
+              <col style={{width:48}}/>
+              {(!isMobile || mobileRt === 0) && weekDates.map((_,i)=><col key={`a${i}`}/>)}
+              {!isMobile && <col style={{width:6}}/>}
+              {(!isMobile || mobileRt === 1) && weekDates.map((_,i)=><col key={`b${i}`}/>)}
             </colgroup>
             <thead>
               <tr>
                 <th style={S.thTime} rowSpan={2}>시간</th>
-                <th colSpan={7} style={{...S.thTh, background:"#991b1b"}}>⚡ 고주파 온열치료</th>
-                <th rowSpan={2} style={S.thDiv}/>
-                <th colSpan={7} style={{...S.thTh, background:"#0c4a6e"}}>🫧 고압산소치료</th>
+                {(!isMobile || mobileRt === 0) && <th colSpan={7} style={{...S.thTh, background:"#991b1b"}}>⚡ 고주파 온열치료</th>}
+                {!isMobile && <th rowSpan={2} style={S.thDiv}/>}
+                {(!isMobile || mobileRt === 1) && <th colSpan={7} style={{...S.thTh, background:"#0c4a6e"}}>🫧 고압산소치료</th>}
               </tr>
               <tr>
-                {[0,1].map(ti=>
+                {[0,1].filter(ti => !isMobile || ti === mobileRt).map(ti=>
                   weekDates.map((date,di)=>(
                     <th key={`${ti}-${di}`} style={{...S.thDay, color:di>=5?"#2563eb":"#374151", background:di>=5?"#eff6ff":"#f8fafc"}}>
                       <div style={{fontSize:11}}>{DAYS[di]}</div>
@@ -323,9 +336,11 @@ export default function HyperthermiaPage() {
                       {time}
                       {isLunch && <span style={{fontSize:8, display:"block", color:"#94a3b8"}}>점심</span>}
                     </td>
-                    {ROOM_TYPES.map((rt, ti)=>(
+                    {ROOM_TYPES.map((rt, ti)=>{
+                      if (isMobile && ti !== mobileRt) return null;
+                      return (
                       <React.Fragment key={rt.id}>
-                        {ti===1 && <td style={S.tdDiv}/>}
+                        {ti===1 && !isMobile && <td style={S.tdDiv}/>}
                         {weekDates.map((_,dayIdx)=>{
                           if (isLunch) return <td key={`${ti}-${dayIdx}`} style={S.tdLunch}>—</td>;
                           const cell = getCell(rt.id, dayIdx, time);
@@ -354,7 +369,8 @@ export default function HyperthermiaPage() {
                           );
                         })}
                       </React.Fragment>
-                    ))}
+                      );
+                    })}
                   </tr>
                 );
               })}
