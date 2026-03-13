@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
-import useIsMobile from "../lib/useIsMobile";
+import useIsMobile from "../lib/useismobile";
 
 const WARD_STRUCTURE = {
   2: { name: "2병동", rooms: [
