@@ -1,0 +1,553 @@
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/router";
+import { ref, onValue, set, push, remove } from "firebase/database";
+import { db } from "../lib/firebaseConfig";
+import useIsMobile from "../lib/useismobile";
+
+const ROOM_TYPES = ["1인실","2인실","4인실","6인실"];
+const WARD_STRUCTURE = {
+  2: { rooms: [
+    {id:"201",type:"4인실",cap:4},{id:"202",type:"1인실",cap:1},{id:"203",type:"4인실",cap:4},
+    {id:"204",type:"2인실",cap:2},{id:"205",type:"6인실",cap:6},{id:"206",type:"6인실",cap:6},
+  ]},
+  3: { rooms: [
+    {id:"301",type:"4인실",cap:4},{id:"302",type:"1인실",cap:1},{id:"303",type:"4인실",cap:4},
+    {id:"304",type:"2인실",cap:2},{id:"305",type:"2인실",cap:2},{id:"306",type:"6인실",cap:6},
+  ]},
+  5: { rooms: [
+    {id:"501",type:"4인실",cap:4},{id:"502",type:"1인실",cap:1},{id:"503",type:"4인실",cap:4},
+    {id:"504",type:"2인실",cap:2},{id:"505",type:"6인실",cap:6},{id:"506",type:"6인실",cap:6},
+  ]},
+  6: { rooms: [
+    {id:"601",type:"6인실",cap:6},{id:"602",type:"1인실",cap:1},{id:"603",type:"6인실",cap:6},
+  ]},
+};
+
+const TYPE_COLOR = {"1인실":"#6366f1","2인실":"#0ea5e9","4인실":"#10b981","6인실":"#f59e0b"};
+const TYPE_BG    = {"1인실":"#eef2ff","2인실":"#e0f2fe","4인실":"#d1fae5","6인실":"#fef3c7"};
+
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function fmtDate(str) {
+  if (!str) return "";
+  const d = new Date(str);
+  if (isNaN(d)) return str;
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+function monthKey(str) {
+  if (!str) return "";
+  return str.slice(0,7); // "YYYY-MM"
+}
+function korMonth(ym) {
+  if (!ym) return "";
+  const [y,m] = ym.split("-");
+  return `${y}년 ${parseInt(m)}월`;
+}
+
+const EMPTY_FORM = {
+  name:"", birthYear:"", age:"", phone:"", phoneNote:"",
+  diagnosis:"", hospital:"",
+  admitDate:"", roomTypes:[],
+  surgery:false, surgeryDate:"",
+  chemo:false, chemoDate:"",
+  radiation:false, radiationDate:"",
+  memo:"",
+  createdAt:"", status:"상담중",
+  recontact:false, recontactDate:"", recontactMemo:"",
+};
+
+export default function ConsultationPage() {
+  const router = useRouter();
+  const isMobile = useIsMobile();
+
+  const [consultations, setConsultations] = useState({});
+  const [slots, setSlots] = useState({});
+  const [view, setView] = useState("list"); // list | form | detail
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({...EMPTY_FORM});
+  const [search, setSearch] = useState("");
+  const [filterMonth, setFilterMonth] = useState("");
+  const [filterStatus, setFilterStatus] = useState("전체");
+
+  // 병실 모달 (예약 등록)
+  const [reserveModal, setReserveModal] = useState(null); // { consultation }
+  const [reserveSlot, setReserveSlot] = useState("");
+
+  useEffect(() => {
+    const unsub1 = onValue(ref(db,"consultations"), snap => {
+      setConsultations(snap.val() || {});
+    });
+    const unsub2 = onValue(ref(db,"slots"), snap => {
+      setSlots(snap.val() || {});
+    });
+    return () => { unsub1(); unsub2(); };
+  }, []);
+
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const toggleRoomType = (rt) => {
+    setForm(f=>({...f, roomTypes: f.roomTypes.includes(rt) ? f.roomTypes.filter(x=>x!==rt) : [...f.roomTypes, rt]}));
+  };
+
+  const saveConsultation = async () => {
+    if (!form.name.trim()) { alert("이름을 입력해 주세요."); return; }
+    const data = { ...form, updatedAt: today() };
+    if (editId) {
+      await set(ref(db,`consultations/${editId}`), {...consultations[editId], ...data});
+    } else {
+      data.createdAt = today();
+      data.status = data.status || "상담중";
+      await push(ref(db,"consultations"), data);
+    }
+    setView("list"); setEditId(null); setForm({...EMPTY_FORM});
+  };
+
+  const deleteConsultation = async (id) => {
+    if (!confirm("이 상담 기록을 삭제하시겠습니까?")) return;
+    await remove(ref(db,`consultations/${id}`));
+    setView("list"); setEditId(null);
+  };
+
+  // 예약 등록: consultation → slots reservation
+  const doRegisterReservation = async () => {
+    if (!reserveSlot) { alert("병상을 선택해 주세요."); return; }
+    const c = reserveModal.consultation;
+    const existing = slots[reserveSlot] || { current: null, reservations: [] };
+    const reservations = [...(existing.reservations||[]), {
+      name: c.name,
+      admitDate: c.admitDate ? fmtDate(c.admitDate) : "",
+      discharge: "미정",
+      note: [c.diagnosis, c.hospital, c.memo].filter(Boolean).join(" / "),
+      scheduleAlert: false,
+      bedPosition: parseInt(reserveSlot.split("-")[1]),
+    }];
+    reservations.sort((a,b) => {
+      const pa = a.admitDate?.match(/(\d+)\/(\d+)/);
+      const pb = b.admitDate?.match(/(\d+)\/(\d+)/);
+      if (!pa) return 1; if (!pb) return -1;
+      return (parseInt(pa[1])*31+parseInt(pa[2])) - (parseInt(pb[1])*31+parseInt(pb[2]));
+    });
+    await set(ref(db,`slots/${reserveSlot}`), {...existing, reservations});
+    // 상담 상태 -> 예약완료
+    await set(ref(db,`consultations/${reserveModal.id}`), {...reserveModal.consultation, status:"예약완료", reservedSlot: reserveSlot});
+    setReserveModal(null); setReserveSlot("");
+    alert(`${c.name}님 ${reserveSlot} 예약 등록 완료`);
+  };
+
+  // 필터링된 목록
+  const allList = Object.entries(consultations).map(([id,c])=>({id,...c}))
+    .sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
+
+  const months = [...new Set(allList.map(c=>monthKey(c.createdAt)).filter(Boolean))].sort().reverse();
+
+  const filtered = allList.filter(c => {
+    if (filterMonth && monthKey(c.createdAt) !== filterMonth) return false;
+    if (filterStatus !== "전체" && c.status !== filterStatus) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!(c.name||"").toLowerCase().includes(q) &&
+          !(c.phone||"").includes(q) &&
+          !(c.diagnosis||"").toLowerCase().includes(q) &&
+          !(c.hospital||"").toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  // 오늘 이후 입원예약일이 있는 상담 (대기 배지용)
+  const pendingAdmits = allList.filter(c => {
+    if (c.status === "예약완료") return false;
+    if (!c.admitDate) return false;
+    return new Date(c.admitDate) >= new Date(today());
+  });
+
+  // 재연락 필요 목록 (완료/취소 제외, 날짜 오름차순)
+  const recontactList = allList
+    .filter(c => c.recontact && c.status !== "입원완료" && c.status !== "취소")
+    .sort((a,b) => (a.recontactDate||"9999").localeCompare(b.recontactDate||"9999"));
+  const recontactOverdue = recontactList.filter(c => c.recontactDate && c.recontactDate < today());
+  const recontactToday  = recontactList.filter(c => c.recontactDate === today());
+
+  // 병실 목록 (예약 등록 모달용)
+  const allRooms = Object.values(WARD_STRUCTURE).flatMap(w=>w.rooms);
+  const getRoomSlots = (roomId, cap) =>
+    Array.from({length:cap},(_,i)=>({slotKey:`${roomId}-${i+1}`, bed:i+1}));
+
+  const statusColor = {
+    "상담중":"#f59e0b","예약완료":"#10b981","취소":"#94a3b8","입원완료":"#0ea5e9"
+  };
+
+  // ── 폼 뷰 ──────────────────────────────────────────────────────────────────
+  if (view === "form") {
+    return (
+      <div style={S.page}>
+        <header style={S.header}>
+          <button style={S.btnBack} onClick={()=>{setView("list");setEditId(null);setForm({...EMPTY_FORM});}}>← 목록</button>
+          <span style={S.htitle}>{editId ? "상담 기록 수정" : "신규 상담 등록"}</span>
+          {editId && <button style={{...S.btnBack, background:"#fef2f2", color:"#dc2626", marginLeft:"auto"}}
+            onClick={()=>deleteConsultation(editId)}>삭제</button>}
+        </header>
+        <div style={S.formBody}>
+          {/* 기본 인적사항 */}
+          <div style={S.section}>
+            <div style={S.sectionTitle}>👤 기본 정보</div>
+            <div style={S.row2}>
+              <div style={S.field}>
+                <label style={S.lbl}>이름 *</label>
+                <input style={S.inp} value={form.name} onChange={e=>setF("name",e.target.value)} placeholder="홍길동"/>
+              </div>
+              <div style={S.field}>
+                <label style={S.lbl}>상태</label>
+                <select style={S.inp} value={form.status} onChange={e=>setF("status",e.target.value)}>
+                  {["상담중","예약완료","입원완료","취소"].map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={S.row2}>
+              <div style={S.field}>
+                <label style={S.lbl}>출생연도</label>
+                <input style={S.inp} value={form.birthYear} onChange={e=>setF("birthYear",e.target.value)} placeholder="1955"/>
+              </div>
+              <div style={S.field}>
+                <label style={S.lbl}>나이</label>
+                <input style={S.inp} value={form.age} onChange={e=>setF("age",e.target.value)} placeholder="70세"/>
+              </div>
+            </div>
+            <div style={S.row2}>
+              <div style={S.field}>
+                <label style={S.lbl}>연락처</label>
+                <input style={S.inp} value={form.phone} onChange={e=>setF("phone",e.target.value)} placeholder="010-0000-0000"/>
+              </div>
+              <div style={S.field}>
+                <label style={S.lbl}>연락처 비고</label>
+                <input style={S.inp} value={form.phoneNote} onChange={e=>setF("phoneNote",e.target.value)} placeholder="보호자(딸)"/>
+              </div>
+            </div>
+          </div>
+
+          {/* 진단 정보 */}
+          <div style={S.section}>
+            <div style={S.sectionTitle}>🏥 진단 정보</div>
+            <div style={S.row2}>
+              <div style={S.field}>
+                <label style={S.lbl}>진단명</label>
+                <input style={S.inp} value={form.diagnosis} onChange={e=>setF("diagnosis",e.target.value)} placeholder="유방암 2기"/>
+              </div>
+              <div style={S.field}>
+                <label style={S.lbl}>상급병원</label>
+                <input style={S.inp} value={form.hospital} onChange={e=>setF("hospital",e.target.value)} placeholder="세브란스병원"/>
+              </div>
+            </div>
+
+            {/* 수술 */}
+            <div style={S.treatRow}>
+              <label style={S.checkLabel}>
+                <input type="checkbox" checked={form.surgery} onChange={e=>setF("surgery",e.target.checked)}/>
+                <span>수술</span>
+              </label>
+              {form.surgery && (
+                <input style={{...S.inp, flex:1}} type="date" value={form.surgeryDate} onChange={e=>setF("surgeryDate",e.target.value)}/>
+              )}
+            </div>
+            {/* 항암 */}
+            <div style={S.treatRow}>
+              <label style={S.checkLabel}>
+                <input type="checkbox" checked={form.chemo} onChange={e=>setF("chemo",e.target.checked)}/>
+                <span>항암</span>
+              </label>
+              {form.chemo && (
+                <input style={{...S.inp, flex:1}} type="date" value={form.chemoDate} onChange={e=>setF("chemoDate",e.target.value)}/>
+              )}
+            </div>
+            {/* 방사선 */}
+            <div style={S.treatRow}>
+              <label style={S.checkLabel}>
+                <input type="checkbox" checked={form.radiation} onChange={e=>setF("radiation",e.target.checked)}/>
+                <span>방사선</span>
+              </label>
+              {form.radiation && (
+                <input style={{...S.inp, flex:1}} type="date" value={form.radiationDate} onChange={e=>setF("radiationDate",e.target.value)}/>
+              )}
+            </div>
+          </div>
+
+          {/* 입원 희망 */}
+          <div style={S.section}>
+            <div style={S.sectionTitle}>📅 입원 희망</div>
+            <div style={S.field}>
+              <label style={S.lbl}>입원 예약일</label>
+              <input style={S.inp} type="date" value={form.admitDate} onChange={e=>setF("admitDate",e.target.value)}/>
+            </div>
+            <div style={S.field}>
+              <label style={S.lbl}>희망 병실 (복수 선택)</label>
+              <div style={{display:"flex", gap:8, flexWrap:"wrap", marginTop:4}}>
+                {ROOM_TYPES.map(rt=>(
+                  <button key={rt} style={{border:`1.5px solid ${TYPE_COLOR[rt]}`, borderRadius:8, padding:"6px 14px",
+                    background: form.roomTypes.includes(rt) ? TYPE_COLOR[rt] : TYPE_BG[rt],
+                    color: form.roomTypes.includes(rt) ? "#fff" : TYPE_COLOR[rt],
+                    fontWeight:700, fontSize:13, cursor:"pointer"}}
+                    onClick={()=>toggleRoomType(rt)}>{rt}</button>
+                ))}
+              </div>
+            </div>
+            <div style={S.field}>
+              <label style={S.lbl}>기타 요청사항</label>
+              <textarea style={{...S.inp, height:80, resize:"vertical"}} value={form.memo}
+                onChange={e=>setF("memo",e.target.value)} placeholder="요청사항 입력"/>
+            </div>
+          </div>
+
+          {/* 재연락 */}
+          <div style={S.section}>
+            <div style={S.sectionTitle}>📞 재연락</div>
+            <div style={S.treatRow}>
+              <label style={S.checkLabel}>
+                <input type="checkbox" checked={form.recontact} onChange={e=>setF("recontact",e.target.checked)}/>
+                <span style={{color: form.recontact ? "#dc2626":"#374151"}}>재연락 필요</span>
+              </label>
+              {form.recontact && (
+                <div style={{flex:1}}>
+                  <label style={S.lbl}>재연락 예정일</label>
+                  <input style={S.inp} type="date" value={form.recontactDate} onChange={e=>setF("recontactDate",e.target.value)}/>
+                </div>
+              )}
+            </div>
+            {form.recontact && (
+              <div style={S.field}>
+                <label style={S.lbl}>재연락 메모</label>
+                <input style={S.inp} value={form.recontactMemo} onChange={e=>setF("recontactMemo",e.target.value)}
+                  placeholder="재연락 시 확인할 내용"/>
+              </div>
+            )}
+          </div>
+
+          <button style={S.btnSave} onClick={saveConsultation}>
+            {editId ? "수정 저장" : "상담 등록"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 목록 뷰 ────────────────────────────────────────────────────────────────
+  return (
+    <div style={S.page}>
+      <header style={S.header}>
+        <button style={S.btnBack} onClick={()=>router.push("/")}>← 병동</button>
+        <span style={S.htitle}>📋 입원 상담 일지</span>
+        <button style={{...S.btnBack, background:"#0f4c35", color:"#fff", marginLeft:"auto"}}
+          onClick={()=>{ setForm({...EMPTY_FORM, createdAt:today()}); setEditId(null); setView("form"); }}>
+          + 신규 등록
+        </button>
+      </header>
+
+      {/* 입원 대기 배너 */}
+      {pendingAdmits.length > 0 && (
+        <div style={S.pendingBanner}>
+          <span style={{fontWeight:700, fontSize:13}}>🏥 입원 예약 대기</span>
+          <span style={{fontSize:12, color:"#92400e", marginLeft:8}}>{pendingAdmits.length}명 — 병실 배정 필요</span>
+          <div style={{display:"flex", gap:6, flexWrap:"wrap", marginTop:8}}>
+            {pendingAdmits.map(c=>(
+              <button key={c.id} style={S.pendCard}
+                onClick={()=>setReserveModal({id:c.id, consultation:c})}>
+                <span style={{fontWeight:700}}>{c.name}</span>
+                <span style={{fontSize:11, color:"#92400e", marginLeft:4}}>{fmtDate(c.admitDate)} 입원예정</span>
+                {c.roomTypes?.length>0 && <span style={{fontSize:10, color:"#78350f", marginLeft:4}}>({c.roomTypes.join("·")})</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 재연락 필요 섹션 */}
+      {recontactList.length > 0 && (
+        <div style={{background: recontactOverdue.length>0 ? "#fef2f2":"#fff7ed", borderBottom:`2px solid ${recontactOverdue.length>0?"#fca5a5":"#fed7aa"}`, padding:"12px 16px"}}>
+          <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:8}}>
+            <span style={{fontWeight:800, fontSize:13, color: recontactOverdue.length>0?"#dc2626":"#ea580c"}}>
+              📞 재연락 필요 {recontactList.length}명
+            </span>
+            {recontactOverdue.length>0 && (
+              <span style={{fontSize:11, fontWeight:700, background:"#dc2626", color:"#fff", borderRadius:5, padding:"1px 7px"}}>
+                {recontactOverdue.length}건 기한 초과
+              </span>
+            )}
+            {recontactToday.length>0 && (
+              <span style={{fontSize:11, fontWeight:700, background:"#f59e0b", color:"#fff", borderRadius:5, padding:"1px 7px"}}>
+                오늘 {recontactToday.length}건
+              </span>
+            )}
+          </div>
+          <div style={{display:"flex", flexDirection:"column", gap:6}}>
+            {recontactList.map(c => {
+              const isOverdue = c.recontactDate && c.recontactDate < today();
+              const isToday   = c.recontactDate === today();
+              return (
+                <div key={c.id} style={{background:"#fff", border:`1.5px solid ${isOverdue?"#fca5a5":isToday?"#fcd34d":"#e2e8f0"}`,
+                  borderRadius:8, padding:"8px 12px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap"}}
+                  onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setView("form"); }}>
+                  <span style={{fontWeight:800, fontSize:14}}>{c.name}</span>
+                  {c.phone && <span style={{fontSize:12, color:"#475569"}}>📞 {c.phone}</span>}
+                  {c.recontactDate && (
+                    <span style={{fontSize:11, fontWeight:700, borderRadius:5, padding:"2px 8px",
+                      background: isOverdue?"#fef2f2":isToday?"#fef3c7":"#f0fdf4",
+                      color: isOverdue?"#dc2626":isToday?"#92400e":"#166534"}}>
+                      {isOverdue?"⚠️ 기한초과":isToday?"📅 오늘":"📅"} {c.recontactDate}
+                    </span>
+                  )}
+                  {c.diagnosis && <span style={{fontSize:11, color:"#64748b"}}>{c.diagnosis}</span>}
+                  {c.recontactMemo && <span style={{fontSize:11, color:"#78716c", background:"#f5f5f4", borderRadius:4, padding:"1px 6px"}}>{c.recontactMemo}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 검색 + 필터 */}
+      <div style={S.filterBar}>
+        <input style={{...S.inp, flex:1, minWidth:120}} value={search}
+          onChange={e=>setSearch(e.target.value)} placeholder="이름·연락처·진단명 검색"/>
+        <select style={{...S.inp, width:120}} value={filterMonth} onChange={e=>setFilterMonth(e.target.value)}>
+          <option value="">전체 기간</option>
+          {months.map(m=><option key={m} value={m}>{korMonth(m)}</option>)}
+        </select>
+        <select style={{...S.inp, width:90}} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
+          {["전체","상담중","예약완료","입원완료","취소"].map(s=><option key={s}>{s}</option>)}
+        </select>
+      </div>
+
+      {/* 상담 카드 목록 */}
+      <div style={S.listWrap}>
+        {filtered.length === 0 && (
+          <div style={{textAlign:"center", color:"#94a3b8", padding:40, fontSize:14}}>상담 기록이 없습니다.</div>
+        )}
+        {filtered.map(c=>(
+          <div key={c.id} style={S.card} onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setView("form"); }}>
+            <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:4}}>
+              <span style={{fontSize:16, fontWeight:800, color:"#0f2744"}}>{c.name}</span>
+              {c.birthYear && <span style={{fontSize:12, color:"#64748b"}}>{c.birthYear}년생</span>}
+              {c.age && <span style={{fontSize:12, color:"#64748b"}}>({c.age})</span>}
+              {c.recontact && c.status !== "입원완료" && c.status !== "취소" && (
+                <span style={{fontSize:10, fontWeight:700, borderRadius:5, padding:"2px 7px",
+                  background: c.recontactDate && c.recontactDate < today() ? "#fef2f2" : "#fff7ed",
+                  color: c.recontactDate && c.recontactDate < today() ? "#dc2626" : "#ea580c"}}>
+                  📞{c.recontactDate ? " "+c.recontactDate : " 재연락"}
+                </span>
+              )}
+              <span style={{marginLeft:"auto", fontSize:11, fontWeight:700, borderRadius:6, padding:"2px 8px",
+                background: statusColor[c.status]+"22", color: statusColor[c.status]}}>
+                {c.status||"상담중"}
+              </span>
+            </div>
+            <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:4}}>
+              {c.phone && <span style={S.tag}>📞 {c.phone}{c.phoneNote ? ` (${c.phoneNote})`:""}</span>}
+              {c.diagnosis && <span style={S.tag}>🔬 {c.diagnosis}</span>}
+              {c.hospital && <span style={S.tag}>🏨 {c.hospital}</span>}
+            </div>
+            <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center"}}>
+              {c.admitDate && <span style={{...S.tag, background:"#dbeafe", color:"#1d4ed8"}}>📅 {fmtDate(c.admitDate)} 입원예정</span>}
+              {c.roomTypes?.map(rt=>(
+                <span key={rt} style={{...S.tag, background:TYPE_BG[rt], color:TYPE_COLOR[rt]}}>{rt}</span>
+              ))}
+              {c.surgery && <span style={{...S.tag, background:"#fef2f2", color:"#dc2626"}}>수술 {c.surgeryDate?fmtDate(c.surgeryDate):""}</span>}
+              {c.chemo && <span style={{...S.tag, background:"#fff7ed", color:"#ea580c"}}>항암 {c.chemoDate?fmtDate(c.chemoDate):""}</span>}
+              {c.radiation && <span style={{...S.tag, background:"#faf5ff", color:"#9333ea"}}>방사선 {c.radiationDate?fmtDate(c.radiationDate):""}</span>}
+              <span style={{marginLeft:"auto", fontSize:10, color:"#94a3b8"}}>{c.createdAt}</span>
+            </div>
+            {c.memo && <div style={{marginTop:6, fontSize:12, color:"#475569", background:"#f8fafc", borderRadius:6, padding:"4px 8px"}}>{c.memo}</div>}
+            {c.reservedSlot && <div style={{marginTop:4, fontSize:11, color:"#059669", fontWeight:700}}>✅ {c.reservedSlot} 예약등록 완료</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* 예약 등록 모달 */}
+      {reserveModal && (
+        <div style={S.overlay} onClick={()=>{setReserveModal(null);setReserveSlot("");}}>
+          <div style={S.modal} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:800, fontSize:16, marginBottom:4, color:"#0f2744"}}>
+              🏥 병실 배정 — {reserveModal.consultation.name}님
+            </div>
+            <div style={{fontSize:12, color:"#64748b", marginBottom:12}}>
+              입원예정: {fmtDate(reserveModal.consultation.admitDate)}
+              {reserveModal.consultation.roomTypes?.length>0 && ` · 희망: ${reserveModal.consultation.roomTypes.join(", ")}`}
+            </div>
+
+            <label style={{fontSize:12, fontWeight:700, color:"#475569", display:"block", marginBottom:6}}>병상 선택</label>
+            <div style={{maxHeight:280, overflowY:"auto"}}>
+              {allRooms.map(room=>{
+                const isPreferred = reserveModal.consultation.roomTypes?.includes(room.type);
+                return (
+                  <div key={room.id} style={{marginBottom:8}}>
+                    <div style={{fontSize:11, fontWeight:700, color: isPreferred ? TYPE_COLOR[room.type] : "#94a3b8",
+                      background: isPreferred ? TYPE_BG[room.type] : "#f8fafc",
+                      borderRadius:4, padding:"2px 8px", marginBottom:4, display:"inline-block"}}>
+                      {room.id}호 {room.type}{isPreferred ? " ★ 희망" : ""}
+                    </div>
+                    <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
+                      {getRoomSlots(room.id, room.cap).map(({slotKey, bed})=>{
+                        const occupied = slots[slotKey]?.current?.name;
+                        const hasReserve = (slots[slotKey]?.reservations||[]).length > 0;
+                        return (
+                          <button key={slotKey}
+                            style={{padding:"4px 10px", borderRadius:6, fontSize:12, fontWeight:700, cursor: occupied?"not-allowed":"pointer",
+                              border:`1.5px solid ${reserveSlot===slotKey?"#0f2744":"#e2e8f0"}`,
+                              background: reserveSlot===slotKey ? "#0f2744" : occupied ? "#f1f5f9" : "#fff",
+                              color: reserveSlot===slotKey ? "#fff" : occupied ? "#94a3b8" : "#0f2744",
+                              opacity: occupied ? 0.6 : 1}}
+                            disabled={!!occupied}
+                            onClick={()=>setReserveSlot(slotKey)}>
+                            {bed}번{occupied ? "(사용중)" : hasReserve ? "(예약)" : ""}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{display:"flex", gap:8, marginTop:16}}>
+              <button style={{flex:1, ...S.btnSave, fontSize:14}} onClick={doRegisterReservation}
+                disabled={!reserveSlot}>예약 등록</button>
+              <button style={{padding:"10px 18px", border:"1px solid #e2e8f0", borderRadius:8,
+                background:"#f8fafc", cursor:"pointer", fontSize:14, fontWeight:600}}
+                onClick={()=>{setReserveModal(null);setReserveSlot("");}}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const S = {
+  page: { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", minHeight:"100vh", color:"#0f172a" },
+  header: { background:"#0f2744", color:"#fff", display:"flex", alignItems:"center", gap:12, padding:"10px 16px", boxShadow:"0 2px 8px rgba(0,0,0,0.15)" },
+  btnBack: { background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", borderRadius:7, padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight:600, whiteSpace:"nowrap" },
+  htitle: { fontSize:16, fontWeight:800 },
+
+  pendingBanner: { background:"#fef3c7", borderBottom:"2px solid #fcd34d", padding:"12px 16px" },
+  pendCard: { background:"#fff", border:"1.5px solid #fcd34d", borderRadius:8, padding:"6px 12px", cursor:"pointer", display:"inline-flex", alignItems:"center", gap:0, fontSize:13, fontWeight:600 },
+
+  filterBar: { background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"10px 14px", display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" },
+  inp: { border:"1.5px solid #e2e8f0", borderRadius:8, padding:"8px 11px", fontSize:14, outline:"none", fontFamily:"inherit", boxSizing:"border-box", width:"100%", background:"#fff" },
+  lbl: { display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:3 },
+
+  listWrap: { padding:"14px 12px", display:"flex", flexDirection:"column", gap:10 },
+  card: { background:"#fff", borderRadius:12, padding:"14px", boxShadow:"0 1px 6px rgba(0,0,0,0.06)", cursor:"pointer", border:"1.5px solid transparent", transition:"border-color 0.15s" },
+  tag: { fontSize:11, background:"#f1f5f9", color:"#475569", borderRadius:5, padding:"2px 7px", fontWeight:500 },
+
+  // form
+  formBody: { padding:"14px 14px 40px", maxWidth:640, margin:"0 auto" },
+  section: { background:"#fff", borderRadius:12, padding:"14px", marginBottom:14, boxShadow:"0 1px 4px rgba(0,0,0,0.05)" },
+  sectionTitle: { fontSize:14, fontWeight:800, color:"#0f2744", marginBottom:12 },
+  row2: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 },
+  field: { marginBottom:10 },
+  treatRow: { display:"flex", alignItems:"center", gap:12, marginBottom:10 },
+  checkLabel: { display:"flex", alignItems:"center", gap:6, fontSize:14, fontWeight:700, cursor:"pointer", minWidth:70 },
+  btnSave: { width:"100%", background:"#0f2744", color:"#fff", border:"none", borderRadius:10, padding:"13px", fontSize:15, fontWeight:800, cursor:"pointer", marginTop:8 },
+
+  // modal
+  overlay: { position:"fixed", inset:0, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 },
+  modal: { background:"#fff", borderRadius:14, padding:"20px", width:"100%", maxWidth:440, maxHeight:"88vh", overflowY:"auto", boxShadow:"0 8px 40px rgba(0,0,0,0.2)" },
+};
