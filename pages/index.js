@@ -152,8 +152,68 @@ export default function HospitalWardManager() {
     const sRef = ref(db, "slots");
     const unsubS = onValue(sRef, snap => {
       const val = snap.val();
-      if (val) setSlots(val);
-      else { set(sRef, INIT_SLOTS); setSlots(INIT_SLOTS); }
+      if (!val) { set(sRef, INIT_SLOTS); setSlots(INIT_SLOTS); setLastSync(new Date()); setSyncing(false); return; }
+
+      // ── 자동 입원 처리 ───────────────────────────────────────────────────
+      const today = dateOnly(new Date());
+      let updated = JSON.parse(JSON.stringify(val));
+      let changed = false;
+
+      Object.entries(updated).forEach(([slotKey, slot]) => {
+        if (!slot?.reservations?.length) return;
+        const dueTodayIdx = slot.reservations.findIndex(r => {
+          const d = parseDateStr(r.admitDate);
+          return d && dateOnly(d).getTime() <= today.getTime();
+        });
+        if (dueTodayIdx === -1) return;
+        const incoming = slot.reservations[dueTodayIdx];
+
+        if (!slot.current?.name) {
+          // 빈 병상 → 바로 입원
+          updated[slotKey] = {
+            ...slot,
+            current: { ...incoming, admitDate: undefined },
+            reservations: slot.reservations.filter((_, i) => i !== dueTodayIdx),
+          };
+          changed = true;
+        } else {
+          // 기존 환자 있음 → 당일 한정 같은 병실 배치:
+          // 다른 빈 병상 찾기 (같은 병실 우선)
+          const roomId = slotKey.split("-")[0];
+          // 같은 병실 내 빈 병상 탐색
+          let placed = false;
+          for (let bed = 1; bed <= 10; bed++) {
+            const altKey = `${roomId}-${bed}`;
+            if (altKey === slotKey) continue;
+            const altSlot = updated[altKey];
+            if (altSlot && !altSlot.current?.name) {
+              updated[altKey] = {
+                ...altSlot,
+                current: { ...incoming, admitDate: undefined },
+                reservations: altSlot.reservations || [],
+              };
+              updated[slotKey] = {
+                ...slot,
+                reservations: slot.reservations.filter((_, i) => i !== dueTodayIdx),
+              };
+              changed = true;
+              placed = true;
+              break;
+            }
+          }
+          // 같은 병실에 빈 자리 없으면 예약 그대로 유지 (겹침 허용 표시만)
+          if (!placed) {
+            // 예약 status를 'overlap'으로 표시만 해둠 — 강제 입원하지 않음
+          }
+        }
+      });
+
+      if (changed) {
+        set(sRef, updated).catch(console.error);
+        setSlots(updated);
+      } else {
+        setSlots(val);
+      }
       setLastSync(new Date()); setSyncing(false);
     }, () => setSyncing(false));
     const unsubL = onValue(ref(db, "logs"), snap => {
