@@ -243,7 +243,7 @@ export default function TherapyPage() {
   const allPatients=Object.entries(slots)
     .filter(([sk,sd])=>{ if(!sd?.current?.name) return false; const room=sk.split("-")[0]; return VALID_ROOMS.has(room); })
     .map(([sk,sd])=>({slotKey:sk,name:sd.current.name}))
-    .sort((a,b)=>a.slotKey.localeCompare(b.slotKey));
+    .sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
 
   const physModalPatients=modal?.roomId?.startsWith("th")?(()=>{
     const {dayIdx}=modal; const date=weekDates[dayIdx];
