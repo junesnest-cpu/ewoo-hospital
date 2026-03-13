@@ -24,7 +24,7 @@ const WARD_STRUCTURE = {
 
 const TREATMENT_GROUPS = [
   { group:"고주파 온열치료", color:"#dc2626", bg:"#fef2f2",
-    items:[{ id:"hyperthermia", name:"고주파 온열치료" }] },
+    items:[{ id:"hyperthermia", name:"고주파 온열치료" }, { id:"hyperbaric", name:"고압산소치료" }] },
   { group:"싸이모신알파1", color:"#7c3aed", bg:"#faf5ff",
     items:[{ id:"zadaxin",name:"자닥신" },{ id:"imualpha",name:"이뮤알파" },{ id:"scion",name:"싸이원주" }] },
   { group:"수액류", color:"#0ea5e9", bg:"#f0f9ff",
@@ -74,16 +74,17 @@ export default function DailyPage() {
   const [loading,      setLoading]      = useState(true);
   // 치료 종류별 필터
   const [filterGroup,  setFilterGroup]  = useState(null);
+  const [physSched,    setPhysSched]    = useState({});
+  const [hyperSched,   setHyperSched]   = useState({});
+  const [therapists,   setTherapists]   = useState(["치료사1","치료사2"]);
 
   useEffect(() => {
-    const unsubS = onValue(ref(db, "slots"), snap => {
-      setSlots(snap.val() || {});
-    });
-    const unsubT = onValue(ref(db, "treatmentPlans"), snap => {
-      setTreatPlans(snap.val() || {});
-      setLoading(false);
-    });
-    return () => { unsubS(); unsubT(); };
+    const unsubS  = onValue(ref(db, "slots"),                snap => setSlots(snap.val() || {}));
+    const unsubT  = onValue(ref(db, "treatmentPlans"),        snap => { setTreatPlans(snap.val() || {}); setLoading(false); });
+    const unsubP  = onValue(ref(db, "physicalSchedule"),      snap => setPhysSched(snap.val() || {}));
+    const unsubH  = onValue(ref(db, "hyperthermiaSchedule"),  snap => setHyperSched(snap.val() || {}));
+    const unsubSt = onValue(ref(db, "settings"),              snap => { const v=snap.val()||{}; setTherapists([v.therapist1||"치료사1",v.therapist2||"치료사2"]); });
+    return () => { unsubS(); unsubT(); unsubP(); unsubH(); unsubSt(); };
   }, []);
 
   const applyDate = () => {
@@ -95,7 +96,43 @@ export default function DailyPage() {
   const monthKey = getMonthKey(selectedDate);
   const dayKey   = getDayKey(selectedDate);
 
-  const dailyList = []; // { wardName, roomId, bedNum, slotKey, patientName, items }
+  // ── 치료 시간 매핑 ───────────────────────────────────────────────────────
+  // 선택 날짜의 요일 인덱스 (월=0)
+  const dow = selectedDate.getDay(); // 0=일,1=월..6=토
+  const dayIdx = String(dow === 0 ? 6 : dow - 1);
+  // physicalSchedule 주 키 계산
+  function getWeekStart(d) { const x=new Date(d); const dw=x.getDay(); x.setDate(x.getDate()+(dw===0?-6:1-dw)); x.setHours(0,0,0,0); return x; }
+  const wk = getWeekStart(selectedDate).toISOString().slice(0,10);
+
+  // slotKey → {physical: "HH:MM", hyperthermia: "HH:MM", hyperbaric: "HH:MM"} 시간 맵
+  const timeMap = {};
+  // 물리치료 (치료사1·2)
+  therapists.forEach(th => {
+    Object.entries(physSched[wk]?.[th]?.[dayIdx] || {}).forEach(([time, data]) => {
+      if (!data?.slotKey) return;
+      if (!timeMap[data.slotKey]) timeMap[data.slotKey] = {};
+      if (!timeMap[data.slotKey].physical) timeMap[data.slotKey].physical = time.slice(0,5);
+    });
+  });
+  // 고주파
+  Object.entries(hyperSched[wk]?.["hyperthermia"]?.[dayIdx] || {}).forEach(([time, data]) => {
+    if (!data?.slotKey) return;
+    if (!timeMap[data.slotKey]) timeMap[data.slotKey] = {};
+    timeMap[data.slotKey].hyperthermia = time.slice(0,5);
+  });
+  // 고압산소 (a/b 슬롯)
+  Object.entries(hyperSched[wk]?.["hyperbaric"]?.[dayIdx] || {}).forEach(([time, slots_]) => {
+    ["a","b"].forEach(s => {
+      const data = slots_?.[s];
+      if (!data?.slotKey) return;
+      if (!timeMap[data.slotKey]) timeMap[data.slotKey] = {};
+      const t = (data.subTime || time).slice(0,5);
+      if (!timeMap[data.slotKey].hyperbaric) timeMap[data.slotKey].hyperbaric = t;
+      else timeMap[data.slotKey].hyperbaric += `·${t}`;
+    });
+  });
+
+  const dailyList = []; // { wardName, roomId, bedNum, slotKey, patientName, items, timeMap }
 
   Object.entries(WARD_STRUCTURE).forEach(([, ward]) => {
     ward.rooms.forEach(room => {
@@ -114,6 +151,7 @@ export default function DailyPage() {
           slotKey,
           patientName,
           items,
+          times: timeMap[slotKey] || {},
         });
       }
     });
@@ -219,6 +257,9 @@ export default function DailyPage() {
                           return (
                             <span key={e.id} style={{ ...DS.itemTag, background: grp?.bg, color: grp?.color, borderColor: grp?.color }}>
                               {itemLabel(e)}
+                              {e.id==="pain"||e.id==="manip1"||e.id==="manip2" ? (p.times.physical ? <span style={{fontSize:9,opacity:0.75,marginLeft:3}}>({p.times.physical})</span> : null) : null}
+                              {e.id==="hyperthermia" && p.times.hyperthermia ? <span style={{fontSize:9,opacity:0.75,marginLeft:3}}>({p.times.hyperthermia})</span> : null}
+                              {e.id==="hyperbaric"   && p.times.hyperbaric   ? <span style={{fontSize:9,opacity:0.75,marginLeft:3}}>({p.times.hyperbaric})</span>   : null}
                             </span>
                           );
                         })}
