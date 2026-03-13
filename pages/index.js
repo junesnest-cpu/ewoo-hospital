@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
+import useIsMobile from "../lib/useIsMobile";
 
 const WARD_STRUCTURE = {
   2: { name: "2병동", rooms: [
@@ -120,6 +121,8 @@ async function analyzeMessengerText(text) {
 // ════════════════════════════════════════════════════════════════════════════════
 export default function HospitalWardManager() {
   const router = useRouter();
+  const isMobile = useIsMobile();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [slots,          setSlots]          = useState({});
   const [view,           setView]           = useState("ward");
   const [selectedRoom,   setSelectedRoom]   = useState(null);
@@ -397,18 +400,54 @@ export default function HospitalWardManager() {
           )}
         </div>
         <div style={S.headerRight}>
-          <span style={S.syncInfo}>{syncing ? "🔄 동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")} 저장됨` : ""}</span>
+          <span style={{ ...S.syncInfo, display: isMobile ? "none" : "inline" }}>{syncing ? "🔄 동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")} 저장됨` : ""}</span>
           <button style={S.btnRefresh} onClick={manualRefresh} title="새로고침">↻</button>
-          <button style={{ ...S.navBtn, display:"flex", alignItems:"center", gap:5 }}
-            onClick={() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); }}>
-            🏠 홈
-          </button>
-          <button style={{ ...S.navBtn, background: view==="ward" ? "#1e3a5f":"transparent" }} onClick={() => { setView("ward"); setSelectedRoom(null); }}>병실 현황</button>
-          <button style={{ ...S.navBtn, background: view==="log"  ? "#1e3a5f":"transparent" }} onClick={() => setView("log")}>변경 이력</button>
-          <button style={{ ...S.navBtn, background:"#065f46", color:"#6ee7b7" }} onClick={() => router.push("/daily")}>📋 일일 치료</button>
-          <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/physical")}>🏃 물리치료</button>
-          <button style={{ ...S.navBtn, background:"#7f1d1d", color:"#fca5a5" }} onClick={() => router.push("/hyperthermia")}>⚡ 고주파치료</button>
-          <button style={{ ...S.navBtn, background:"#334155", color:"#cbd5e1" }} onClick={() => router.push("/settings")}>⚙️ 설정</button>
+          {/* 데스크탑 네비 */}
+          {!isMobile && (<>
+            <button style={{ ...S.navBtn, display:"flex", alignItems:"center", gap:5 }}
+              onClick={() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); }}>
+              🏠 홈
+            </button>
+            <button style={{ ...S.navBtn, background: view==="ward" ? "#1e3a5f":"transparent" }} onClick={() => { setView("ward"); setSelectedRoom(null); }}>병실 현황</button>
+            <button style={{ ...S.navBtn, background: view==="log"  ? "#1e3a5f":"transparent" }} onClick={() => setView("log")}>변경 이력</button>
+            <button style={{ ...S.navBtn, background:"#065f46", color:"#6ee7b7" }} onClick={() => router.push("/daily")}>📋 일일 치료</button>
+            <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/physical")}>🏃 물리치료</button>
+            <button style={{ ...S.navBtn, background:"#7f1d1d", color:"#fca5a5" }} onClick={() => router.push("/hyperthermia")}>⚡ 고주파치료</button>
+            <button style={{ ...S.navBtn, background:"#334155", color:"#cbd5e1" }} onClick={() => router.push("/settings")}>⚙️ 설정</button>
+          </>)}
+          {/* 모바일 햄버거 메뉴 */}
+          {isMobile && (
+            <div style={{ position:"relative" }}>
+              <button style={{ ...S.navBtn, fontSize:18, padding:"4px 10px" }}
+                onClick={() => setMobileMenuOpen(v => !v)}>☰</button>
+              {mobileMenuOpen && (
+                <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, zIndex:999 }}
+                  onClick={() => setMobileMenuOpen(false)}>
+                  <div style={{ position:"absolute", top:54, right:8, background:"#1e293b", borderRadius:10,
+                    boxShadow:"0 8px 32px rgba(0,0,0,0.4)", minWidth:180, overflow:"hidden" }}
+                    onClick={e => e.stopPropagation()}>
+                    {[
+                      { label:"🏠 홈", action:() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); } },
+                      { label:"🏥 병실 현황", action:() => setView("ward") },
+                      { label:"📜 변경 이력", action:() => setView("log") },
+                      { label:"📋 일일 치료", action:() => router.push("/daily") },
+                      { label:"🏃 물리치료", action:() => router.push("/physical") },
+                      { label:"⚡ 고주파치료", action:() => router.push("/hyperthermia") },
+                      { label:"⚙️ 설정", action:() => router.push("/settings") },
+                    ].map(item => (
+                      <button key={item.label}
+                        style={{ display:"block", width:"100%", textAlign:"left", padding:"12px 18px",
+                          background:"none", border:"none", borderBottom:"1px solid #334155",
+                          color:"#e2e8f0", fontSize:14, fontWeight:600, cursor:"pointer" }}
+                        onClick={() => { item.action(); setMobileMenuOpen(false); }}>
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
@@ -868,18 +907,18 @@ const S = {
   app: { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", minHeight:"100vh", color:"#0f172a" },
   movingBanner: { position:"sticky", top:0, zIndex:200, background:"#1e1b4b", color:"#e0e7ff", padding:"10px 24px", fontSize:14, fontWeight:600, display:"flex", alignItems:"center", gap:12 },
   movingCancelBtn: { marginLeft:"auto", background:"#4c1d95", color:"#e9d5ff", border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:13, fontWeight:700 },
-  header: { color:"#fff", display:"flex", alignItems:"center", padding:"12px 24px", gap:20, flexWrap:"wrap", boxShadow:"0 2px 12px rgba(0,0,0,0.18)", transition:"background 0.4s" },
+  header: { color:"#fff", display:"flex", alignItems:"center", padding:"10px 16px", gap:12, flexWrap:"wrap", boxShadow:"0 2px 12px rgba(0,0,0,0.18)", transition:"background 0.4s" },
   headerLeft: { display:"flex", alignItems:"center", gap:12, minWidth:180 },
-  logoMark: { fontSize:28 }, title: { fontSize:18, fontWeight:800, letterSpacing:-0.5 }, subtitle: { fontSize:11, color:"#7dd3fc", letterSpacing:1 },
+  logoMark: { fontSize:24 }, title: { fontSize:15, fontWeight:800, letterSpacing:-0.5 }, subtitle: { fontSize:10, color:"#7dd3fc", letterSpacing:0.5 },
   headerCenter: { display:"flex", gap:8, flex:1, justifyContent:"center", alignItems:"center", flexWrap:"wrap" },
   headerRight: { display:"flex", alignItems:"center", gap:8 },
   syncInfo: { fontSize:11, color:"#94a3b8" },
   btnRefresh: { background:"none", border:"1px solid #334155", color:"#94a3b8", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:16 },
-  navBtn: { border:"1px solid #334155", color:"#e2e8f0", borderRadius:6, padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight:600, background:"transparent" },
+  navBtn: { border:"1px solid #334155", color:"#e2e8f0", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, fontWeight:600, background:"transparent" },
   reserveToggle: { border:"none", borderRadius:8, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:700 },
   statPill: { border:"1.5px solid", borderRadius:10, padding:"4px 14px", textAlign:"center", minWidth:70, background:"rgba(255,255,255,0.06)" },
   statVal: { display:"block", fontSize:22, fontWeight:800, lineHeight:1.1 }, statLabel: { display:"block", fontSize:11, color:"#94a3b8" },
-  datebar: { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 24px", flexWrap:"wrap", gap:10, transition:"background 0.3s" },
+  datebar: { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 12px", flexWrap:"wrap", gap:8, transition:"background 0.3s" },
   datebarLeft: { display:"flex", alignItems:"center", gap:12 }, datebarRight: { display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" },
   previewBadge: { background:"#d1fae5", color:"#065f46", borderRadius:8, padding:"4px 12px", fontSize:13, fontWeight:800 },
   todayBadge:   { background:"#dbeafe", color:"#1d4ed8", borderRadius:8, padding:"4px 12px", fontSize:13, fontWeight:800 },
@@ -895,10 +934,10 @@ const S = {
   analysisList: { display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 },
   analysisItem: { background:"#fff", border:"1px solid #bbf7d0", borderRadius:8, padding:"8px 14px", minWidth:200, maxWidth:320 },
   analysisBtns: { display:"flex", gap:8 },
-  main: { padding:"20px" },
+  main: { padding:"16px 12px" },
   wardGrid: { display:"flex", flexDirection:"column", gap:24 },
   wardTitle: { fontSize:16, fontWeight:800, color:"#0f2744", marginBottom:10, padding:"4px 0 4px 10px", borderLeft:"4px solid" },
-  roomGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))", gap:12 },
+  roomGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:10 },
   roomCard: { borderRadius:12, padding:"14px 14px 10px", cursor:"pointer", boxShadow:"0 1px 6px rgba(0,0,0,0.06)" },
   roomHeader: { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 },
   roomNo: { fontSize:17, fontWeight:800 },
@@ -923,7 +962,7 @@ const S = {
   legend: { display:"flex", gap:16, marginBottom:14, background:"#f8fafc", borderRadius:8, padding:"8px 14px", flexWrap:"wrap" },
   legendItem: { display:"flex", alignItems:"center", gap:6, fontSize:12, color:"#475569" },
   legendDot: { width:12, height:12, borderRadius:"50%", display:"inline-block" },
-  bedGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:16 },
+  bedGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:12 },
   bedCard: { background:"#fff", borderRadius:12, padding:"16px", minHeight:140, display:"flex", flexDirection:"column" },
   bedNum: { fontSize:11, color:"#94a3b8", fontWeight:600, marginBottom:8 },
   bedPatientName: { fontSize:18, fontWeight:800, marginBottom:4 },
@@ -938,7 +977,7 @@ const S = {
   reservationListTitle: { fontSize:11, fontWeight:700, color:"#7c3aed", marginBottom:6 },
   reservationItem: { background:"#faf5ff", border:"1px solid #e9d5ff", borderRadius:8, padding:"8px", marginBottom:6 },
   modalOverlay: { position:"fixed", inset:0, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 },
-  modal: { background:"#fff", borderRadius:14, padding:"28px 28px 20px", width:"100%", maxWidth:420, boxShadow:"0 8px 40px rgba(0,0,0,0.18)", maxHeight:"90vh", overflowY:"auto" },
+  modal: { background:"#fff", borderRadius:14, padding:"20px 16px 16px", width:"calc(100% - 24px)", maxWidth:420, boxShadow:"0 8px 40px rgba(0,0,0,0.18)", maxHeight:"92vh", overflowY:"auto" },
   modalTitle: { fontSize:17, fontWeight:800, marginBottom:16 },
   label: { display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:4, marginTop:12 },
   labelCheck: { display:"flex", alignItems:"center", fontSize:13, color:"#475569", marginTop:12, cursor:"pointer" },
