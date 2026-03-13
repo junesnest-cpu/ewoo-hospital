@@ -52,6 +52,9 @@ export default function TherapyPage() {
   const [extraTime, setExtraTime] = useState("");
   const [showExtra, setShowExtra] = useState(false);
   const [mobileDayIdx, setMobileDayIdx] = useState(()=>{ const d=new Date().getDay(); return d===0?6:d-1; });
+  const [printMode,    setPrintMode]    = useState(false);
+  const [printSel,     setPrintSel]     = useState({});
+  const [printTab,     setPrintTab]     = useState("physical"); // physical | hyper
 
   const physRef=React.useRef({}), hyperRef=React.useRef({}), treatRef=React.useRef({});
   const weekStartRef=React.useRef(weekStart);
@@ -173,6 +176,40 @@ export default function TherapyPage() {
     return result;
   })():[];
 
+  // 인쇄용 데이터
+  const physPrintPatients = (() => {
+    const map={};
+    therapists.forEach(th=>{
+      Object.entries(physSched[wk]?.[th]||{}).forEach(([di,times])=>{
+        Object.entries(times||{}).forEach(([time,data])=>{
+          if(!data?.slotKey) return;
+          const k=data.slotKey;
+          if(!map[k]) map[k]={name:data.patientName,slotKey:k,entries:[]};
+          map[k].entries.push({dayIdx:parseInt(di),time,treatmentId:data.treatmentId,therapist:th});
+        });
+      });
+    });
+    return Object.values(map).sort((a,b)=>a.name?.localeCompare(b.name,"ko"));
+  })();
+
+  const hyperPrintPatients = (() => {
+    const HTYPES=[{id:"hyperthermia",name:"고주파 온열치료"},{id:"hyperbaric",name:"고압산소치료"}];
+    const map={};
+    HTYPES.forEach(rt=>{
+      Object.entries(hyperSched[wk]?.[rt.id]||{}).forEach(([di,times])=>{
+        Object.entries(times||{}).forEach(([time,data])=>{
+          if(!data?.slotKey) return;
+          const k=data.slotKey;
+          if(!map[k]) map[k]={name:data.patientName,slotKey:k,entries:[]};
+          map[k].entries.push({dayIdx:parseInt(di),time,treatmentId:rt.id,treatmentName:rt.name});
+        });
+      });
+    });
+    return Object.values(map).sort((a,b)=>a.name?.localeCompare(b.name,"ko"));
+  })();
+
+  const curPrintPatients = printTab==="physical" ? physPrintPatients : hyperPrintPatients;
+
   const getConflicts=useCallback((dayIdx,time)=>{
     const seen=new Set(), dups=new Set();
     ROOMS.forEach(r=>{ const c=getCell(r.id,dayIdx,time); if(c?.slotKey&&!c.isPending){ if(seen.has(c.slotKey)) dups.add(c.slotKey); else seen.add(c.slotKey); } });
@@ -197,6 +234,10 @@ export default function TherapyPage() {
           {!isThisWeek&&<button style={{...S.btnW,background:"#065f46",color:"#6ee7b7"}} onClick={()=>setWeekStart(getWeekStart(todayD))}>이번 주</button>}
           <button style={S.btnW} onClick={()=>setWeekStart(w=>addDays(w,7))}>다음 주 ›</button>
           <button style={S.btnW} onClick={()=>router.push("/settings")}>⚙️</button>
+          <button style={{...S.btnW,background:printMode?"#7c3aed":"rgba(255,255,255,0.15)"}}
+            onClick={()=>{setPrintMode(p=>!p);setPrintSel({});}}>
+            {printMode?"✕ 취소":"🖨 인쇄"}
+          </button>
         </div>
       </header>
 
@@ -219,6 +260,32 @@ export default function TherapyPage() {
           </span>
         ))}
       </div>
+
+      {/* 인쇄 선택 바 */}
+      {printMode && (
+        <div style={{background:"#faf5ff",borderBottom:"1px solid #e9d5ff",padding:"8px 16px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",flexShrink:0}}>
+          <div style={{display:"flex",gap:0,borderRadius:7,overflow:"hidden",border:"1px solid #e9d5ff",flexShrink:0}}>
+            <button style={{padding:"5px 12px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+              background:printTab==="physical"?"#059669":"#f8fafc",color:printTab==="physical"?"#fff":"#475569"}}
+              onClick={()=>{setPrintTab("physical");setPrintSel({});}}>🏃 물리치료</button>
+            <button style={{padding:"5px 12px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+              background:printTab==="hyper"?"#dc2626":"#f8fafc",color:printTab==="hyper"?"#fff":"#475569"}}
+              onClick={()=>{setPrintTab("hyper");setPrintSel({});}}>⚡ 고주파/고압</button>
+          </div>
+          <span style={{fontSize:12,fontWeight:700,color:"#7c3aed"}}>인쇄할 환자 선택</span>
+          <div style={{display:"flex",gap:6,flex:1,flexWrap:"wrap"}}>
+            {curPrintPatients.map(p=>(
+              <label key={p.slotKey} style={{display:"flex",alignItems:"center",fontSize:12,cursor:"pointer",background:"#fff",border:"1px solid #e9d5ff",borderRadius:6,padding:"2px 8px"}}>
+                <input type="checkbox" checked={!!printSel[p.slotKey]}
+                  onChange={e=>setPrintSel(prev=>({...prev,[p.slotKey]:e.target.checked}))}/>
+                <span style={{marginLeft:5}}>{p.name}님</span>
+              </label>
+            ))}
+          </div>
+          <button style={{background:"#7c3aed",color:"#fff",border:"none",borderRadius:8,padding:"7px 16px",cursor:"pointer",fontSize:13,fontWeight:700}}
+            onClick={()=>window.print()}>선택 인쇄</button>
+        </div>
+      )}
 
       {/* 모바일 요일 탭 */}
       {isMobile&&(
@@ -414,6 +481,77 @@ export default function TherapyPage() {
           </div>
         </div>
       )}
+      {/* 인쇄 전용 */}
+      {printMode && printTab==="physical"  && <PhysPrint  patients={physPrintPatients}  selected={printSel} weekDates={weekDates}/>}
+      {printMode && printTab==="hyper"     && <HyperPrint patients={hyperPrintPatients} selected={printSel} weekDates={weekDates}/>}
+    </div>
+  );
+}
+
+// 인쇄 전용 컴포넌트
+function PhysPrint({patients, selected, weekDates}) {
+  const list = patients.filter(p=>selected[p.slotKey]);
+  if(!list.length) return null;
+  const tName = id=>({pain:"페인스크렘블러",manip2:"도수치료2",manip1:"도수치료1"}[id]||id);
+  return (
+    <div className="print-only" style={{display:"none"}}>
+      <style>{`@media print{@page{size:A4 portrait;margin:7mm}body *{visibility:hidden!important}.print-only,.print-only *{visibility:visible!important}.print-only{position:fixed;top:0;left:0;width:100%;background:#fff;z-index:9999;display:block!important}.pcard{break-inside:avoid;border:1.5px solid #aaa;border-radius:6px;padding:8px 10px;margin-bottom:10mm}}`}</style>
+      <div style={{fontFamily:"'Noto Sans KR',sans-serif",columns:2,columnGap:"6mm",fontSize:11}}>
+        {list.map(p=>{
+          const sorted=[...p.entries].sort((a,b)=>a.dayIdx-b.dayIdx||a.time.localeCompare(b.time));
+          return (
+            <div key={p.slotKey} className="pcard" style={{marginBottom:"10mm"}}>
+              <div style={{fontWeight:800,fontSize:13,borderBottom:"1px solid #ccc",paddingBottom:4,marginBottom:5}}>{p.name}님</div>
+              <div style={{fontSize:9,color:"#666",marginBottom:4}}>물리치료 안내 {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{background:"#f0f0f0"}}>{["날짜","요일","치료","시간"].map(h=><th key={h} style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{h}</th>)}</tr></thead>
+                <tbody>{sorted.map((e,i)=>(
+                  <tr key={i}>
+                    <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{weekDates[e.dayIdx].getMonth()+1}/{weekDates[e.dayIdx].getDate()}</td>
+                    <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{"월화수목금토일"[e.dayIdx]}</td>
+                    <td style={{border:"1px solid #ddd",padding:"2px 4px"}}>{tName(e.treatmentId)}</td>
+                    <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center",fontWeight:700}}>{e.time}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              <div style={{marginTop:6,paddingTop:5,borderTop:"1px dashed #ccc",fontSize:9,color:"#555",textAlign:"center"}}>치료 시간에 맞춰 지하 1층 통합치료실로 방문해 주세요.</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HyperPrint({patients, selected, weekDates}) {
+  const list = patients.filter(p=>selected[p.slotKey]);
+  if(!list.length) return null;
+  return (
+    <div className="print-only" style={{display:"none"}}>
+      <style>{`@media print{@page{size:A4 portrait;margin:7mm}body *{visibility:hidden!important}.print-only,.print-only *{visibility:visible!important}.print-only{position:fixed;top:0;left:0;width:100%;background:#fff;z-index:9999;display:block!important}.pcard{break-inside:avoid;border:1.5px solid #aaa;border-radius:6px;padding:8px 10px;margin-bottom:10mm}}`}</style>
+      <div style={{fontFamily:"'Noto Sans KR',sans-serif",columns:2,columnGap:"6mm",fontSize:11}}>
+        {list.map(p=>{
+          const sorted=[...p.entries].sort((a,b)=>a.dayIdx-b.dayIdx||a.time.localeCompare(b.time));
+          return (
+            <div key={p.slotKey} className="pcard" style={{marginBottom:"10mm"}}>
+              <div style={{fontWeight:800,fontSize:13,borderBottom:"1px solid #ccc",paddingBottom:4,marginBottom:5}}>{p.name}님 <span style={{fontSize:9,color:"#888"}}>{p.slotKey}</span></div>
+              <div style={{fontSize:9,color:"#666",marginBottom:4}}>치료 안내 {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{background:"#f0f0f0"}}>{["날짜","요일","치료","시간"].map(h=><th key={h} style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{h}</th>)}</tr></thead>
+                <tbody>{sorted.map((e,i)=>(
+                  <tr key={i}>
+                    <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{weekDates[e.dayIdx].getMonth()+1}/{weekDates[e.dayIdx].getDate()}</td>
+                    <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{"월화수목금토일"[e.dayIdx]}</td>
+                    <td style={{border:"1px solid #ddd",padding:"2px 4px"}}>{e.treatmentName}</td>
+                    <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center",fontWeight:700}}>{e.time}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              <div style={{marginTop:6,paddingTop:5,borderTop:"1px dashed #ccc",fontSize:9,color:"#555",textAlign:"center"}}>치료 시간에 맞춰 지하 1층 통합치료실로 방문해 주세요.</div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
