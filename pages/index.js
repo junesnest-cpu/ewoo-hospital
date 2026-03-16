@@ -921,11 +921,11 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                             </div>
                             {nextRes && (
                               <div style={{ display:"flex", alignItems:"center", gap:3,
-                                background:"#f5f3ff", borderRadius:5, padding:"2px 6px",
-                                flexWrap:"nowrap", overflow:"hidden", minWidth:0 }}>
+                                background:"#f5f3ff", borderRadius:5, padding:"2px 5px",
+                                flexWrap:"wrap", minWidth:0 }}>
                                 <span style={{ fontSize:10, color:"#7c3aed", fontWeight:800, flexShrink:0 }}>→</span>
-                                <span style={{ fontSize:12, fontWeight:700, color:"#6d28d9", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{nextRes.name}</span>
-                                <span style={{ fontSize:11, color:"#a78bfa", flexShrink:0, whiteSpace:"nowrap" }}>{nextRes.admitDate}</span>
+                                <span style={{ fontSize:12, fontWeight:700, color:"#6d28d9" }}>{nextRes.name}</span>
+                                <span style={{ fontSize:11, color:"#a78bfa", flexShrink:0 }}>{nextRes.admitDate}</span>
                                 {nextResList.length > 1 && (
                                   <span style={{ fontSize:10, color:"#7c3aed", background:"#ede9fe", borderRadius:3, padding:"0 3px", fontWeight:700, flexShrink:0 }}>
                                     +{nextResList.length - 1}
@@ -1215,21 +1215,21 @@ const S = {
   analysisList: { display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 },
   analysisItem: { background:"#fff", border:"1px solid #bbf7d0", borderRadius:8, padding:"8px 14px", minWidth:200, maxWidth:320 },
   analysisBtns: { display:"flex", gap:8 },
-  main: { padding:"16px 14px", flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch" },
-  wardGrid: { display:"flex", flexDirection:"column", gap:24 },
-  wardTitle: { fontSize:18, fontWeight:800, color:"#0f2744", marginBottom:10, padding:"4px 0 4px 10px", borderLeft:"4px solid" },
-  roomGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:10 },
-  roomCard: { borderRadius:12, padding:"16px 16px 12px", cursor:"pointer", boxShadow:"0 1px 6px rgba(0,0,0,0.06)" },
+  main: { padding:"12px 10px", flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch" },
+  wardGrid: { display:"flex", flexDirection:"column", gap:16 },
+  wardTitle: { fontSize:17, fontWeight:800, color:"#0f2744", marginBottom:8, padding:"3px 0 3px 10px", borderLeft:"4px solid" },
+  roomGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:8 },
+  roomCard: { borderRadius:10, padding:"12px 12px 10px", cursor:"pointer", boxShadow:"0 1px 6px rgba(0,0,0,0.06)" },
   roomHeader: { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 },
   roomNo: { fontSize:20, fontWeight:800 },
   roomTypeBadge: { fontSize:12, fontWeight:700, borderRadius:6, padding:"2px 9px" },
   bedBar: { display:"flex", gap:4, marginBottom:6 },
   bedDot: { width:14, height:14, borderRadius:"50%" },
-  roomOccupancy: { fontSize:24, fontWeight:800, marginBottom:6, display:"flex", alignItems:"center", gap:0 },
-  patientList: { display:"flex", flexDirection:"column", gap:4 },
-  patientChip: { display:"flex", alignItems:"center", gap:5, fontSize:14, flexWrap:"nowrap", overflow:"hidden", minWidth:0 },
-  bedPositionBadge: { color:"#fff", borderRadius:4, width:20, height:20, fontSize:12, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
-  patientName: { fontWeight:700, fontSize:14, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", minWidth:0 },
+  roomOccupancy: { fontSize:22, fontWeight:800, marginBottom:4, display:"flex", alignItems:"center", gap:0 },
+  patientList: { display:"flex", flexDirection:"column", gap:3 },
+  patientChip: { display:"flex", alignItems:"center", gap:4, fontSize:13, flexWrap:"wrap", overflow:"hidden", minWidth:0 },
+  bedPositionBadge: { color:"#fff", borderRadius:4, width:18, height:18, fontSize:11, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
+  patientName: { fontWeight:700, fontSize:13 },
   dischargeDateWrap: { display:"flex", alignItems:"center", gap:3, marginLeft:2 },
   dischargeDate: { color:"#64748b", fontSize:11, background:"#f1f5f9", borderRadius:4, padding:"1px 5px" },
   ddayBadge: { fontSize:11, fontWeight:800, borderRadius:4, padding:"1px 6px" },
