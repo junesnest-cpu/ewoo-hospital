@@ -195,50 +195,7 @@ export default function HospitalWardManager() {
     await set(ref(db, "slots"), newS);
   }, []);
 
-  // ── 자동 입원 처리 (당일 1회, 루프 방지) ────────────────────────────────────
-  const autoAdmitDone = useRef(false);
-  useEffect(() => {
-    // slots 첫 로드 시 1회만 실행
-    if (autoAdmitDone.current) return;
-    if (Object.keys(slots).length === 0) return;
-    autoAdmitDone.current = true;
 
-    const todayStr = new Date().toISOString().slice(0, 10);
-    // 오늘 이미 실행했으면 스킵
-    try {
-      if (typeof window !== "undefined" && window.sessionStorage.getItem("autoAdmit") === todayStr) return;
-    } catch(_) {}
-
-    const today = dateOnly(new Date());
-    const updated = JSON.parse(JSON.stringify(slots));
-    let changed = false;
-
-    Object.keys(updated).forEach(slotKey => {
-      const slot = updated[slotKey];
-      if (!slot?.reservations?.length) return;
-      const due = slot.reservations
-        .map((r, i) => ({ r, i, d: parseDateStr(r.admitDate) }))
-        .filter(({ d }) => d && dateOnly(d) <= today)
-        .sort((a, b2) => a.d - b2.d)[0];
-      if (!due) return;
-      // 병상이 비어있을 때만 자동 입원
-      if (!slot.current?.name) {
-        const { admitDate: _a, ...rest } = due.r;
-        updated[slotKey].current = rest;
-        updated[slotKey].reservations = slot.reservations.filter((_, i) => i !== due.i);
-        changed = true;
-      }
-    });
-
-    try {
-      if (typeof window !== "undefined") window.sessionStorage.setItem("autoAdmit", todayStr);
-    } catch(_) {}
-
-    if (changed) {
-      setSlots(updated);
-      set(ref(db, "slots"), updated).catch(console.error);
-    }
-  }); // 의존성 없음 — autoAdmitDone.current로 1회만 실행 보장
 
   // 예약 → 현재 입원 전환 (예약 제거 + current로 승격)
   const convertReservation = useCallback(async (slotKey, resIndex) => {
