@@ -70,7 +70,9 @@ function getDdayLabel(discharge) {
 function getSlotOccupant(slot, viewDate) {
   if (!slot) return { person: null, type: null };
   const vd = dateOnly(viewDate);
-  if (slot.current) {
+
+  // 현재 환자: 퇴원일이 뷰 날짜 이상인 경우
+  if (slot.current?.name) {
     const dischargeD = parseDateStr(slot.current.discharge);
     const stillHere = !dischargeD || dateOnly(dischargeD) >= vd;
     if (stillHere) {
@@ -78,16 +80,27 @@ function getSlotOccupant(slot, viewDate) {
       return { person: slot.current, type: dischargingToday ? "discharging_today" : "current" };
     }
   }
+
+  // 예약 중 뷰 날짜에 해당하는 것 찾기
+  // 1) 뷰 날짜에 체류 중인 예약(admitD <= vd <= dischargeD)을 모두 찾아 가장 가까운 것
   const reservations = slot.reservations || [];
-  for (const r of reservations) {
-    const admitD = parseDateStr(r.admitDate);
-    const dischargeD = parseDateStr(r.discharge);
-    if (!admitD) continue;
-    const stillHere = !dischargeD || dateOnly(dischargeD) >= vd;
-    if (dateOnly(admitD) <= vd && stillHere) {
-      return { person: r, type: dateOnly(admitD).getTime() === vd.getTime() ? "admitting_today" : "reserved" };
-    }
+  const active = reservations
+    .map(r => {
+      const admitD = parseDateStr(r.admitDate);
+      const dischargeD = parseDateStr(r.discharge);
+      if (!admitD) return null;
+      const stillHere = !dischargeD || dateOnly(dischargeD) >= vd;
+      if (dateOnly(admitD) <= vd && stillHere) return { r, admitD };
+      return null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.admitD - b.admitD); // 가장 빠른 입원일 우선
+
+  if (active.length > 0) {
+    const { r, admitD } = active[0];
+    return { person: r, type: dateOnly(admitD).getTime() === vd.getTime() ? "admitting_today" : "reserved" };
   }
+
   return { person: null, type: null };
 }
 
@@ -181,6 +194,21 @@ export default function HospitalWardManager() {
     setSlots(newS);
     await set(ref(db, "slots"), newS);
   }, []);
+
+  // 예약 → 현재 입원 전환 (예약 제거 + current로 승격)
+  const convertReservation = useCallback(async (slotKey, resIndex) => {
+    const slot = slots[slotKey];
+    if (!slot?.reservations?.[resIndex]) return;
+    const r = slot.reservations[resIndex];
+    if (!window.confirm(`${r.name}님을 현재 입원 환자로 전환하시겠습니까?
+기존 입원 환자가 있으면 덮어씌워집니다.`)) return;
+    const newSlots = JSON.parse(JSON.stringify(slots));
+    const { admitDate, ...rest } = r; // admitDate는 제거
+    newSlots[slotKey].current = { ...rest };
+    newSlots[slotKey].reservations = slot.reservations.filter((_, i) => i !== resIndex);
+    await saveSlots(newSlots);
+    await addLog({ action: "입원전환", slotKey, name: r.name, note: `예약→입원 전환 (예약일: ${admitDate||"미정"})` });
+  }, [slots, saveSlots, addLog]);
 
   const addLog = useCallback(async (entry) => {
     const newLog = { ...entry, ts: new Date().toISOString() };
@@ -721,6 +749,7 @@ export default function HospitalWardManager() {
             onEditReservation={(sk, data, idx) => setEditingSlot({ slotKey: sk, mode: "reservation", data, resIndex: idx })}
             onAddCurrent={sk => setAddingTo({ slotKey: sk, mode: "current" })}
             onAddReservation={sk => setAddingTo({ slotKey: sk, mode: "reservation" })}
+            onConvertReservation={convertReservation}
             onBack={() => setView("ward")} />
         )}
         {view === "log" && <LogView logs={logs} />}
@@ -916,7 +945,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
 }
 
 // ── RoomDetailView ────────────────────────────────────────────────────────────
-function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, movingPatient, onStartMove, onMoveTarget, onEditCurrent, onEditReservation, onAddCurrent, onAddReservation, onBack }) {
+function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, movingPatient, onStartMove, onMoveTarget, onEditCurrent, onEditReservation, onAddCurrent, onAddReservation, onConvertReservation, onBack }) {
   const router = useRouter();
   const { occupied, bedList } = getRoomStats(room.id, room.capacity);
   return (
@@ -982,7 +1011,7 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
                   <div style={S.bedDischarge}>퇴원: {b.person.discharge}</div>
                   {b.person.note && <div style={S.bedNote}>{b.person.note}</div>}
                   {b.person.scheduleAlert && <div style={S.scheduleAlert}>⚠ 스케줄 확인 필요</div>}
-                  {!isPreview && !movingPatient && b.type === "current" && (
+                  {!isPreview && !movingPatient && (b.type==="current"||b.type==="discharging_today"||b.type==="admitting_today") && (
                     <div style={{ display:"flex", gap:6, marginTop:"auto", flexWrap:"wrap" }}>
                       <button style={S.btnEdit} onClick={() => onEditCurrent(slotKey, { ...b.person })}>수정</button>
                       <button style={{ ...S.btnEdit, background:"#7c3aed" }} onClick={() => onStartMove(slotKey, "current", b.person, undefined)}>🚚 이동</button>
@@ -1009,11 +1038,13 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
                   <div style={S.reservationListTitle}>📅 입원 예약 ({reservations.length}건)</div>
                   {reservations.map((r, ri) => (
                     <div key={ri} style={S.reservationItem}>
-                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:4 }}>
                         <span style={{ fontWeight:700, color:"#7c3aed", fontSize:13 }}>{r.name}</span>
-                        <div style={{ display:"flex", gap:4 }}>
+                        <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
                           {!movingPatient && <button style={{ ...S.btnEditSmall, color:"#7c3aed" }} onClick={() => onStartMove(slotKey, "reservation", r, ri)}>🚚</button>}
                           {!movingPatient && <button style={S.btnEditSmall} onClick={() => onEditReservation(slotKey, { ...r }, ri)}>수정</button>}
+                          {!movingPatient && <button style={{ ...S.btnEditSmall, background:"#059669", color:"#fff", borderColor:"#059669" }}
+                            onClick={() => onConvertReservation(slotKey, ri)}>🛏 입원 전환</button>}
                         </div>
                       </div>
                       <div style={{ fontSize:11, color:"#64748b" }}>입원: {r.admitDate} → 퇴원: {r.discharge}</div>
