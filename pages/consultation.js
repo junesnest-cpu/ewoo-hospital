@@ -70,6 +70,7 @@ export default function ConsultationPage() {
   const [search, setSearch] = useState("");
   const [filterMonth, setFilterMonth] = useState("");
   const [filterStatus, setFilterStatus] = useState("전체");
+  const [filterAdmitDate, setFilterAdmitDate] = useState(""); // 예약날짜 검색
 
   // 병실 모달 (예약 등록)
   const [reserveModal, setReserveModal] = useState(null); // { consultation }
@@ -138,7 +139,11 @@ export default function ConsultationPage() {
   // 필터링된 목록
   // 순번 계산용: 오래된 순(오름차순) - 이달 1번이 가장 먼저 전화온 사람
   const allListAsc = Object.entries(consultations).map(([id,c])=>({id,...c}))
-    .sort((a,b) => (a.createdAt||"").localeCompare(b.createdAt||""));
+    .sort((a,b) => {
+      const dc = (a.createdAt||"").localeCompare(b.createdAt||"");
+      if (dc !== 0) return dc;
+      return (a.id||"").localeCompare(b.id||""); // 같은 날이면 id(입력순) 기준
+    });
 
   // 월별 순번 계산 (오름차순 기준 → 1번 = 이달 첫 상담)
   const monthSeqMap = {};
@@ -150,14 +155,27 @@ export default function ConsultationPage() {
     c._monthSeq = monthSeqMap[mk];
   });
 
-  // 화면 표시용: 최신순(내림차순) — 최근 상담이 위에
-  const allList = [...allListAsc].sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
+  // 화면 표시용: 최신순(내림차순) — 최근 상담이 위에, 같은 날은 나중 입력이 위
+  const allList = [...allListAsc].sort((a,b) => {
+    const dc = (b.createdAt||"").localeCompare(a.createdAt||"");
+    if (dc !== 0) return dc;
+    return (b.id||"").localeCompare(a.id||""); // 같은 날이면 나중 입력이 위
+  });
 
   const months = [...new Set(allList.map(c=>monthKey(c.createdAt)).filter(Boolean))].sort().reverse();
 
   const filtered = allList.filter(c => {
     if (filterMonth && monthKey(c.createdAt) !== filterMonth) return false;
     if (filterStatus !== "전체" && c.status !== filterStatus) return false;
+    // 예약날짜 필터: admitDate가 선택한 날짜와 일치
+    if (filterAdmitDate) {
+      if (!c.admitDate) return false;
+      // admitDate는 "YYYY-MM-DD" 또는 "M/D" 형식 모두 처리
+      const admitNorm = c.admitDate.includes("-")
+        ? c.admitDate.slice(0,10)
+        : (() => { const m=c.admitDate.match(/(\d{1,2})\/(\d{1,2})/); return m?`${new Date().getFullYear()}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`:null; })();
+      if (admitNorm !== filterAdmitDate) return false;
+    }
     if (search) {
       const q = search.toLowerCase();
       const all = [c.name,c.phone,c.phoneNote,c.diagnosis,c.hospital,c.birthYear,
@@ -438,6 +456,23 @@ export default function ConsultationPage() {
         <select style={{...S.inp, width:90}} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
           {["전체","상담중","예약완료","입원완료","취소"].map(s=><option key={s}>{s}</option>)}
         </select>
+      </div>
+      {/* 예약날짜 검색 */}
+      <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 14px",background:"#f0f9ff",borderBottom:"1px solid #e2e8f0",flexWrap:"wrap"}}>
+        <span style={{fontSize:12,fontWeight:700,color:"#0369a1",flexShrink:0}}>📅 입원예정일 검색</span>
+        <input type="date" style={{...S.inp,width:150,padding:"4px 8px",fontSize:12}}
+          value={filterAdmitDate} onChange={e=>setFilterAdmitDate(e.target.value)}/>
+        {filterAdmitDate && (
+          <button onClick={()=>setFilterAdmitDate("")}
+            style={{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>
+            ✕ 초기화
+          </button>
+        )}
+        {filterAdmitDate && (
+          <span style={{fontSize:12,color:"#0369a1",fontWeight:600}}>
+            {filtered.length}건 조회됨
+          </span>
+        )}
       </div>
 
       {/* 상담 카드 목록 */}
