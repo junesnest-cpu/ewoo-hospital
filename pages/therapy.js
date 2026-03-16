@@ -70,6 +70,8 @@ export default function TherapyPage() {
   const [extraTime,  setExtraTime] = useState("");
   const [showExtra,  setShowExtra] = useState(false);
   const [mobileDayIdx,setMobileDayIdx]=useState(()=>{ const d=new Date().getDay(); return d===0?6:d-1; });
+  // 이동/복사 모드: {type:"move"|"copy", roomId, dayIdx, time, hbSlot, data}
+  const [moveMode,   setMoveMode]  = useState(null);
 
   // 인쇄
   const [printMode, setPrintMode] = useState(false);
@@ -210,6 +212,40 @@ export default function TherapyPage() {
     await savePhys(roomId,di,time,null);
   };
 
+  // ── 이동/복사 실행 ─────────────────────────────────────────────────────────
+  const doMoveOrCopy=useCallback(async(targetRoomId,targetDayIdx,targetTime)=>{
+    if(!moveMode) return;
+    const {type,roomId,dayIdx,time,hbSlot,data}=moveMode;
+    setMoveMode(null);
+    setModal(null);
+
+    const isPhys=roomId==="th1"||roomId==="th2";
+    const isHB=roomId==="hyperbaric";
+
+    // 목적지에 이미 데이터가 있으면 경고
+    let destOccupied=false;
+    if(targetRoomId==="th1"||targetRoomId==="th2") destOccupied=!!getCell(targetRoomId,targetDayIdx,targetTime);
+    else if(targetRoomId==="hyperbaric") destOccupied=!!getHBCell(targetDayIdx,targetTime,hbSlot||"a");
+    else destOccupied=!!getCell(targetRoomId,targetDayIdx,targetTime);
+    if(destOccupied&&!window.confirm("해당 칸에 이미 입력된 내용이 있습니다. 덮어쓰시겠습니까?")) return;
+
+    // 목적지에 저장
+    if(targetRoomId==="th1"||targetRoomId==="th2"){
+      await savePhys(targetRoomId,targetDayIdx,targetTime,{...data});
+    } else if(targetRoomId==="hyperbaric"){
+      await saveHyper("hyperbaric",targetDayIdx,targetTime,{...data},hbSlot||"a");
+    } else {
+      await saveHyper(targetRoomId,targetDayIdx,targetTime,{...data});
+    }
+
+    // 이동이면 원본 삭제
+    if(type==="move"){
+      if(isPhys) await savePhys(roomId,dayIdx,time,null);
+      else if(isHB) await saveHyper("hyperbaric",dayIdx,time,null,hbSlot);
+      else await saveHyper(roomId,dayIdx,time,null);
+    }
+  },[moveMode,getCell,getHBCell,savePhys,saveHyper]);
+
   // ── 고주파/고압산소 등록 (변경된 항목만 저장) ───────────────────────────
   const doHyperRegister=async()=>{
     if(!modal) return;
@@ -347,6 +383,24 @@ export default function TherapyPage() {
         </div>
       )}
 
+      {/* 이동/복사 모드 배너 */}
+      {moveMode&&(
+        <div style={{background:moveMode.type==="move"?"#0f2744":"#6d28d9",color:"#fff",padding:"10px 16px",
+          display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,
+          boxShadow:"0 2px 8px rgba(0,0,0,0.2)",zIndex:10}}>
+          <div style={{fontSize:13,fontWeight:700}}>
+            {moveMode.type==="move"?"✂️ 이동":"📋 복사"} 모드 —
+            <span style={{color:"#fbbf24",marginLeft:6}}>{moveMode.data?.patientName}님</span>
+            <span style={{fontSize:11,opacity:0.8,marginLeft:6}}>
+              ({DAYS[moveMode.dayIdx]} {moveMode.time} → 목적지 칸을 클릭하세요)
+            </span>
+          </div>
+          <button onClick={()=>setMoveMode(null)}
+            style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:6,
+              padding:"4px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>취소</button>
+        </div>
+      )}
+
       {/* 모바일 요일 탭 */}
       {isMobile&&(
         <div style={{display:"flex",background:"#fff",borderBottom:"1px solid #e2e8f0",flexShrink:0}}>
@@ -437,9 +491,20 @@ export default function TherapyPage() {
                                 const icA=ca&&!ca.isPending&&conflicts.has(ca.slotKey);
                                 const icB=cb&&!cb.isPending&&conflicts.has(cb.slotKey);
                                 return (
-                                  <div key={r.id} onClick={()=>openModal(r.id,dayIdx,time)}
-                                    style={{background:r.bg,borderRadius:5,cursor:"pointer",padding:"2px",
-                                      border:`1px solid ${r.color}33`,display:"flex",flexDirection:"column",gap:2,
+                                  <div key={r.id}
+                                    onClick={()=>{
+                                      if(moveMode){
+                                        const srcIsHB=moveMode.roomId==="hyperbaric";
+                                        if(srcIsHB) doMoveOrCopy("hyperbaric",dayIdx,time);
+                                        else window.alert("같은 종류의 칸으로만 이동/복사할 수 있습니다.");
+                                        return;
+                                      }
+                                      openModal(r.id,dayIdx,time);
+                                    }}
+                                    style={{background:moveMode&&moveMode.roomId==="hyperbaric"?"#e0f2fe":r.bg,
+                                      borderRadius:5,cursor:moveMode?"crosshair":"pointer",padding:"2px",
+                                      border:moveMode&&moveMode.roomId==="hyperbaric"?"2px dashed #f59e0b":`1px solid ${r.color}33`,
+                                      display:"flex",flexDirection:"column",gap:2,
                                       overflow:"hidden",boxSizing:"border-box"}}>
                                     {/* A슬롯 정시 */}
                                     <div style={{flex:1,borderRadius:3,padding:"2px 3px",
@@ -484,9 +549,25 @@ export default function TherapyPage() {
                               const bg=cell?(tr2?tr2.bg:r.bg):"#f8fafc";
                               const col=cell?(tr2?tr2.color:r.color):"#d1d5db";
                               return (
-                                <div key={r.id} onClick={()=>openModal(r.id,dayIdx,time)}
-                                  style={{background:bg,borderRadius:5,cursor:"pointer",padding:"4px",
-                                    border:isConflict?"2px solid #dc2626":`1px solid ${col}44`,
+                                <div key={r.id}
+                                  onClick={()=>{
+                                    if(moveMode){
+                                      const srcIsPhys=moveMode.roomId==="th1"||moveMode.roomId==="th2";
+                                      const dstIsPhys=r.id==="th1"||r.id==="th2";
+                                      const srcIsHyper=moveMode.roomId==="hyperthermia";
+                                      const dstIsHyper=r.id==="hyperthermia";
+                                      if(srcIsPhys&&dstIsPhys) doMoveOrCopy(r.id,dayIdx,time);
+                                      else if(srcIsHyper&&dstIsHyper) doMoveOrCopy(r.id,dayIdx,time);
+                                      else window.alert("같은 종류의 칸으로만 이동/복사할 수 있습니다.");
+                                      return;
+                                    }
+                                    openModal(r.id,dayIdx,time);
+                                  }}
+                                  style={{background:moveMode&&(r.id==="th1"||r.id==="th2"||(r.id==="hyperthermia"&&moveMode.roomId==="hyperthermia"))?
+                                    (moveMode.roomId===r.id&&moveMode.dayIdx===dayIdx&&moveMode.time===time?"#fef3c7":"#fff7ed"):bg,
+                                    borderRadius:5,cursor:moveMode?"crosshair":"pointer",padding:"4px",
+                                    border:moveMode&&(r.id==="th1"||r.id==="th2"||(r.id==="hyperthermia"&&moveMode.roomId==="hyperthermia"))?"2px dashed #f59e0b":
+                                      isConflict?"2px solid #dc2626":`1px solid ${col}44`,
                                     display:"flex",flexDirection:"column",justifyContent:"center",
                                     position:"relative",overflow:"hidden",boxSizing:"border-box"}}>
                                   {cell?(
@@ -564,12 +645,22 @@ export default function TherapyPage() {
               </div>
               {showExtra&&<input style={{...S.inp,marginTop:6}} type="time" value={extraTime} onChange={e=>setExtraTime(e.target.value)} step="1800"/>}
 
-              <div style={{display:"flex",gap:8,marginTop:16}}>
+              <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
                 <button style={{...S.btnOk,flex:1,background:modalRoom.color}} onClick={doPhysRegister}
                   disabled={!physSlot||(physSlot==="__pending__"&&!physPend.trim())||!physTreat}>등록</button>
-                {getCell(modal.roomId,modal.dayIdx,modal.time)&&(
+                {getCell(modal.roomId,modal.dayIdx,modal.time)&&(<>
+                  <button style={{...S.btnOk,background:"#0f2744"}} onClick={()=>{
+                    const d=getCell(modal.roomId,modal.dayIdx,modal.time);
+                    setMoveMode({type:"move",roomId:modal.roomId,dayIdx:modal.dayIdx,time:modal.time,data:d});
+                    setModal(null);
+                  }}>✂️ 이동</button>
+                  <button style={{...S.btnOk,background:"#7c3aed"}} onClick={()=>{
+                    const d=getCell(modal.roomId,modal.dayIdx,modal.time);
+                    setMoveMode({type:"copy",roomId:modal.roomId,dayIdx:modal.dayIdx,time:modal.time,data:d});
+                    setModal(null);
+                  }}>📋 복사</button>
                   <button style={S.btnDel} onClick={()=>{doPhysRemove(modal.roomId,modal.dayIdx,modal.time);setModal(null);}}>삭제</button>
-                )}
+                </>)}
               </div>
             </div>
           </div>
@@ -625,7 +716,55 @@ export default function TherapyPage() {
               </label>
               {showExtra&&<input style={{...S.inp,marginTop:6}} type="time" value={extraTime} onChange={e=>setExtraTime(e.target.value)} step="1800"/>}
 
-              <div style={{display:"flex",gap:8,marginTop:14}}>
+              {/* 고주파 이동/복사 */}
+              {getCell("hyperthermia",modal.dayIdx,modal.time)&&(
+                <div style={{display:"flex",gap:6,marginTop:6,marginBottom:4}}>
+                  <span style={{fontSize:11,color:"#64748b",alignSelf:"center"}}>고주파:</span>
+                  <button style={{...S.btnOk,padding:"4px 10px",fontSize:11,background:"#0f2744"}} onClick={()=>{
+                    const d=getCell("hyperthermia",modal.dayIdx,modal.time);
+                    setMoveMode({type:"move",roomId:"hyperthermia",dayIdx:modal.dayIdx,time:modal.time,data:d});
+                    setModal(null);
+                  }}>✂️ 이동</button>
+                  <button style={{...S.btnOk,padding:"4px 10px",fontSize:11,background:"#7c3aed"}} onClick={()=>{
+                    const d=getCell("hyperthermia",modal.dayIdx,modal.time);
+                    setMoveMode({type:"copy",roomId:"hyperthermia",dayIdx:modal.dayIdx,time:modal.time,data:d});
+                    setModal(null);
+                  }}>📋 복사</button>
+                </div>
+              )}
+              {/* 고압산소 A 이동/복사 */}
+              {getHBCell(modal.dayIdx,modal.time,"a")&&(
+                <div style={{display:"flex",gap:6,marginTop:4,marginBottom:4}}>
+                  <span style={{fontSize:11,color:"#64748b",alignSelf:"center"}}>고압A:</span>
+                  <button style={{...S.btnOk,padding:"4px 10px",fontSize:11,background:"#0f2744"}} onClick={()=>{
+                    const d=getHBCell(modal.dayIdx,modal.time,"a");
+                    setMoveMode({type:"move",roomId:"hyperbaric",dayIdx:modal.dayIdx,time:modal.time,hbSlot:"a",data:d});
+                    setModal(null);
+                  }}>✂️ 이동</button>
+                  <button style={{...S.btnOk,padding:"4px 10px",fontSize:11,background:"#7c3aed"}} onClick={()=>{
+                    const d=getHBCell(modal.dayIdx,modal.time,"a");
+                    setMoveMode({type:"copy",roomId:"hyperbaric",dayIdx:modal.dayIdx,time:modal.time,hbSlot:"a",data:d});
+                    setModal(null);
+                  }}>📋 복사</button>
+                </div>
+              )}
+              {/* 고압산소 B 이동/복사 */}
+              {getHBCell(modal.dayIdx,modal.time,"b")&&(
+                <div style={{display:"flex",gap:6,marginTop:4,marginBottom:8}}>
+                  <span style={{fontSize:11,color:"#64748b",alignSelf:"center"}}>고압B:</span>
+                  <button style={{...S.btnOk,padding:"4px 10px",fontSize:11,background:"#0f2744"}} onClick={()=>{
+                    const d=getHBCell(modal.dayIdx,modal.time,"b");
+                    setMoveMode({type:"move",roomId:"hyperbaric",dayIdx:modal.dayIdx,time:modal.time,hbSlot:"b",data:d});
+                    setModal(null);
+                  }}>✂️ 이동</button>
+                  <button style={{...S.btnOk,padding:"4px 10px",fontSize:11,background:"#7c3aed"}} onClick={()=>{
+                    const d=getHBCell(modal.dayIdx,modal.time,"b");
+                    setMoveMode({type:"copy",roomId:"hyperbaric",dayIdx:modal.dayIdx,time:modal.time,hbSlot:"b",data:d});
+                    setModal(null);
+                  }}>📋 복사</button>
+                </div>
+              )}
+              <div style={{display:"flex",gap:8,marginTop:4}}>
                 <button style={{...S.btnOk,flex:1,background:"#dc2626"}} onClick={doHyperRegister}>저장</button>
                 <button style={S.btnDel} onClick={async()=>{
                   if(!confirm("이 시간 전체 삭제?")) return;
