@@ -256,7 +256,7 @@ export default function TherapyPage() {
     const prevH=getCell("hyperthermia",dayIdx,time);
     const prevHKey=prevH?.slotKey||"";
     if(selHyper!==prevHKey || (selHyper&&hyperMemo!==prevH?.memo) || (selHyper&&hyperOuter!==prevH?.isOuter)){
-      if(selHyper==="__pending__"){ if(pendH.trim()) await saveHyper("hyperthermia",dayIdx,time,{slotKey:"__pending__",patientName:pendH.trim(),memo:hyperMemo,isOuter:hyperOuter,roomId:"",bedNum:"",isPending:true}); else await saveHyper("hyperthermia",dayIdx,time,null); }
+      if(selHyper==="__pending__"){ if(pendH.trim()) await saveHyper("hyperthermia",dayIdx,time,{slotKey:`pending_${Date.now()}`,patientName:pendH.trim(),memo:hyperMemo,isOuter:hyperOuter,roomId:"",bedNum:"",isPending:true}); else await saveHyper("hyperthermia",dayIdx,time,null); }
       else if(selHyper){ const name=slots[selHyper]?.current?.name||""; await saveHyper("hyperthermia",dayIdx,time,{slotKey:selHyper,patientName:name,memo:hyperMemo,isOuter:hyperOuter,roomId:selHyper.split("-")[0],bedNum:selHyper.split("-")[1]}); }
       else await saveHyper("hyperthermia",dayIdx,time,null);
     }
@@ -264,7 +264,7 @@ export default function TherapyPage() {
     // 고압산소 a슬롯
     const prevHBa=getHBCell(dayIdx,time,"a"); const prevHBaKey=prevHBa?.slotKey||"";
     if(selHBa!==prevHBaKey){
-      if(selHBa==="__pending__"){ if(pendHBa.trim()) await saveHyper("hyperbaric",dayIdx,time,{slotKey:"__pending__",patientName:pendHBa.trim(),roomId:"",bedNum:"",isPending:true,subTime:time},"a"); else await saveHyper("hyperbaric",dayIdx,time,null,"a"); }
+      if(selHBa==="__pending__"){ if(pendHBa.trim()) await saveHyper("hyperbaric",dayIdx,time,{slotKey:`pending_${Date.now()}a`,patientName:pendHBa.trim(),roomId:"",bedNum:"",isPending:true,subTime:time},"a"); else await saveHyper("hyperbaric",dayIdx,time,null,"a"); }
       else if(selHBa){ const name=slots[selHBa]?.current?.name||""; await saveHyper("hyperbaric",dayIdx,time,{slotKey:selHBa,patientName:name,roomId:selHBa.split("-")[0],bedNum:selHBa.split("-")[1],subTime:time},"a"); }
       else await saveHyper("hyperbaric",dayIdx,time,null,"a");
     }
@@ -273,7 +273,7 @@ export default function TherapyPage() {
     const timeB=addMinutes(time,30);
     const prevHBb=getHBCell(dayIdx,time,"b"); const prevHBbKey=prevHBb?.slotKey||"";
     if(selHBb!==prevHBbKey){
-      if(selHBb==="__pending__"){ if(pendHBb.trim()) await saveHyper("hyperbaric",dayIdx,time,{slotKey:"__pending__",patientName:pendHBb.trim(),roomId:"",bedNum:"",isPending:true,subTime:timeB},"b"); else await saveHyper("hyperbaric",dayIdx,time,null,"b"); }
+      if(selHBb==="__pending__"){ if(pendHBb.trim()) await saveHyper("hyperbaric",dayIdx,time,{slotKey:`pending_${Date.now()}b`,patientName:pendHBb.trim(),roomId:"",bedNum:"",isPending:true,subTime:timeB},"b"); else await saveHyper("hyperbaric",dayIdx,time,null,"b"); }
       else if(selHBb){ const name=slots[selHBb]?.current?.name||""; await saveHyper("hyperbaric",dayIdx,time,{slotKey:selHBb,patientName:name,roomId:selHBb.split("-")[0],bedNum:selHBb.split("-")[1],subTime:timeB},"b"); }
       else await saveHyper("hyperbaric",dayIdx,time,null,"b");
     }
@@ -305,14 +305,15 @@ export default function TherapyPage() {
   // ── 인쇄용 데이터 (예정 환자 포함) ──────────────────────────────────────
   const physPrintPatients=(()=>{
     const map={};
-    ["th1","th2"].forEach(rid=>{ Object.entries(physSched[wk]?.[rid]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey; if(!map[k]) map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,entries:[]}; map[k].entries.push({dayIdx:parseInt(di),time,treatmentId:data.treatmentId,memo:data.memo||"",therapistId:rid}); }); }); });
+    ["th1","th2"].forEach(rid=>{ Object.entries(physSched[wk]?.[rid]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__ph_${rid}_${di}_${time}`:data.slotKey; if(!map[k]) map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,entries:[]}; map[k].entries.push({dayIdx:parseInt(di),time,treatmentId:data.treatmentId,memo:data.memo||"",therapistId:rid}); }); }); });
     return Object.values(map).sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
   })();
 
   const hyperPrintPatients=(()=>{
     const map={};
-    Object.entries(hyperSched[wk]?.["hyperthermia"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey; if(!map[k]) map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,entries:[]}; map[k].entries.push({dayIdx:parseInt(di),time,treatmentName:"고주파 온열치료",memo:data.memo||""}); }); });
-    Object.entries(hyperSched[wk]?.["hyperbaric"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,hbSlots])=>{ ["a","b"].forEach(s=>{ const data=hbSlots?.[s]; if(!data?.slotKey) return; const k=data.slotKey; if(!map[k]) map[k]={name:data.patientName,slotKey:k,entries:[]}; map[k].entries.push({dayIdx:parseInt(di),time:data.subTime||time,treatmentName:"고압산소치료",memo:""}); }); }); });
+    // __pending__은 저장위치(type_di_time_slot)를 고유키로 사용
+    Object.entries(hyperSched[wk]?.["hyperthermia"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__ht_${di}_${time}`:data.slotKey; if(!map[k]) map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,entries:[]}; map[k].entries.push({dayIdx:parseInt(di),time,treatmentName:"고주파 온열치료",memo:data.memo||""}); }); });
+    Object.entries(hyperSched[wk]?.["hyperbaric"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,hbSlots])=>{ ["a","b"].forEach(s=>{ const data=hbSlots?.[s]; if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__hb_${di}_${time}_${s}`:data.slotKey; if(!map[k]) map[k]={name:data.patientName,slotKey:k,entries:[]}; map[k].entries.push({dayIdx:parseInt(di),time:data.subTime||time,treatmentName:"고압산소치료",memo:""}); }); }); });
     return Object.values(map).sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
   })();
 
