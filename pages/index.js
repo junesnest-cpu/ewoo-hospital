@@ -493,7 +493,7 @@ export default function HospitalWardManager() {
       )}
 
       {/* 헤더 */}
-      <header style={{ ...S.header, background: isPreview ? "#0d3320" : movingPatient ? "#1e1b4b" : "#0f2744",
+      <header style={{ ...S.header, position:"sticky", top:0, zIndex:40, background: isPreview ? "#0d3320" : movingPatient ? "#1e1b4b" : "#0f2744",
         flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center",
         padding: isMobile ? "8px 12px" : "10px 16px", gap: isMobile ? 6 : 12 }}>
         {/* 첫 줄: 로고+타이틀 + 새로고침 + 햄버거 */}
@@ -593,7 +593,7 @@ export default function HospitalWardManager() {
 
       {/* 검색 + 가용병실 조회 바 */}
       {!isPreview && (
-        <div style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"8px 16px",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",position:"relative",zIndex:20}}>
+        <div style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"8px 16px",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",position:"sticky",top:0,zIndex:29}}>
           {/* 환자 검색 */}
           <div style={{position:"relative",flexShrink:0}}>
             <div style={{display:"flex",alignItems:"center",gap:0,border:"1.5px solid #e2e8f0",borderRadius:8,overflow:"hidden",background:"#f8fafc"}}>
@@ -920,13 +920,14 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                               )}
                             </div>
                             {nextRes && (
-                              <div style={{ display:"flex", alignItems:"center", gap:4, paddingLeft:4,
-                                background:"#f5f3ff", borderRadius:5, padding:"2px 6px", marginLeft:2 }}>
-                                <span style={{ fontSize:10, color:"#7c3aed", fontWeight:800 }}>→</span>
-                                <span style={{ fontSize:12, fontWeight:700, color:"#6d28d9" }}>{nextRes.name}</span>
-                                <span style={{ fontSize:11, color:"#a78bfa" }}>{nextRes.admitDate}</span>
+                              <div style={{ display:"flex", alignItems:"center", gap:3,
+                                background:"#f5f3ff", borderRadius:5, padding:"2px 6px",
+                                flexWrap:"nowrap", overflow:"hidden", minWidth:0 }}>
+                                <span style={{ fontSize:10, color:"#7c3aed", fontWeight:800, flexShrink:0 }}>→</span>
+                                <span style={{ fontSize:12, fontWeight:700, color:"#6d28d9", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{nextRes.name}</span>
+                                <span style={{ fontSize:11, color:"#a78bfa", flexShrink:0, whiteSpace:"nowrap" }}>{nextRes.admitDate}</span>
                                 {nextResList.length > 1 && (
-                                  <span style={{ fontSize:10, color:"#7c3aed", background:"#ede9fe", borderRadius:3, padding:"0 4px", fontWeight:700 }}>
+                                  <span style={{ fontSize:10, color:"#7c3aed", background:"#ede9fe", borderRadius:3, padding:"0 3px", fontWeight:700, flexShrink:0 }}>
                                     +{nextResList.length - 1}
                                   </span>
                                 )}
@@ -1184,7 +1185,7 @@ function StatPill({ label, value, color }) {
 }
 
 const S = {
-  app: { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", minHeight:"100vh", color:"#0f172a" },
+  app: { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", height:"100vh", display:"flex", flexDirection:"column", overflow:"hidden", color:"#0f172a" },
   movingBanner: { position:"sticky", top:0, zIndex:200, background:"#1e1b4b", color:"#e0e7ff", padding:"10px 24px", fontSize:14, fontWeight:600, display:"flex", alignItems:"center", gap:12 },
   movingCancelBtn: { marginLeft:"auto", background:"#4c1d95", color:"#e9d5ff", border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:13, fontWeight:700 },
   header: { color:"#fff", display:"flex", alignItems:"center", padding:"10px 16px", gap:12, flexWrap:"wrap", boxShadow:"0 2px 12px rgba(0,0,0,0.18)", transition:"background 0.4s" },
@@ -1198,7 +1199,7 @@ const S = {
   reserveToggle: { border:"none", borderRadius:8, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:700 },
   statPill: { border:"1.5px solid", borderRadius:10, padding:"4px 14px", textAlign:"center", minWidth:70, background:"rgba(255,255,255,0.06)" },
   statVal: { display:"block", fontSize:22, fontWeight:800, lineHeight:1.1 }, statLabel: { display:"block", fontSize:11, color:"#94a3b8" },
-  datebar: { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 12px", flexWrap:"wrap", gap:8, transition:"background 0.3s" },
+  datebar: { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 12px", flexWrap:"wrap", gap:8, transition:"background 0.3s", position:"sticky", top:0, zIndex:30, boxShadow:"0 1px 4px rgba(0,0,0,0.06)" },
   datebarLeft: { display:"flex", alignItems:"center", gap:12 }, datebarRight: { display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" },
   previewBadge: { background:"#d1fae5", color:"#065f46", borderRadius:8, padding:"4px 12px", fontSize:13, fontWeight:800 },
   todayBadge:   { background:"#dbeafe", color:"#1d4ed8", borderRadius:8, padding:"4px 12px", fontSize:13, fontWeight:800 },
@@ -1214,10 +1215,10 @@ const S = {
   analysisList: { display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 },
   analysisItem: { background:"#fff", border:"1px solid #bbf7d0", borderRadius:8, padding:"8px 14px", minWidth:200, maxWidth:320 },
   analysisBtns: { display:"flex", gap:8 },
-  main: { padding:"16px 14px" },
+  main: { padding:"16px 14px", flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch" },
   wardGrid: { display:"flex", flexDirection:"column", gap:24 },
   wardTitle: { fontSize:18, fontWeight:800, color:"#0f2744", marginBottom:10, padding:"4px 0 4px 10px", borderLeft:"4px solid" },
-  roomGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))", gap:10 },
+  roomGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))", gap:10 },
   roomCard: { borderRadius:12, padding:"16px 16px 12px", cursor:"pointer", boxShadow:"0 1px 6px rgba(0,0,0,0.06)" },
   roomHeader: { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 },
   roomNo: { fontSize:20, fontWeight:800 },
@@ -1226,9 +1227,9 @@ const S = {
   bedDot: { width:14, height:14, borderRadius:"50%" },
   roomOccupancy: { fontSize:24, fontWeight:800, marginBottom:6, display:"flex", alignItems:"center", gap:0 },
   patientList: { display:"flex", flexDirection:"column", gap:4 },
-  patientChip: { display:"flex", alignItems:"center", gap:5, fontSize:14, flexWrap:"wrap" },
+  patientChip: { display:"flex", alignItems:"center", gap:5, fontSize:14, flexWrap:"nowrap", overflow:"hidden", minWidth:0 },
   bedPositionBadge: { color:"#fff", borderRadius:4, width:20, height:20, fontSize:12, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
-  patientName: { fontWeight:700, fontSize:14 },
+  patientName: { fontWeight:700, fontSize:14, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", minWidth:0 },
   dischargeDateWrap: { display:"flex", alignItems:"center", gap:3, marginLeft:2 },
   dischargeDate: { color:"#64748b", fontSize:11, background:"#f1f5f9", borderRadius:4, padding:"1px 5px" },
   ddayBadge: { fontSize:11, fontWeight:800, borderRadius:4, padding:"1px 6px" },
