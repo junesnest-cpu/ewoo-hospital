@@ -197,21 +197,6 @@ export default function HospitalWardManager() {
 
 
 
-  // 예약 → 현재 입원 전환 (예약 제거 + current로 승격)
-  const convertReservation = useCallback(async (slotKey, resIndex) => {
-    const slot = slots[slotKey];
-    if (!slot?.reservations?.[resIndex]) return;
-    const r = slot.reservations[resIndex];
-    if (!window.confirm(`${r.name}님을 현재 입원 환자로 전환하시겠습니까?
-기존 입원 환자가 있으면 덮어씌워집니다.`)) return;
-    const newSlots = JSON.parse(JSON.stringify(slots));
-    const { admitDate, ...rest } = r; // admitDate는 제거
-    newSlots[slotKey].current = { ...rest };
-    newSlots[slotKey].reservations = slot.reservations.filter((_, i) => i !== resIndex);
-    await saveSlots(newSlots);
-    await addLog({ action: "입원전환", slotKey, name: r.name, note: `예약→입원 전환 (예약일: ${admitDate||"미정"})` });
-  }, [slots, saveSlots, addLog]);
-
   const addLog = useCallback(async (entry) => {
     const newLog = { ...entry, ts: new Date().toISOString() };
     setLogs(prev => {
@@ -220,6 +205,20 @@ export default function HospitalWardManager() {
       return updated;
     });
   }, []);
+
+  // 예약 → 현재 입원 전환 (addLog 선언 후에 위치)
+  const convertReservation = useCallback(async (slotKey, resIndex) => {
+    const slot = slots[slotKey];
+    if (!slot?.reservations?.[resIndex]) return;
+    const r = slot.reservations[resIndex];
+    if (!window.confirm(`${r.name}님을 현재 입원 환자로 전환하시겠습니까?\n기존 입원 환자가 있으면 덮어씌워집니다.`)) return;
+    const newSlots = JSON.parse(JSON.stringify(slots));
+    const { admitDate, ...rest } = r;
+    newSlots[slotKey].current = { ...rest };
+    newSlots[slotKey].reservations = slot.reservations.filter((_, i) => i !== resIndex);
+    await saveSlots(newSlots);
+    await addLog({ action: "입원전환", slotKey, name: r.name, note: `예약→입원 전환 (예약일: ${admitDate||"미정"})` });
+  }, [slots, saveSlots, addLog]);
 
   const manualRefresh = useCallback(async () => {
     setSyncing(true);
