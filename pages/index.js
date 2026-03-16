@@ -821,7 +821,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
       {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => (
         <div key={wardNo}>
           <div style={{ ...S.wardTitle, borderLeftColor: isPreview ? "#10b981":"#0ea5e9" }}>{ward.name}</div>
-          <div style={S.roomGrid}>
+          <div style={{ ...S.roomGrid, gridTemplateColumns:`repeat(${ward.rooms.length},1fr)` }}>
             {ward.rooms.map(room => {
               const { occupied, available, bedList } = getRoomStats(room.id, room.capacity);
               const alertCount = bedList.filter(b => b.person?.scheduleAlert && b.type !== null).length;
@@ -1043,6 +1043,27 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
                       </button>
                     </div>
                   )}
+                  {/* 예약 입원 중(reserved/admitting_today): 입원 전환 + 수정 + 이동 + 치료일정 */}
+                  {!isPreview && !movingPatient && (b.type==="reserved"||b.type==="admitting_today") && (() => {
+                    // reservations에서 해당 예약 인덱스 찾기
+                    const resIdx = (slot?.reservations||[]).findIndex(r => r.name === b.person.name && r.admitDate === b.person.admitDate);
+                    return (
+                      <div style={{ display:"flex", gap:6, marginTop:4, flexWrap:"wrap" }}>
+                        <button style={{ ...S.btnEdit, background:"#059669" }}
+                          onClick={() => resIdx>=0 && onConvertReservation(slotKey, resIdx)}>
+                          🛏 입원 전환
+                        </button>
+                        {resIdx>=0 && <button style={S.btnEdit}
+                          onClick={() => onEditReservation(slotKey, { ...(slot.reservations[resIdx]) }, resIdx)}>수정</button>}
+                        {resIdx>=0 && <button style={{ ...S.btnEdit, background:"#7c3aed" }}
+                          onClick={() => onStartMove(slotKey, "reservation", slot.reservations[resIdx], resIdx)}>🚚 이동</button>}
+                        <button style={{ ...S.btnEdit, background:"#dc2626", width:"100%", marginTop:2 }}
+                          onClick={() => router.push("/treatment?slotKey=" + encodeURIComponent(slotKey) + "&name=" + encodeURIComponent(b.person.name) + "&discharge=" + encodeURIComponent(b.person.discharge||"") + "&admitDate=" + encodeURIComponent(b.person.admitDate||""))}>
+                          📋 치료 일정표
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </>
               ) : (
                 <div style={S.emptyBed}>
@@ -1215,11 +1236,11 @@ const S = {
   analysisList: { display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 },
   analysisItem: { background:"#fff", border:"1px solid #bbf7d0", borderRadius:8, padding:"8px 14px", minWidth:200, maxWidth:320 },
   analysisBtns: { display:"flex", gap:8 },
-  main: { padding:"12px 10px", flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch" },
-  wardGrid: { display:"flex", flexDirection:"column", gap:16 },
+  main: { padding:"10px 6px", flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch" },
+  wardGrid: { display:"flex", flexDirection:"column", gap:12 },
   wardTitle: { fontSize:17, fontWeight:800, color:"#0f2744", marginBottom:8, padding:"3px 0 3px 10px", borderLeft:"4px solid" },
-  roomGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:8 },
-  roomCard: { borderRadius:10, padding:"12px 12px 10px", cursor:"pointer", boxShadow:"0 1px 6px rgba(0,0,0,0.06)" },
+  roomGrid: { display:"grid", gap:8 },
+  roomCard: { borderRadius:10, padding:"10px 8px 8px", cursor:"pointer", boxShadow:"0 1px 6px rgba(0,0,0,0.06)" },
   roomHeader: { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 },
   roomNo: { fontSize:20, fontWeight:800 },
   roomTypeBadge: { fontSize:12, fontWeight:700, borderRadius:6, padding:"2px 9px" },
