@@ -287,14 +287,11 @@ export default function TherapyPage() {
     .map(([sk,sd])=>({slotKey:sk,name:sd.current.name}))
     .sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
 
-  const physModalPatients=modal&&(modal.roomId==="th1"||modal.roomId==="th2")?(()=>{
-    const {dayIdx}=modal; const date=weekDates[dayIdx];
-    const mKey=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`; const dKey=String(date.getDate());
-    const result=[];
-    Object.entries(treatPlans).forEach(([sk,months])=>{ const items=months?.[mKey]?.[dKey]||[]; const ph=items.filter(e=>PHYS_TREATS.some(t=>t.id===e.id)); const name=slots[sk]?.current?.name; if(!name||!VALID_ROOMS.has(sk.split("-")[0])) return; result.push({slotKey:sk,name,treatmentIds:ph.map(e=>e.id),linked:true}); });
-    Object.entries(slots).forEach(([sk,sd])=>{ if(!sd?.current?.name||!VALID_ROOMS.has(sk.split("-")[0])) return; if(result.find(r=>r.slotKey===sk)) return; result.push({slotKey:sk,name:sd.current.name,treatmentIds:[],linked:false}); });
-    return result.sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
-  })():[];
+  // 물리치료 환자 목록: 치료계획 연동(즐겨찾기) 제거 → 가나다순 전체 입원환자
+  const physModalPatients=Object.entries(slots)
+    .filter(([sk,sd])=>sd?.current?.name&&VALID_ROOMS.has(sk.split("-")[0]))
+    .map(([sk,sd])=>({slotKey:sk,name:sd.current.name}))
+    .sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
 
   // ── 충돌 감지 ─────────────────────────────────────────────────────────────
   const getConflicts=useCallback((dayIdx,time)=>{
@@ -427,7 +424,7 @@ export default function TherapyPage() {
         <table style={S.tbl}>
           <colgroup>
             <col style={{width:50}}/>
-            {dayCols.map(di=><col key={di} style={{minWidth:isMobile?320:150}}/>)}
+            {dayCols.map(di=><col key={di} style={{minWidth:isMobile?340:190}}/>)}
           </colgroup>
           <thead>
             <tr>
@@ -436,20 +433,20 @@ export default function TherapyPage() {
                 const date=weekDates[di]; const isWe=di>=5;
                 const isToday=isThisWeek&&new Date().getDay()===(di===6?0:di+1);
                 return (
-                  <th key={di} style={{...S.thDay,background:isToday?"#fef3c7":isWe?"#dbeafe":"#f1f5f9",color:isToday?"#92400e":isWe?"#1d4ed8":"#0f2744"}}>
-                    <div style={{fontSize:13,fontWeight:800}}>{DAYS[di]}</div>
-                    <div style={{fontSize:11,color:isToday?"#b45309":isWe?"#3b82f6":"#64748b"}}>{date?fmtDate(date):""}</div>
+                  <th key={di} style={{...S.thDay,background:isToday?"#fef3c7":isWe?"#dbeafe":"#f1f5f9",color:isToday?"#92400e":isWe?"#1d4ed8":"#0f2744",padding:"7px 4px"}}>
+                    <div style={{fontSize:14,fontWeight:800}}>{DAYS[di]}</div>
+                    <div style={{fontSize:12,color:isToday?"#b45309":isWe?"#3b82f6":"#64748b"}}>{date?fmtDate(date):""}</div>
                   </th>
                 );
               })}
             </tr>
             <tr>
               {dayCols.map(di=>(
-                <th key={di} style={{padding:"3px 4px",background:"#fff",borderBottom:"2px solid #e2e8f0"}}>
+                <th key={di} style={{padding:"5px 4px",background:"#fff",borderBottom:"2px solid #e2e8f0"}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:3}}>
                     {ROOMS.map(r=>(
-                      <div key={r.id} style={{background:r.color,color:"#fff",borderRadius:4,padding:"3px 0",
-                        fontSize:isMobile?11:10,fontWeight:800,textAlign:"center",lineHeight:1.3}}>
+                      <div key={r.id} style={{background:r.color,color:"#fff",borderRadius:4,padding:"5px 0",
+                        fontSize:isMobile?13:12,fontWeight:800,textAlign:"center",lineHeight:1.4}}>
                         {r.id==="th1"?therapists[0]:r.id==="th2"?therapists[1]:r.label}
                       </div>
                     ))}
@@ -474,7 +471,7 @@ export default function TherapyPage() {
                     <td style={{...S.tdTime,background:isLunch?"#f8fafc":isCustom?"#fefce8":"#fff",
                       color:isLunch?"#94a3b8":isCustom?"#854d0e":"#0f2744",
                       height:isLunch?24:64}}>
-                      <div style={{fontWeight:800,fontSize:11}}>{toHHMM(time)}</div>
+                      <div style={{fontWeight:800,fontSize:12}}>{toHHMM(time)}</div>
                       {isLunch&&<div style={{fontSize:8,color:"#94a3b8"}}>점심</div>}
                       {isCustom&&<div style={{fontSize:8,color:"#d97706"}}>추가</div>}
                     </td>
@@ -483,7 +480,7 @@ export default function TherapyPage() {
                       const conflicts=getConflicts(dayIdx,time);
                       return (
                         <td key={dayIdx} style={{padding:"3px 4px",verticalAlign:"top",background:isCustom?"#fefce8":"#fff"}}>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:3,height:58}}>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:3,height:90}}>
                             {ROOMS.map(r=>{
                               // ── 고압산소 칸: A(정시)/B(+30분) ────────────────
                               if(r.id==="hyperbaric"){
@@ -513,10 +510,10 @@ export default function TherapyPage() {
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
                                       {ca?(
                                         <>
-                                          <div style={{fontSize:isMobile?12:10,fontWeight:800,color:"#075985",lineHeight:1.2,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
-                                            {ca.patientName}{ca.isOuter&&<span style={{color:"#d97706",fontSize:8}}> 외</span>}
+                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                                            {ca.patientName}{ca.isOuter&&<span style={{color:"#d97706",fontSize:9,fontWeight:700}}> 외</span>}
                                           </div>
-                                          {ca.roomId&&<div style={{fontSize:isMobile?9:8,color:"#0369a1",lineHeight:1}}>{ca.roomId}-{ca.bedNum}</div>}
+                                          {ca.roomId&&<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{ca.roomId}-{ca.bedNum}</div>}
                                           <button onClick={e=>{e.stopPropagation();if(!confirm("삭제?"))return;saveHyper("hyperbaric",dayIdx,time,null,"a");}}
                                             style={{position:"absolute",top:0,right:0,background:"rgba(220,38,38,0.2)",border:"none",color:"#dc2626",borderRadius:2,width:12,height:12,cursor:"pointer",fontSize:8,lineHeight:"12px",textAlign:"center",padding:0}}>✕</button>
                                         </>
@@ -529,10 +526,10 @@ export default function TherapyPage() {
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
                                       {cb?(
                                         <>
-                                          <div style={{fontSize:isMobile?12:10,fontWeight:800,color:"#075985",lineHeight:1.2,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
-                                            {cb.patientName}{cb.isOuter&&<span style={{color:"#d97706",fontSize:8}}> 외</span>}
+                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                                            {cb.patientName}{cb.isOuter&&<span style={{color:"#d97706",fontSize:9,fontWeight:700}}> 외</span>}
                                           </div>
-                                          {cb.roomId&&<div style={{fontSize:isMobile?9:8,color:"#0369a1",lineHeight:1}}>{cb.roomId}-{cb.bedNum}</div>}
+                                          {cb.roomId&&<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{cb.roomId}-{cb.bedNum}</div>}
                                           <button onClick={e=>{e.stopPropagation();if(!confirm("삭제?"))return;saveHyper("hyperbaric",dayIdx,time,null,"b");}}
                                             style={{position:"absolute",top:0,right:0,background:"rgba(220,38,38,0.2)",border:"none",color:"#dc2626",borderRadius:2,width:12,height:12,cursor:"pointer",fontSize:8,lineHeight:"12px",textAlign:"center",padding:0}}>✕</button>
                                         </>
@@ -565,20 +562,20 @@ export default function TherapyPage() {
                                   }}
                                   style={{background:moveMode&&(r.id==="th1"||r.id==="th2"||(r.id==="hyperthermia"&&moveMode.roomId==="hyperthermia"))?
                                     (moveMode.roomId===r.id&&moveMode.dayIdx===dayIdx&&moveMode.time===time?"#fef3c7":"#fff7ed"):bg,
-                                    borderRadius:5,cursor:moveMode?"crosshair":"pointer",padding:"4px",
+                                    borderRadius:5,cursor:moveMode?"crosshair":"pointer",padding:"5px 6px",
                                     border:moveMode&&(r.id==="th1"||r.id==="th2"||(r.id==="hyperthermia"&&moveMode.roomId==="hyperthermia"))?"2px dashed #f59e0b":
                                       isConflict?"2px solid #dc2626":`1px solid ${col}44`,
                                     display:"flex",flexDirection:"column",justifyContent:"center",
                                     position:"relative",overflow:"hidden",boxSizing:"border-box"}}>
                                   {cell?(
                                     <>
-                                      <div style={{fontSize:isMobile?12:11,fontWeight:800,color:col,lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                                      <div style={{fontSize:isMobile?14:13,fontWeight:800,color:col,lineHeight:1.4,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
                                         {cell.patientName}
                                         {cell.isOuter&&<span style={{color:"#d97706",fontSize:9,fontWeight:700}}> 외</span>}
                                       </div>
-                                      {cell.roomId&&<div style={{fontSize:isMobile?10:9,color:"#64748b",lineHeight:1.2}}>{cell.roomId}-{cell.bedNum}</div>}
-                                      {tr2&&<div style={{fontSize:isMobile?10:9,color:tr2.color,fontWeight:800,lineHeight:1.2}}>{tr2.short}</div>}
-                                      {cell.memo&&<div style={{fontSize:8,color:"#64748b",lineHeight:1.1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis",maxWidth:"100%"}}>💬{cell.memo}</div>}
+                                      {cell.roomId&&<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600}}>{cell.roomId}-{cell.bedNum}</div>}
+                                      {tr2&&<div style={{fontSize:isMobile?12:11,color:tr2.color,fontWeight:800,lineHeight:1.3}}>{tr2.short}</div>}
+                                      {cell.memo&&<div style={{fontSize:isMobile?10:9,color:"#475569",lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",maxWidth:"100%",marginTop:1}}>💬 {cell.memo}</div>}
                                       {cell.isPending&&<div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>예정</div>}
                                       {isConflict&&<div style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:"#dc2626"}}/>}
                                       <button onClick={e=>{e.stopPropagation();doPhysRemove(r.id,dayIdx,time);}}
@@ -615,8 +612,7 @@ export default function TherapyPage() {
               <select style={S.sel} value={physSlot} onChange={e=>{setPhysSlot(e.target.value);setPhysTreat("");setPhysPend("");}}>
                 <option value="">— 선택 —</option>
                 <option value="__pending__">✏️ 예정 환자 (이름 직접 입력)</option>
-                <optgroup label="── 치료계획 연동 ──">{physModalPatients.filter(p=>p.linked).map(p=><option key={p.slotKey} value={p.slotKey}>★ {p.name} ({p.slotKey})</option>)}</optgroup>
-                <optgroup label="── 전체 입원 환자 ──">{physModalPatients.filter(p=>!p.linked).map(p=><option key={p.slotKey} value={p.slotKey}>{p.name} ({p.slotKey})</option>)}</optgroup>
+                {physModalPatients.map(p=><option key={p.slotKey} value={p.slotKey}>{p.name} ({p.slotKey})</option>)}
               </select>
               {physSlot==="__pending__"&&<input style={{...S.inp,marginTop:8}} value={physPend} onChange={e=>setPhysPend(e.target.value)} placeholder="환자 이름 입력"/>}
 
@@ -880,9 +876,9 @@ const S={
   printBar:{background:"#faf5ff",borderBottom:"1px solid #e9d5ff",padding:"8px 16px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",flexShrink:0},
   tableWrap:{flex:1,overflowX:"auto",overflowY:"auto"},
   tbl:     {width:"100%",borderCollapse:"collapse",tableLayout:"fixed"},
-  thTime:  {background:"#0f2744",color:"#fff",fontSize:10,fontWeight:700,textAlign:"center",border:"1px solid #1e3a5f",padding:"4px 2px",verticalAlign:"middle",width:50},
+  thTime:  {background:"#0f2744",color:"#fff",fontSize:11,fontWeight:700,textAlign:"center",border:"1px solid #1e3a5f",padding:"4px 2px",verticalAlign:"middle",width:54},
   thDay:   {fontSize:12,fontWeight:800,textAlign:"center",border:"1px solid #e2e8f0",padding:"5px 2px"},
-  tdTime:  {fontSize:10,fontWeight:700,textAlign:"center",border:"1px solid #e2e8f0",padding:"2px",whiteSpace:"nowrap",verticalAlign:"middle",width:50},
+  tdTime:  {fontSize:12,fontWeight:700,textAlign:"center",border:"1px solid #e2e8f0",padding:"2px",whiteSpace:"nowrap",verticalAlign:"middle",width:54},
   overlay: {position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16},
   modal:   {background:"#fff",borderRadius:12,width:"100%",maxWidth:460,boxShadow:"0 8px 40px rgba(0,0,0,0.2)",overflow:"hidden",maxHeight:"92vh",overflowY:"auto"},
   mHead:   {color:"#fff",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px"},
