@@ -905,33 +905,30 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                           : [];
                         const nextRes = nextResList[0] || null;
                         return (
-                          <div key={i} style={{ display:"flex", flexDirection:"column", gap:2 }}>
-                            <div style={S.patientChip}>
-                              {isDischarging && <span style={{ fontSize:11 }}>🚪</span>}
-                              {isAdmitting   && <span style={{ fontSize:11 }}>🛏</span>}
-                              <span style={{ ...S.bedPositionBadge, background: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{posNum}</span>
-                              <span style={{ ...S.patientName, color: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{b.person.name}</span>
-                              {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
-                              {b.person.discharge && b.person.discharge !== "미정" && (
-                                <span style={S.dischargeDateWrap}>
-                                  <span style={S.dischargeDate}>{b.person.discharge}</span>
-                                  {dday && <span style={{ ...S.ddayBadge, color:dday.color, background:dday.bg }}>{dday.text}</span>}
-                                </span>
-                              )}
-                            </div>
+                          <div key={i} style={S.patientChip}>
+                            {isDischarging && <span style={{ fontSize:11 }}>🚪</span>}
+                            {isAdmitting   && <span style={{ fontSize:11 }}>🛏</span>}
+                            <span style={{ ...S.bedPositionBadge, background: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{posNum}</span>
+                            <span style={{ ...S.patientName, color: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{b.person.name}</span>
+                            {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
+                            {b.person.discharge && b.person.discharge !== "미정" && (
+                              <span style={S.dischargeDateWrap}>
+                                <span style={S.dischargeDate}>{b.person.discharge}</span>
+                                {dday && <span style={{ ...S.ddayBadge, color:dday.color, background:dday.bg }}>{dday.text}</span>}
+                              </span>
+                            )}
                             {nextRes && (
-                              <div style={{ display:"flex", alignItems:"center", gap:3,
-                                background:"#f5f3ff", borderRadius:5, padding:"2px 5px",
-                                flexWrap:"wrap", minWidth:0 }}>
-                                <span style={{ fontSize:10, color:"#7c3aed", fontWeight:800, flexShrink:0 }}>→</span>
-                                <span style={{ fontSize:12, fontWeight:700, color:"#6d28d9" }}>{nextRes.name}</span>
-                                <span style={{ fontSize:11, color:"#a78bfa", flexShrink:0 }}>{nextRes.admitDate}</span>
+                              <span style={{ display:"inline-flex", alignItems:"center", gap:2,
+                                background:"#f5f3ff", borderRadius:4, padding:"0 4px", marginLeft:2, flexShrink:0 }}>
+                                <span style={{ fontSize:9, color:"#7c3aed", fontWeight:800 }}>→</span>
+                                <span style={{ fontSize:11, fontWeight:700, color:"#6d28d9" }}>{nextRes.name}</span>
+                                <span style={{ fontSize:10, color:"#a78bfa" }}>{nextRes.admitDate}</span>
                                 {nextResList.length > 1 && (
-                                  <span style={{ fontSize:10, color:"#7c3aed", background:"#ede9fe", borderRadius:3, padding:"0 3px", fontWeight:700, flexShrink:0 }}>
+                                  <span style={{ fontSize:9, color:"#7c3aed", background:"#ede9fe", borderRadius:3, padding:"0 3px", fontWeight:700 }}>
                                     +{nextResList.length - 1}
                                   </span>
                                 )}
-                              </div>
+                              </span>
                             )}
                           </div>
                         );
