@@ -447,32 +447,24 @@ export default function ConsultationPage() {
 
       {/* 검색 + 필터 */}
       <div style={S.filterBar}>
-        <input style={{...S.inp, flex:1, minWidth:120}} value={search}
+        <input style={{...S.inp, flex:1, minWidth:100}} value={search}
           onChange={e=>setSearch(e.target.value)} placeholder="이름·연락처·진단명 검색"/>
-        <select style={{...S.inp, width:120}} value={filterMonth} onChange={e=>setFilterMonth(e.target.value)}>
+        <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
+          <span style={{fontSize:11,fontWeight:700,color:"#0369a1",whiteSpace:"nowrap"}}>📅 입원예정일</span>
+          <input type="date" style={{...S.inp,width:130,padding:"4px 8px",fontSize:12}}
+            value={filterAdmitDate} onChange={e=>setFilterAdmitDate(e.target.value)}/>
+          {filterAdmitDate && (
+            <button onClick={()=>setFilterAdmitDate("")}
+              style={{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:11,fontWeight:700,flexShrink:0}}>✕</button>
+          )}
+        </div>
+        <select style={{...S.inp, width:110}} value={filterMonth} onChange={e=>setFilterMonth(e.target.value)}>
           <option value="">전체 기간</option>
           {months.map(m=><option key={m} value={m}>{korMonth(m)}</option>)}
         </select>
         <select style={{...S.inp, width:90}} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
           {["전체","상담중","예약완료","입원완료","취소"].map(s=><option key={s}>{s}</option>)}
         </select>
-      </div>
-      {/* 예약날짜 검색 */}
-      <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 14px",background:"#f0f9ff",borderBottom:"1px solid #e2e8f0",flexWrap:"wrap"}}>
-        <span style={{fontSize:12,fontWeight:700,color:"#0369a1",flexShrink:0}}>📅 입원예정일 검색</span>
-        <input type="date" style={{...S.inp,width:150,padding:"4px 8px",fontSize:12}}
-          value={filterAdmitDate} onChange={e=>setFilterAdmitDate(e.target.value)}/>
-        {filterAdmitDate && (
-          <button onClick={()=>setFilterAdmitDate("")}
-            style={{background:"#fee2e2",color:"#dc2626",border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>
-            ✕ 초기화
-          </button>
-        )}
-        {filterAdmitDate && (
-          <span style={{fontSize:12,color:"#0369a1",fontWeight:600}}>
-            {filtered.length}건 조회됨
-          </span>
-        )}
       </div>
 
       {/* 상담 카드 목록 */}
