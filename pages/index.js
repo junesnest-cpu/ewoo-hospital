@@ -144,6 +144,20 @@ export default function HospitalWardManager() {
   const [emptySlotIdx,   setEmptySlotIdx]   = useState(0); // 현재 포커스된 빈 병상 인덱스
   const fileInputRef = useRef();
 
+  // ── 환자 검색 ────────────────────────────────────────────────────────────
+  const [searchQuery,    setSearchQuery]    = useState("");
+  const [searchResults,  setSearchResults]  = useState([]); // [{slotKey, name, type, roomId}]
+  const [searchFocused,  setSearchFocused]  = useState(false);
+  const searchRef = useRef();
+
+  // ── 가용 병실 조회 ────────────────────────────────────────────────────────
+  const [availOpen,      setAvailOpen]      = useState(false);
+  const [availAdmit,     setAvailAdmit]     = useState("");
+  const [availDischarge, setAvailDischarge] = useState("");
+  const [availTypes,     setAvailTypes]     = useState([]); // 선택된 병실 종류들
+  const [availResults,   setAvailResults]   = useState(null); // null=미조회, []=결과없음, [...]
+  const cardRefs = useRef({});
+
   const isPreview = previewDate !== null;
   const viewDate  = previewDate || todayDate();
 
@@ -183,6 +197,83 @@ export default function HospitalWardManager() {
     if (snap.val()) setSlots(snap.val());
     setLastSync(new Date()); setSyncing(false);
   }, []);
+
+  // ── 환자 검색 ──────────────────────────────────────────────────────────────
+  const doSearch = (q) => {
+    setSearchQuery(q);
+    if (!q.trim()) { setSearchResults([]); return; }
+    const results = [];
+    Object.entries(slots).forEach(([slotKey, slot]) => {
+      const roomId = slotKey.split("-")[0];
+      // 현재 입원
+      if (slot?.current?.name?.includes(q.trim())) {
+        results.push({ slotKey, name: slot.current.name, type: "current", roomId });
+      }
+      // 예약
+      (slot?.reservations || []).forEach(r => {
+        if (r.name?.includes(q.trim())) {
+          results.push({ slotKey, name: r.name, type: "reserved", roomId, admitDate: r.admitDate });
+        }
+      });
+    });
+    setSearchResults(results);
+  };
+
+  const scrollToCard = (roomId) => {
+    setView("ward");
+    setSelectedRoom(null);
+    setTimeout(() => {
+      const el = cardRefs.current[roomId];
+      if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    }, 100);
+  };
+
+  // ── 가용 병실 조회 ──────────────────────────────────────────────────────────
+  const doAvailCheck = () => {
+    if (!availAdmit) return;
+    const admitD  = dateOnly(new Date(availAdmit + "T00:00:00"));
+    const dischargeD = availDischarge ? dateOnly(new Date(availDischarge + "T00:00:00")) : null;
+    const results = [];
+
+    Object.values(WARD_STRUCTURE).forEach(ward => {
+      ward.rooms.forEach(room => {
+        // 병실 종류 필터
+        if (availTypes.length > 0 && !availTypes.includes(room.type)) return;
+        for (let b = 1; b <= room.capacity; b++) {
+          const slotKey = `${room.id}-${b}`;
+          const slot = slots[slotKey];
+          // 해당 기간 동안 사용 가능한지 확인
+          let occupied = false;
+          // 현재 환자 체크
+          if (slot?.current?.name) {
+            const curDischarge = parseDateStr(slot.current.discharge);
+            // 퇴원일이 미정이거나 입원예정일 이후면 겹침
+            if (!curDischarge || dateOnly(curDischarge) >= admitD) occupied = true;
+          }
+          // 예약 체크
+          if (!occupied) {
+            (slot?.reservations || []).forEach(r => {
+              const rAdmit = parseDateStr(r.admitDate);
+              const rDischarge = parseDateStr(r.discharge);
+              if (!rAdmit) return;
+              // 예약 기간과 겹치는지
+              const rEnd = rDischarge ? dateOnly(rDischarge) : null;
+              const myEnd = dischargeD;
+              if (rEnd && myEnd) {
+                if (dateOnly(rAdmit) <= myEnd && rEnd >= admitD) occupied = true;
+              } else {
+                if (dateOnly(rAdmit) >= admitD) occupied = true;
+              }
+            });
+          }
+          if (!occupied) {
+            results.push({ slotKey, roomId: room.id, bedNum: b, roomType: room.type, wardName: ward.name });
+          }
+        }
+      });
+    });
+    setAvailResults(results);
+  };
 
   const applyPreview = () => { setPreviewDate(new Date(previewInput + "T00:00:00")); setView("ward"); setSelectedRoom(null); };
   const clearPreview = () => { setPreviewDate(null); setPreviewInput(toInputValue(todayDate())); };
@@ -471,6 +562,135 @@ export default function HospitalWardManager() {
         </div>
       </div>
 
+      {/* 검색 + 가용병실 조회 바 */}
+      {!isPreview && (
+        <div style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"8px 16px",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",position:"relative",zIndex:20}}>
+          {/* 환자 검색 */}
+          <div style={{position:"relative",flexShrink:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:0,border:"1.5px solid #e2e8f0",borderRadius:8,overflow:"hidden",background:"#f8fafc"}}>
+              <span style={{padding:"0 8px",fontSize:14,color:"#94a3b8"}}>🔍</span>
+              <input
+                ref={searchRef}
+                style={{border:"none",outline:"none",background:"transparent",padding:"7px 4px",fontSize:13,width:140,fontFamily:"inherit"}}
+                placeholder="환자 이름 검색..."
+                value={searchQuery}
+                onChange={e=>doSearch(e.target.value)}
+                onFocus={()=>setSearchFocused(true)}
+                onBlur={()=>setTimeout(()=>setSearchFocused(false),200)}
+              />
+              {searchQuery&&<button onClick={()=>{setSearchQuery("");setSearchResults([]);}} style={{border:"none",background:"none",cursor:"pointer",padding:"0 8px",color:"#94a3b8",fontSize:14}}>✕</button>}
+            </div>
+            {/* 검색 결과 드롭다운 */}
+            {searchFocused && searchResults.length > 0 && (
+              <div style={{position:"absolute",top:"100%",left:0,minWidth:240,background:"#fff",borderRadius:8,
+                boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid #e2e8f0",zIndex:100,maxHeight:280,overflowY:"auto",marginTop:4}}>
+                {searchResults.map((r,i)=>(
+                  <div key={i} onClick={()=>{ scrollToCard(r.roomId); setSearchFocused(false); }}
+                    style={{padding:"8px 14px",cursor:"pointer",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",gap:8,
+                      background:"#fff",transition:"background 0.1s"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="#f0f9ff"}
+                    onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
+                    <span style={{fontSize:11,background:r.type==="current"?"#dbeafe":"#f5f3ff",color:r.type==="current"?"#1d4ed8":"#7c3aed",
+                      borderRadius:4,padding:"1px 6px",fontWeight:700,flexShrink:0}}>
+                      {r.type==="current"?"입원중":"예약"}
+                    </span>
+                    <span style={{fontWeight:700,fontSize:13}}>{r.name}</span>
+                    <span style={{fontSize:11,color:"#94a3b8",marginLeft:"auto"}}>{r.roomId}호{r.admitDate&&` · ${r.admitDate} 예정`}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {searchFocused && searchQuery.trim() && searchResults.length === 0 && (
+              <div style={{position:"absolute",top:"100%",left:0,width:240,background:"#fff",borderRadius:8,
+                boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid #e2e8f0",zIndex:100,padding:"12px 14px",marginTop:4,
+                fontSize:13,color:"#94a3b8",textAlign:"center"}}>검색 결과 없음</div>
+            )}
+          </div>
+
+          {/* 구분선 */}
+          <div style={{width:1,height:28,background:"#e2e8f0",flexShrink:0}}/>
+
+          {/* 가용병실 조회 토글 버튼 */}
+          <button onClick={()=>{setAvailOpen(o=>!o);setAvailResults(null);}}
+            style={{background:availOpen?"#0f2744":"#f1f5f9",color:availOpen?"#fff":"#475569",
+              border:"1.5px solid "+(availOpen?"#0f2744":"#e2e8f0"),borderRadius:8,padding:"6px 13px",
+              cursor:"pointer",fontSize:12,fontWeight:700,flexShrink:0,display:"flex",alignItems:"center",gap:5}}>
+            🏠 가용 병실 조회{availOpen?" ▲":" ▼"}
+          </button>
+
+          {/* 가용병실 조회 패널 */}
+          {availOpen && (
+            <div style={{width:"100%",background:"#f8fafc",borderRadius:10,border:"1.5px solid #e2e8f0",
+              padding:"12px 16px",display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap",marginTop:4}}>
+              {/* 날짜 입력 */}
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>입원 예정일</label>
+                  <input type="date" value={availAdmit} onChange={e=>setAvailAdmit(e.target.value)}
+                    style={{border:"1.5px solid #e2e8f0",borderRadius:7,padding:"5px 8px",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+                </div>
+                <div style={{fontSize:16,color:"#94a3b8",marginTop:16}}>~</div>
+                <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>퇴원 예정일 (선택)</label>
+                  <input type="date" value={availDischarge} onChange={e=>setAvailDischarge(e.target.value)}
+                    style={{border:"1.5px solid #e2e8f0",borderRadius:7,padding:"5px 8px",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+                </div>
+              </div>
+              {/* 병실 종류 */}
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>병실 종류 (복수 선택)</label>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {["1인실","2인실","4인실","6인실"].map(t=>(
+                    <button key={t} onClick={()=>setAvailTypes(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t])}
+                      style={{border:`1.5px solid ${TYPE_COLOR[t]}`,borderRadius:6,padding:"4px 12px",cursor:"pointer",fontSize:12,fontWeight:700,
+                        background:availTypes.includes(t)?TYPE_COLOR[t]:TYPE_BG[t],
+                        color:availTypes.includes(t)?"#fff":TYPE_COLOR[t]}}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"flex-end",paddingBottom:1}}>
+                <button onClick={doAvailCheck} disabled={!availAdmit}
+                  style={{background:availAdmit?"#0f2744":"#94a3b8",color:"#fff",border:"none",borderRadius:8,
+                    padding:"8px 18px",cursor:availAdmit?"pointer":"not-allowed",fontSize:13,fontWeight:700}}>
+                  조회
+                </button>
+              </div>
+              {/* 결과 */}
+              {availResults !== null && (
+                <div style={{width:"100%",marginTop:4}}>
+                  {availResults.length === 0 ? (
+                    <div style={{color:"#ef4444",fontWeight:700,fontSize:13,padding:"8px 0"}}>
+                      ⚠️ 해당 기간에 가용한 병상이 없습니다.
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{fontSize:12,fontWeight:700,color:"#0f2744",marginBottom:6}}>
+                        ✅ 가용 병상 {availResults.length}개
+                        {availTypes.length>0&&<span style={{fontWeight:400,color:"#64748b",marginLeft:4}}>({availTypes.join("·")})</span>}
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        {availResults.map((r,i)=>(
+                          <button key={i} onClick={()=>scrollToCard(r.roomId)}
+                            style={{background:TYPE_BG[r.roomType],border:`1.5px solid ${TYPE_COLOR[r.roomType]}`,
+                              borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700,
+                              color:TYPE_COLOR[r.roomType],display:"flex",alignItems:"center",gap:4}}>
+                            <span style={{fontSize:11,color:"#64748b"}}>{r.wardName}</span>
+                            {r.roomId}호 {r.bedNum}번
+                            <span style={{fontSize:10,background:TYPE_COLOR[r.roomType],color:"#fff",borderRadius:3,padding:"1px 5px"}}>{r.roomType}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 업로드 바 — 일시 숨김 */}
       {false && !isPreview && (
         <div style={S.uploadBar}>
@@ -491,6 +711,7 @@ export default function HospitalWardManager() {
             showReserved={showReserved} highlightEmpty={highlightEmpty} currentEmptySlotKey={currentEmptySlotKey}
             movingPatient={movingPatient} onMoveTarget={executeMove}
             onSelectRoom={r => { setSelectedRoom(r); setView("room"); }}
+            cardRefs={cardRefs}
           />
         )}
         {view === "room" && selectedRoom && (
@@ -564,7 +785,7 @@ export default function HospitalWardManager() {
 }
 
 // ── WardView ──────────────────────────────────────────────────────────────────
-function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, highlightEmpty, currentEmptySlotKey, movingPatient, onMoveTarget, onSelectRoom }) {
+function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, highlightEmpty, currentEmptySlotKey, movingPatient, onMoveTarget, onSelectRoom, cardRefs }) {
   return (
     <div style={S.wardGrid}>
       {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => (
@@ -581,6 +802,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
 
               return (
                 <div key={room.id}
+                  ref={el => { if(cardRefs) cardRefs.current[room.id] = el; }}
                   onClick={() => onSelectRoom(room)}
                   style={{ ...S.roomCard,
                     borderTop:`3px solid ${TYPE_COLOR[room.type]}`,
