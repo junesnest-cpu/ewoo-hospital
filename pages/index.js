@@ -896,21 +896,40 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                         );
                       }
                       if (b.person) {
+                        // 다음 예약자 찾기 (현재 환자가 있는 병상의 미래 예약)
+                        const nextResList = !isPreview
+                          ? (b.slot?.reservations || [])
+                              .filter(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) > todayDate(); })
+                              .sort((a,b2) => parseDateStr(a.admitDate) - parseDateStr(b2.admitDate))
+                          : [];
+                        const nextRes = nextResList[0] || null;
                         return (
-                          <div key={i} style={S.patientChip}>
-                            {isDischarging && <span style={{ fontSize:10 }}>🚪</span>}
-                            {isAdmitting   && <span style={{ fontSize:10 }}>🛏</span>}
-                            <span style={{ ...S.bedPositionBadge, background: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{posNum}</span>
-                            <span style={{ ...S.patientName, color: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{b.person.name}</span>
-                            {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
-                            {b.reserveCount > 0 && !isPreview && (
-                              <span style={{ fontSize:10, fontWeight:800, color:"#7c3aed", background:"#f5f3ff", borderRadius:3, padding:"0 3px" }}>+{b.reserveCount}</span>
-                            )}
-                            {b.person.discharge && b.person.discharge !== "미정" && (
-                              <span style={S.dischargeDateWrap}>
-                                <span style={S.dischargeDate}>{b.person.discharge}</span>
-                                {dday && <span style={{ ...S.ddayBadge, color:dday.color, background:dday.bg }}>{dday.text}</span>}
-                              </span>
+                          <div key={i} style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                            <div style={S.patientChip}>
+                              {isDischarging && <span style={{ fontSize:11 }}>🚪</span>}
+                              {isAdmitting   && <span style={{ fontSize:11 }}>🛏</span>}
+                              <span style={{ ...S.bedPositionBadge, background: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{posNum}</span>
+                              <span style={{ ...S.patientName, color: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{b.person.name}</span>
+                              {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
+                              {b.person.discharge && b.person.discharge !== "미정" && (
+                                <span style={S.dischargeDateWrap}>
+                                  <span style={S.dischargeDate}>{b.person.discharge}</span>
+                                  {dday && <span style={{ ...S.ddayBadge, color:dday.color, background:dday.bg }}>{dday.text}</span>}
+                                </span>
+                              )}
+                            </div>
+                            {nextRes && (
+                              <div style={{ display:"flex", alignItems:"center", gap:4, paddingLeft:4,
+                                background:"#f5f3ff", borderRadius:5, padding:"2px 6px", marginLeft:2 }}>
+                                <span style={{ fontSize:10, color:"#7c3aed", fontWeight:800 }}>→</span>
+                                <span style={{ fontSize:12, fontWeight:700, color:"#6d28d9" }}>{nextRes.name}</span>
+                                <span style={{ fontSize:11, color:"#a78bfa" }}>{nextRes.admitDate}</span>
+                                {nextResList.length > 1 && (
+                                  <span style={{ fontSize:10, color:"#7c3aed", background:"#ede9fe", borderRadius:3, padding:"0 4px", fontWeight:700 }}>
+                                    +{nextResList.length - 1}
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
                         );
@@ -920,7 +939,8 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                         return (
                           <div key={i} style={S.patientChip}>
                             <span style={{ ...S.bedPositionBadge, background:"#7c3aed" }}>{i+1}</span>
-                            <span style={{ color:"#7c3aed", fontSize:12, fontWeight:600 }}>📅 {nextRes?.name} ({nextRes?.admitDate})</span>
+                            <span style={{ color:"#7c3aed", fontSize:13, fontWeight:700 }}>📅 {nextRes?.name}</span>
+                            <span style={{ fontSize:11, color:"#a78bfa" }}>{nextRes?.admitDate}</span>
                           </div>
                         );
                       }
@@ -928,7 +948,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                       return (
                         <div key={i} style={S.patientChip}>
                           <span style={{ ...S.bedPositionBadge, background:"#cbd5e1" }}>{i+1}</span>
-                          <span style={{ color:"#cbd5e1", fontSize:12, fontWeight:500 }}>빈 자리</span>
+                          <span style={{ color:"#cbd5e1", fontSize:13, fontWeight:500 }}>빈 자리</span>
                         </div>
                       );
                     })}
@@ -1193,26 +1213,26 @@ const S = {
   analysisList: { display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 },
   analysisItem: { background:"#fff", border:"1px solid #bbf7d0", borderRadius:8, padding:"8px 14px", minWidth:200, maxWidth:320 },
   analysisBtns: { display:"flex", gap:8 },
-  main: { padding:"16px 12px" },
+  main: { padding:"16px 14px" },
   wardGrid: { display:"flex", flexDirection:"column", gap:24 },
-  wardTitle: { fontSize:16, fontWeight:800, color:"#0f2744", marginBottom:10, padding:"4px 0 4px 10px", borderLeft:"4px solid" },
-  roomGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:10 },
-  roomCard: { borderRadius:12, padding:"14px 14px 10px", cursor:"pointer", boxShadow:"0 1px 6px rgba(0,0,0,0.06)" },
+  wardTitle: { fontSize:18, fontWeight:800, color:"#0f2744", marginBottom:10, padding:"4px 0 4px 10px", borderLeft:"4px solid" },
+  roomGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))", gap:10 },
+  roomCard: { borderRadius:12, padding:"16px 16px 12px", cursor:"pointer", boxShadow:"0 1px 6px rgba(0,0,0,0.06)" },
   roomHeader: { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 },
-  roomNo: { fontSize:17, fontWeight:800 },
-  roomTypeBadge: { fontSize:11, fontWeight:700, borderRadius:6, padding:"2px 8px" },
+  roomNo: { fontSize:20, fontWeight:800 },
+  roomTypeBadge: { fontSize:12, fontWeight:700, borderRadius:6, padding:"2px 9px" },
   bedBar: { display:"flex", gap:4, marginBottom:6 },
-  bedDot: { width:12, height:12, borderRadius:"50%" },
-  roomOccupancy: { fontSize:20, fontWeight:800, marginBottom:6, display:"flex", alignItems:"center", gap:0 },
+  bedDot: { width:14, height:14, borderRadius:"50%" },
+  roomOccupancy: { fontSize:24, fontWeight:800, marginBottom:6, display:"flex", alignItems:"center", gap:0 },
   patientList: { display:"flex", flexDirection:"column", gap:4 },
-  patientChip: { display:"flex", alignItems:"center", gap:4, fontSize:12, flexWrap:"wrap" },
-  bedPositionBadge: { color:"#fff", borderRadius:4, width:16, height:16, fontSize:10, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
-  patientName: { fontWeight:600 },
+  patientChip: { display:"flex", alignItems:"center", gap:5, fontSize:14, flexWrap:"wrap" },
+  bedPositionBadge: { color:"#fff", borderRadius:4, width:20, height:20, fontSize:12, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
+  patientName: { fontWeight:700, fontSize:14 },
   dischargeDateWrap: { display:"flex", alignItems:"center", gap:3, marginLeft:2 },
-  dischargeDate: { color:"#64748b", fontSize:10, background:"#f1f5f9", borderRadius:4, padding:"1px 4px" },
-  ddayBadge: { fontSize:10, fontWeight:800, borderRadius:4, padding:"1px 5px" },
-  alertDot: { background:"#fef3c7", color:"#d97706", borderRadius:"50%", width:16, height:16, fontSize:10, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800 },
-  alertBadge: { marginTop:6, background:"#fef3c7", color:"#92400e", borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:700 },
+  dischargeDate: { color:"#64748b", fontSize:11, background:"#f1f5f9", borderRadius:4, padding:"1px 5px" },
+  ddayBadge: { fontSize:11, fontWeight:800, borderRadius:4, padding:"1px 6px" },
+  alertDot: { background:"#fef3c7", color:"#d97706", borderRadius:"50%", width:20, height:20, fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800 },
+  alertBadge: { marginTop:6, background:"#fef3c7", color:"#92400e", borderRadius:6, padding:"4px 10px", fontSize:12, fontWeight:700 },
   reserveBadge: { marginTop:6, background:"#f5f3ff", color:"#6d28d9", borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:700 },
   detailWrap: { maxWidth:960, margin:"0 auto" },
   detailHeader: { display:"flex", alignItems:"center", gap:14, marginBottom:16, flexWrap:"wrap" },
