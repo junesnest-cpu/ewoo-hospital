@@ -371,7 +371,7 @@ export default function TherapyPage() {
               onClick={()=>{setPrintTab("hyper");setPrintSel({});}}>⚡ 고주파/고압</button>
           </div>
           <div style={{display:"flex",gap:6,flex:1,flexWrap:"wrap"}}>
-            {curPrintPatients.map(p=>(
+            {curPrintPatients.filter(p=>p.name&&p.name.trim()).map(p=>(
               <label key={p.slotKey} style={{display:"flex",alignItems:"center",fontSize:12,cursor:"pointer",background:"#fff",border:"1px solid #e9d5ff",borderRadius:6,padding:"2px 8px",gap:4}}>
                 <input type="checkbox" checked={!!printSel[p.slotKey]} onChange={e=>setPrintSel(prev=>({...prev,[p.slotKey]:e.target.checked}))}/>
                 {p.name}님{p.isOuter&&<span style={{fontSize:10,color:"#d97706",fontWeight:700}}>(외래)</span>}
@@ -786,35 +786,50 @@ export default function TherapyPage() {
   );
 }
 
+// ── 공통 인쇄 CSS (한 번만 선언) ──────────────────────────────────────────────
+const PRINT_CSS=`@media print{
+  @page{size:A4 portrait;margin:10mm}
+  body *{visibility:hidden!important}
+  .therapy-print-area,.therapy-print-area *{visibility:visible!important}
+  .therapy-print-area{
+    position:absolute;top:0;left:0;width:100%;
+    background:#fff;z-index:9999;display:block!important;
+    padding:4mm;box-sizing:border-box;
+  }
+  .pcard{break-inside:avoid;border:1.5px solid #bbb;border-radius:6px;padding:8px 10px;margin-bottom:6mm;display:inline-block;width:100%}
+  .no-print{display:none!important}
+}`;
+
 // ── 물리치료 인쇄 ──────────────────────────────────────────────────────────────
 function PhysPrint({patients,selected,weekDates,therapists}){
-  const list=patients.filter(p=>selected[p.slotKey]); if(!list.length) return null;
+  // 이름 있는 환자만 (이름 없는 예정 제외)
+  const list=patients.filter(p=>selected[p.slotKey]&&p.name&&p.name.trim()); if(!list.length) return null;
   const tName=id=>({pain:"페인스크렘블러",manip2:"도수치료2",manip1:"도수치료1"}[id]||id);
   const thName=id=>id==="th1"?therapists[0]:therapists[1];
   return (
-    <div className="print-only" style={{display:"none"}}>
-      <style>{`@media print{@page{size:A4 portrait;margin:8mm}body *{visibility:hidden!important}.print-only,.print-only *{visibility:visible!important}.print-only{position:fixed;top:0;left:0;width:100%;background:#fff;z-index:9999;display:block!important}.pcard{break-inside:avoid;border:2px solid #aaa;border-radius:8px;padding:10px 12px;margin-bottom:10mm}}`}</style>
-      <div style={{fontFamily:"'Noto Sans KR',sans-serif",columns:2,columnGap:"6mm"}}>
+    <div className="therapy-print-area" style={{display:"none"}}>
+      <style>{PRINT_CSS}</style>
+      <div style={{fontFamily:"'Noto Sans KR',sans-serif",columns:2,columnGap:"5mm",columnFill:"auto"}}>
         {list.map(p=>{ const sorted=[...p.entries].sort((a,b)=>a.dayIdx-b.dayIdx||a.time.localeCompare(b.time)); return (
           <div key={p.slotKey} className="pcard">
-            <div style={{fontWeight:900,fontSize:17,borderBottom:"1.5px solid #ccc",paddingBottom:5,marginBottom:6}}>
-              {p.name}님 {p.isOuter&&<span style={{fontSize:12,color:"#d97706"}}>(외래)</span>}
+            <div style={{fontWeight:900,fontSize:16,borderBottom:"1.5px solid #ccc",paddingBottom:4,marginBottom:5}}>
+              {p.name}님 {p.isOuter&&<span style={{fontSize:11,color:"#d97706"}}>(외래)</span>}
             </div>
-            <div style={{fontSize:12,color:"#555",marginBottom:5}}>물리치료 안내 · {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead><tr style={{background:"#f0f0f0"}}>{["날짜","요일","치료","담당","시간"].map(h=><th key={h} style={{border:"1px solid #ddd",padding:"3px 5px",textAlign:"center"}}>{h}</th>)}</tr></thead>
+            <div style={{fontSize:11,color:"#555",marginBottom:4}}>물리치료 안내 · {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{background:"#f0f0f0"}}>{["날짜","요일","치료","담당","시간"].map(h=><th key={h} style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{h}</th>)}</tr></thead>
               <tbody>{sorted.map((e,i)=><tr key={i}>
-                <td style={{border:"1px solid #ddd",padding:"3px 5px",textAlign:"center"}}>{weekDates[e.dayIdx].getMonth()+1}/{weekDates[e.dayIdx].getDate()}</td>
-                <td style={{border:"1px solid #ddd",padding:"3px 5px",textAlign:"center"}}>{"월화수목금토일"[e.dayIdx]}</td>
-                <td style={{border:"1px solid #ddd",padding:"3px 5px"}}>{tName(e.treatmentId)}</td>
-                <td style={{border:"1px solid #ddd",padding:"3px 5px",textAlign:"center"}}>{thName(e.therapistId)}</td>
-                <td style={{border:"1px solid #ddd",padding:"3px 5px",textAlign:"center",fontWeight:700}}>{e.time.slice(0,5)}</td>
+                <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{weekDates[e.dayIdx].getMonth()+1}/{weekDates[e.dayIdx].getDate()}</td>
+                <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{"월화수목금토일"[e.dayIdx]}</td>
+                <td style={{border:"1px solid #ddd",padding:"2px 4px"}}>{tName(e.treatmentId)}</td>
+                <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{thName(e.therapistId)}</td>
+                <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center",fontWeight:700}}>{e.time.slice(0,5)}</td>
               </tr>)}</tbody>
             </table>
-            {p.entries.some(e=>e.memo)&&<div style={{marginTop:6,fontSize:12,color:"#555"}}>💬 {p.entries.filter(e=>e.memo).map(e=>e.memo).join(" / ")}</div>}
-            <div style={{marginTop:6,paddingTop:5,borderTop:"1px dashed #ccc",fontSize:11,color:"#555",textAlign:"center"}}>치료 시간에 맞춰 지하 1층 통합치료실로 방문해 주세요.</div>
+            {p.entries.some(e=>e.memo)&&<div style={{marginTop:4,fontSize:11,color:"#555"}}>💬 {p.entries.filter(e=>e.memo).map(e=>e.memo).join(" / ")}</div>}
+            <div style={{marginTop:5,paddingTop:4,borderTop:"1px dashed #ccc",fontSize:10,color:"#666",textAlign:"center"}}>치료 시간에 맞춰 지하 1층 통합치료실로 방문해 주세요.</div>
           </div>
-        ); })}
+        );})}
       </div>
     </div>
   );
@@ -822,30 +837,31 @@ function PhysPrint({patients,selected,weekDates,therapists}){
 
 // ── 고주파/고압 인쇄 ───────────────────────────────────────────────────────────
 function HyperPrint({patients,selected,weekDates}){
-  const list=patients.filter(p=>selected[p.slotKey]); if(!list.length) return null;
+  // 이름 있는 환자만 (이름 없는 예정 제외)
+  const list=patients.filter(p=>selected[p.slotKey]&&p.name&&p.name.trim()); if(!list.length) return null;
   return (
-    <div className="print-only" style={{display:"none"}}>
-      <style>{`@media print{@page{size:A4 portrait;margin:8mm}body *{visibility:hidden!important}.print-only,.print-only *{visibility:visible!important}.print-only{position:fixed;top:0;left:0;width:100%;background:#fff;z-index:9999;display:block!important}.pcard{break-inside:avoid;border:2px solid #aaa;border-radius:8px;padding:10px 12px;margin-bottom:10mm}}`}</style>
-      <div style={{fontFamily:"'Noto Sans KR',sans-serif",columns:2,columnGap:"6mm"}}>
+    <div className="therapy-print-area" style={{display:"none"}}>
+      <style>{PRINT_CSS}</style>
+      <div style={{fontFamily:"'Noto Sans KR',sans-serif",columns:2,columnGap:"5mm",columnFill:"auto"}}>
         {list.map(p=>{ const sorted=[...p.entries].sort((a,b)=>a.dayIdx-b.dayIdx||a.time.localeCompare(b.time)); return (
           <div key={p.slotKey} className="pcard">
-            <div style={{fontWeight:900,fontSize:17,borderBottom:"1.5px solid #ccc",paddingBottom:5,marginBottom:6}}>
-              {p.name}님 {p.isOuter&&<span style={{fontSize:12,color:"#d97706"}}>(외래)</span>}
+            <div style={{fontWeight:900,fontSize:16,borderBottom:"1.5px solid #ccc",paddingBottom:4,marginBottom:5}}>
+              {p.name}님 {p.isOuter&&<span style={{fontSize:11,color:"#d97706"}}>(외래)</span>}
             </div>
-            <div style={{fontSize:12,color:"#555",marginBottom:5}}>치료 안내 · {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-              <thead><tr style={{background:"#f0f0f0"}}>{["날짜","요일","치료","시간"].map(h=><th key={h} style={{border:"1px solid #ddd",padding:"3px 5px",textAlign:"center"}}>{h}</th>)}</tr></thead>
+            <div style={{fontSize:11,color:"#555",marginBottom:4}}>치료 안내 · {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr style={{background:"#f0f0f0"}}>{["날짜","요일","치료","시간"].map(h=><th key={h} style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{h}</th>)}</tr></thead>
               <tbody>{sorted.map((e,i)=><tr key={i}>
-                <td style={{border:"1px solid #ddd",padding:"3px 5px",textAlign:"center"}}>{weekDates[e.dayIdx].getMonth()+1}/{weekDates[e.dayIdx].getDate()}</td>
-                <td style={{border:"1px solid #ddd",padding:"3px 5px",textAlign:"center"}}>{"월화수목금토일"[e.dayIdx]}</td>
-                <td style={{border:"1px solid #ddd",padding:"3px 5px"}}>{e.treatmentName}</td>
-                <td style={{border:"1px solid #ddd",padding:"3px 5px",textAlign:"center",fontWeight:700}}>{e.time.slice(0,5)}</td>
+                <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{weekDates[e.dayIdx].getMonth()+1}/{weekDates[e.dayIdx].getDate()}</td>
+                <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center"}}>{"월화수목금토일"[e.dayIdx]}</td>
+                <td style={{border:"1px solid #ddd",padding:"2px 4px"}}>{e.treatmentName}</td>
+                <td style={{border:"1px solid #ddd",padding:"2px 4px",textAlign:"center",fontWeight:700}}>{e.time.slice(0,5)}</td>
               </tr>)}</tbody>
             </table>
-            {p.entries.some(e=>e.memo)&&<div style={{marginTop:6,fontSize:12,color:"#555"}}>💬 {p.entries.filter(e=>e.memo).map(e=>e.memo).join(" / ")}</div>}
-            <div style={{marginTop:6,paddingTop:5,borderTop:"1px dashed #ccc",fontSize:11,color:"#555",textAlign:"center"}}>치료 시간에 맞춰 지하 1층 통합치료실로 방문해 주세요.</div>
+            {p.entries.some(e=>e.memo)&&<div style={{marginTop:4,fontSize:11,color:"#555"}}>💬 {p.entries.filter(e=>e.memo).map(e=>e.memo).join(" / ")}</div>}
+            <div style={{marginTop:5,paddingTop:4,borderTop:"1px dashed #ccc",fontSize:10,color:"#666",textAlign:"center"}}>치료 시간에 맞춰 지하 1층 통합치료실로 방문해 주세요.</div>
           </div>
-        ); })}
+        );})}
       </div>
     </div>
   );
