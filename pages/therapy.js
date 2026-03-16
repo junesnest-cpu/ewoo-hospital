@@ -360,23 +360,95 @@ export default function TherapyPage() {
 
       {/* 인쇄 선택 바 */}
       {printMode&&(
-        <div style={S.printBar}>
-          <div style={{display:"flex",gap:0,borderRadius:7,overflow:"hidden",border:"1px solid #e9d5ff",flexShrink:0}}>
-            <button style={{padding:"5px 14px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:printTab==="physical"?"#059669":"#f8fafc",color:printTab==="physical"?"#fff":"#475569"}}
-              onClick={()=>{setPrintTab("physical");setPrintSel({});}}>🏃 물리치료</button>
-            <button style={{padding:"5px 14px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:printTab==="hyper"?"#dc2626":"#f8fafc",color:printTab==="hyper"?"#fff":"#475569"}}
-              onClick={()=>{setPrintTab("hyper");setPrintSel({});}}>⚡ 고주파/고압</button>
+        <div style={{...S.printBar,flexDirection:"column",gap:8,alignItems:"stretch"}}>
+          {/* 1행: 탭 + 전체선택/해제 + 인쇄 버튼 */}
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:0,borderRadius:7,overflow:"hidden",border:"1px solid #e9d5ff",flexShrink:0}}>
+              <button style={{padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:printTab==="physical"?"#059669":"#f8fafc",color:printTab==="physical"?"#fff":"#475569"}}
+                onClick={()=>{setPrintTab("physical");setPrintSel({});}}>🏃 물리치료</button>
+              <button style={{padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",background:printTab==="hyper"?"#dc2626":"#f8fafc",color:printTab==="hyper"?"#fff":"#475569"}}
+                onClick={()=>{setPrintTab("hyper");setPrintSel({});}}>⚡ 고주파/고압</button>
+            </div>
+            {/* 전체선택 / 전체해제 */}
+            <button style={{background:"#e0f2fe",color:"#0369a1",border:"1px solid #7dd3fc",borderRadius:6,padding:"4px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}
+              onClick={()=>{
+                const valid=curPrintPatients.filter(p=>p.name&&p.name.trim());
+                const allSel=valid.every(p=>printSel[p.slotKey]);
+                const next={};
+                if(!allSel) valid.forEach(p=>{next[p.slotKey]=true;});
+                setPrintSel(next);
+              }}>
+              {curPrintPatients.filter(p=>p.name&&p.name.trim()).every(p=>printSel[p.slotKey])?"☑ 전체해제":"☐ 전체선택"}
+            </button>
+            {/* 물리치료 탭일 때 치료사별 선택 버튼 */}
+            {printTab==="physical"&&therapists.map((th,idx)=>{
+              const rid=idx===0?"th1":"th2";
+              const thPatients=physPrintPatients.filter(p=>p.name&&p.name.trim()&&p.entries.some(e=>e.therapistId===rid));
+              if(!thPatients.length) return null;
+              const allSel=thPatients.every(p=>printSel[p.slotKey]);
+              return (
+                <button key={rid}
+                  style={{background:rid==="th1"?"#dcfce7":"#eff6ff",
+                    color:rid==="th1"?"#166534":"#1e40af",
+                    border:`1px solid ${rid==="th1"?"#86efac":"#93c5fd"}`,
+                    borderRadius:6,padding:"4px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}
+                  onClick={()=>{
+                    const next={...printSel};
+                    thPatients.forEach(p=>{next[p.slotKey]=!allSel;});
+                    setPrintSel(next);
+                  }}>
+                  {allSel?"✓":"○"} {th}
+                </button>
+              );
+            })}
+            <div style={{flex:1}}/>
+            <button style={{background:"#7c3aed",color:"#fff",border:"none",borderRadius:8,padding:"6px 18px",cursor:"pointer",fontSize:13,fontWeight:700,flexShrink:0}}
+              onClick={()=>window.print()}>
+              🖨 {Object.values(printSel).filter(Boolean).length}명 인쇄
+            </button>
           </div>
-          <div style={{display:"flex",gap:6,flex:1,flexWrap:"wrap"}}>
-            {curPrintPatients.filter(p=>p.name&&p.name.trim()).map(p=>(
-              <label key={p.slotKey} style={{display:"flex",alignItems:"center",fontSize:12,cursor:"pointer",background:"#fff",border:"1px solid #e9d5ff",borderRadius:6,padding:"2px 8px",gap:4}}>
-                <input type="checkbox" checked={!!printSel[p.slotKey]} onChange={e=>setPrintSel(prev=>({...prev,[p.slotKey]:e.target.checked}))}/>
-                {p.name}님{p.isOuter&&<span style={{fontSize:10,color:"#d97706",fontWeight:700}}>(외래)</span>}
-              </label>
-            ))}
+          {/* 2행: 환자 체크박스 목록 */}
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {(()=>{
+              const valid=curPrintPatients.filter(p=>p.name&&p.name.trim());
+              // 물리치료: 치료사별 그룹으로 표시
+              if(printTab==="physical"){
+                return therapists.map((th,idx)=>{
+                  const rid=idx===0?"th1":"th2";
+                  const grpPatients=valid.filter(p=>p.entries.some(e=>e.therapistId===rid));
+                  if(!grpPatients.length) return null;
+                  return (
+                    <div key={rid} style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap",
+                      background:rid==="th1"?"#f0fdf4":"#eff6ff",
+                      borderRadius:7,padding:"4px 8px",border:`1px solid ${rid==="th1"?"#86efac":"#93c5fd"}`}}>
+                      <span style={{fontSize:11,fontWeight:800,color:rid==="th1"?"#166534":"#1e40af",marginRight:4,whiteSpace:"nowrap"}}>{th}</span>
+                      {grpPatients.map(p=>(
+                        <label key={p.slotKey} style={{display:"flex",alignItems:"center",fontSize:12,cursor:"pointer",
+                          background:printSel[p.slotKey]?"#fff":"rgba(255,255,255,0.6)",
+                          border:printSel[p.slotKey]?"1.5px solid #7c3aed":"1px solid #e2e8f0",
+                          borderRadius:5,padding:"2px 8px",gap:3}}>
+                          <input type="checkbox" checked={!!printSel[p.slotKey]}
+                            onChange={e=>setPrintSel(prev=>({...prev,[p.slotKey]:e.target.checked}))}/>
+                          {p.name}{p.isOuter&&<span style={{fontSize:10,color:"#d97706",fontWeight:700}}>(외)</span>}
+                        </label>
+                      ))}
+                    </div>
+                  );
+                });
+              }
+              // 고주파/고압: 단순 목록
+              return valid.map(p=>(
+                <label key={p.slotKey} style={{display:"flex",alignItems:"center",fontSize:12,cursor:"pointer",
+                  background:printSel[p.slotKey]?"#fff":"rgba(255,255,255,0.6)",
+                  border:printSel[p.slotKey]?"1.5px solid #7c3aed":"1px solid #e9d5ff",
+                  borderRadius:5,padding:"2px 8px",gap:3}}>
+                  <input type="checkbox" checked={!!printSel[p.slotKey]}
+                    onChange={e=>setPrintSel(prev=>({...prev,[p.slotKey]:e.target.checked}))}/>
+                  {p.name}{p.isOuter&&<span style={{fontSize:10,color:"#d97706",fontWeight:700}}>(외)</span>}
+                </label>
+              ));
+            })()}
           </div>
-          <button style={{background:"#7c3aed",color:"#fff",border:"none",borderRadius:8,padding:"7px 16px",cursor:"pointer",fontSize:13,fontWeight:700}}
-            onClick={()=>window.print()}>선택 인쇄</button>
         </div>
       )}
 
@@ -511,9 +583,13 @@ export default function TherapyPage() {
                                       {ca?(
                                         <>
                                           <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
-                                            {ca.patientName}{ca.isOuter&&<span style={{color:"#d97706",fontSize:9,fontWeight:700}}> 외</span>}
+                                            {ca.patientName}
                                           </div>
                                           {ca.roomId&&<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{ca.roomId}-{ca.bedNum}</div>}
+                                          <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1}}>
+                                            {ca.isOuter&&<span style={{fontSize:8,color:"#d97706",fontWeight:700,background:"#fef3c7",borderRadius:3,padding:"0 3px"}}>외래</span>}
+                                            {ca.isPending&&<span style={{fontSize:8,color:"#f59e0b",fontWeight:700,background:"#fff7ed",borderRadius:3,padding:"0 3px"}}>예정</span>}
+                                          </div>
                                           <button onClick={e=>{e.stopPropagation();if(!confirm("삭제?"))return;saveHyper("hyperbaric",dayIdx,time,null,"a");}}
                                             style={{position:"absolute",top:0,right:0,background:"rgba(220,38,38,0.2)",border:"none",color:"#dc2626",borderRadius:2,width:12,height:12,cursor:"pointer",fontSize:8,lineHeight:"12px",textAlign:"center",padding:0}}>✕</button>
                                         </>
@@ -527,9 +603,13 @@ export default function TherapyPage() {
                                       {cb?(
                                         <>
                                           <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
-                                            {cb.patientName}{cb.isOuter&&<span style={{color:"#d97706",fontSize:9,fontWeight:700}}> 외</span>}
+                                            {cb.patientName}
                                           </div>
                                           {cb.roomId&&<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{cb.roomId}-{cb.bedNum}</div>}
+                                          <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1}}>
+                                            {cb.isOuter&&<span style={{fontSize:8,color:"#d97706",fontWeight:700,background:"#fef3c7",borderRadius:3,padding:"0 3px"}}>외래</span>}
+                                            {cb.isPending&&<span style={{fontSize:8,color:"#f59e0b",fontWeight:700,background:"#fff7ed",borderRadius:3,padding:"0 3px"}}>예정</span>}
+                                          </div>
                                           <button onClick={e=>{e.stopPropagation();if(!confirm("삭제?"))return;saveHyper("hyperbaric",dayIdx,time,null,"b");}}
                                             style={{position:"absolute",top:0,right:0,background:"rgba(220,38,38,0.2)",border:"none",color:"#dc2626",borderRadius:2,width:12,height:12,cursor:"pointer",fontSize:8,lineHeight:"12px",textAlign:"center",padding:0}}>✕</button>
                                         </>
