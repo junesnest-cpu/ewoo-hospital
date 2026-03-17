@@ -214,11 +214,8 @@ export default function ConsultationPage() {
   }, []);
 
   // 오늘 이후 입원예약일이 있는 상담 (대기 배지용)
-  const pendingAdmits = allList.filter(c => {
-    if (c.status === "예약완료") return false;
-    if (!c.admitDate) return false;
-    return new Date(c.admitDate) >= new Date(today());
-  });
+  // admitDate 있으면 모두 예약완료로 표시하므로 pendingAdmits는 사용 안 함
+  const pendingAdmits = [];
 
   // 재연락 필요 목록 (완료/취소 제외, 날짜 오름차순)
   const recontactList = allList
@@ -503,7 +500,7 @@ export default function ConsultationPage() {
           }
           const c = item;
           const hasAdmit = !!(c.admitDate);
-          const isReserved = c.status === "예약완료" || c.reservedSlot;
+          const isReserved = c.status === "예약완료" || c.reservedSlot || (c.admitDate && c.status !== "입원완료" && c.status !== "취소");
           const isAdmitted = c.status === "입원완료";
 
           let cardStyle = { ...S.card };
