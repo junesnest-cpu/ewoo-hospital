@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+1import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
@@ -55,7 +55,6 @@ function BedCalendar({ slot, year, month }) {
   for (let d=1;d<=days;d++) cells.push(d);
   while (cells.length%7!==0) cells.push(null);
 
-  // 날짜별 상태 계산
   const getDayStatus = (day) => {
     if (!day) return null;
     const d = new Date(year, month, day);
@@ -69,10 +68,8 @@ function BedCalendar({ slot, year, month }) {
         return "occupied";
       }
     }
-    const reservations = slot?.reservations || [];
-    for (const r of reservations) {
-      const ad = parseDateStr(r.admitDate);
-      const dd = parseDateStr(r.discharge);
+    for (const r of (slot?.reservations||[])) {
+      const ad = parseDateStr(r.admitDate), dd = parseDateStr(r.discharge);
       if (!ad) continue;
       if (d >= dateOnly(ad) && (!dd || d <= dateOnly(dd))) {
         if (dateOnly(ad).getTime()===dateOnly(d).getTime()) return "admit";
@@ -84,72 +81,31 @@ function BedCalendar({ slot, year, month }) {
   };
 
   const statusColor = {
-    occupied:         "#0ea5e9",
-    discharge:        "#fbbf24",
-    admit:            "#10b981",
-    reserved:         "#a78bfa",
-    reserve_discharge:"#f9a8d4",
-    empty:            "#f1f5f9",
+    occupied:"#0ea5e9", discharge:"#fbbf24", admit:"#10b981",
+    reserved:"#a78bfa", reserve_discharge:"#f9a8d4", empty:"#f1f5f9",
   };
-  const statusLabel = { occupied:"입원", discharge:"퇴원", admit:"입원일", reserved:"예약", reserve_discharge:"예약퇴", empty:"" };
 
   return (
-    <div style={{ marginTop:10, borderTop:"1px solid #e2e8f0", paddingTop:8 }}>
-      <div style={{ fontSize:11, fontWeight:700, color:"#64748b", marginBottom:5 }}>
-        📅 {year}년 {month+1}월 입퇴원 현황
-      </div>
-      {/* 범례 */}
-      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:5 }}>
-        {[["occupied","#0ea5e9","입원중"],["admit","#10b981","입원일"],["discharge","#fbbf24","퇴원일"],["reserved","#a78bfa","예약"]].map(([k,c,l])=>(
-          <span key={k} style={{ display:"flex", alignItems:"center", gap:2, fontSize:9, color:"#64748b" }}>
-            <span style={{ width:8,height:8,borderRadius:2,background:c,display:"inline-block" }}/>
-            {l}
-          </span>
-        ))}
-      </div>
-      {/* 요일 헤더 */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:1, marginBottom:1 }}>
-        {DAY_KO.map((d,i)=>(
-          <div key={d} style={{ textAlign:"center", fontSize:9, fontWeight:700,
-            color:i===0?"#dc2626":i===6?"#2563eb":"#94a3b8" }}>{d}</div>
-        ))}
-      </div>
-      {/* 날짜 셀 */}
+    <div style={{ marginTop:6, borderTop:"1px solid #e2e8f0", paddingTop:5 }}>
+      {/* 날짜만 - 최소화 */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:1 }}>
         {cells.map((day,idx)=>{
           const status = getDayStatus(day);
           const bg = status ? statusColor[status] : "transparent";
           const isToday = day && dateOnly(new Date()).getTime()===dateOnly(new Date(year,month,day)).getTime();
-          const dow = day ? (firstDow+day-1)%7 : 0;
           return (
             <div key={idx} style={{
-              minHeight:18, borderRadius:3, background: day?bg:"transparent",
-              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-              border: isToday?"2px solid #0f2744":"1px solid transparent",
+              height:14, borderRadius:2, background:day?bg:"transparent",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              border:isToday?"1.5px solid #0f2744":"none",
               boxSizing:"border-box",
             }}>
-              {day && (
-                <>
-                  <span style={{ fontSize:9, fontWeight:isToday?900:600,
-                    color: status==="empty"?(dow===0?"#dc2626":dow===6?"#2563eb":"#475569"):"#fff",
-                    lineHeight:1 }}>{day}</span>
-                  {status&&status!=="empty"&&<span style={{ fontSize:7, color:"rgba(255,255,255,0.9)", lineHeight:1 }}>{statusLabel[status]}</span>}
-                </>
-              )}
+              {day&&<span style={{ fontSize:8, fontWeight:isToday?900:500,
+                color:status==="empty"?"#94a3b8":"#fff", lineHeight:1 }}>{day}</span>}
             </div>
           );
         })}
       </div>
-      {/* 예약 목록 간략 */}
-      {slot?.reservations?.length > 0 && (
-        <div style={{ marginTop:5 }}>
-          {slot.reservations.map((r,i)=>(
-            <div key={i} style={{ fontSize:10, color:"#7c3aed", background:"#f5f3ff", borderRadius:4, padding:"2px 6px", marginBottom:2 }}>
-              📅 {r.name} {r.admitDate}→{r.discharge||"미정"}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -316,18 +272,11 @@ export default function RoomPage() {
           style={{ ...NS.btnMonth, fontSize:11, padding:"3px 8px" }}>이번달</button>
       </div>
 
-      {/* 범례 */}
-      <div style={{ background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"6px 16px", display:"flex", gap:12, flexWrap:"wrap" }}>
-        {[["입원중","#0ea5e9"],["입원일","#10b981"],["퇴원일","#fbbf24"],["예약","#a78bfa"]].map(([l,c])=>(
-          <span key={l} style={{ display:"flex",alignItems:"center",gap:4,fontSize:12,color:"#475569" }}>
-            <span style={{ width:10,height:10,borderRadius:3,background:c,display:"inline-block" }}/>{l}
-          </span>
-        ))}
-      </div>
+      {/* 범례 - 헤더 바에 통합 */}
 
       {/* 병상 그리드 */}
       <main style={{ padding:"14px 12px" }}>
-        <div style={{ display:"grid", gridTemplateColumns:`repeat(${Math.min(room.capacity,isMobile?1:2)},1fr)`, gap:14 }}>
+        <div style={{ display:"grid", gridTemplateColumns:isMobile?`1fr`:`repeat(${room.capacity},1fr)`, gap:8 }}>
           {bedList.map(({slotKey,slot,person,type},i)=>{
             const isDischarging = type==="discharging_today";
             const isAdmitting   = type==="admitting_today";
@@ -349,7 +298,7 @@ export default function RoomPage() {
                 onClick={()=>{ if(movingPatient&&!isMovingFrom) executeMove(slotKey); }}
                 style={{ background: isMovingFrom?"#fffbeb":isMoveTarget?"#f0fdf4":isAdmitting?"#eff6ff":isDischarging?"#fffbeb":isReservedType?"#faf5ff":"#fff",
                   border:`2px ${person?"solid":"dashed"} ${borderColor}`,
-                  borderRadius:12, padding:16,
+                  borderRadius:10, padding:10,
                   cursor:movingPatient&&!isMovingFrom?"pointer":"default",
                   boxShadow:"0 1px 6px rgba(0,0,0,0.06)", transition:"all 0.2s" }}>
 
@@ -366,7 +315,7 @@ export default function RoomPage() {
                 {/* 환자 정보 */}
                 {person ? (
                   <div>
-                    <div style={{ fontSize:20, fontWeight:800,
+                    <div style={{ fontSize:15, fontWeight:800,
                       color:isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
                       marginBottom:4 }}>{person.name}</div>
                     {person.admitDate&&<div style={{ fontSize:12,color:"#7c3aed",marginBottom:2 }}>입원일: {person.admitDate}</div>}
