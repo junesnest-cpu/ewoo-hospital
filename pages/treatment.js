@@ -547,13 +547,25 @@ export default function TreatmentPage() {
         name={name} roomId={roomId} bedNum={bedNum}
         year={year} month={month} monthData={monthData}
         firstDow={firstDow} daysInMonth={daysInMonth}
+        admitDate={admitDate} discharge={discharge}
+        dischargeDate={dischargeDate}
+        hasRoomCharge={hasRoomCharge}
+        dayTreatTotal={dayTreatTotal}
+        chargePerNight={chargePerNight}
+        roomFree={roomFree}
+        weekBase={weekBase}
+        weeklyStats={weeklyStats}
+        monthRoomTotal={monthRoomTotal}
+        roomType={roomType}
       />
     </div>
   );
 }
 
 // ── 인쇄 전용 컴포넌트 (달력 형태) ─────────────────────────────────────────
-function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, daysInMonth }) {
+function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, daysInMonth,
+  admitDate, discharge, dischargeDate, hasRoomCharge, dayTreatTotal, chargePerNight,
+  roomFree, weekBase, weeklyStats, monthRoomTotal, roomType }) {
   const allItems = TREATMENT_GROUPS.flatMap(g => g.items);
 
   // 달력 셀 생성
