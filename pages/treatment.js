@@ -15,6 +15,8 @@ const TREATMENT_GROUPS = [
       { id: "zadaxin",  name: "자닥신",   price: 350000 },
       { id: "imualpha", name: "이뮤알파", price: 300000 },
       { id: "scion",    name: "싸이원주", price: 250000 },
+      { id: "iscador_m", name: "이스카도M", price: 75000 },
+      { id: "iscador_q", name: "이스카도Q", price: 80000 },
     ],
   },
   {
@@ -66,7 +68,7 @@ const TREATMENT_GROUPS = [
 
 const ALL_ITEMS = TREATMENT_GROUPS.flatMap(g => g.items);
 
-function calcPrice(item, qty) {
+function calcPrice(item, qty, dateObj) {
   if (!item) return 0;
   if (item.custom === "vitc") {
     const g = parseInt(qty) || 0;
@@ -74,7 +76,15 @@ function calcPrice(item, qty) {
     const units = Math.ceil(g / 10);
     return units === 1 ? 30000 : 30000 + (units - 1) * 10000;
   }
-  if (item.custom === "qty") return item.price * (parseInt(qty) || 0);
+  if (item.custom === "qty") {
+    let unitPrice = item.price;
+    // 메시마: 2025/3/15 이전 15000원, 3/16부터 18000원
+    if (item.id === "meshima" && dateObj) {
+      const cutoff = new Date(2025, 2, 16); // 3/16
+      if (dateOnly(dateObj) < dateOnly(cutoff)) unitPrice = 15000;
+    }
+    return unitPrice * (parseInt(qty) || 0);
+  }
   return item.price;
 }
 
@@ -133,12 +143,19 @@ export default function TreatmentPage() {
   const [selection, setSelection] = useState({});
   const [copiedDay, setCopiedDay] = useState(null);
   const [roomFree,  setRoomFree]  = useState(false); // 병실료 프리 옵션
+  const [weeklyPlan,setWeeklyPlan]= useState({}); // {itemId: {count:N, price:P}} 주N회 계획
+  const [showWkPlan,setShowWkPlan]= useState(false); // 주간 계획 패널 토글
 
   useEffect(() => {
     if (!slotKey) return;
-    const r = ref(db, `treatmentPlans/${slotKey}`);
-    const unsub = onValue(r, snap => setPlan(snap.val() || {}));
-    return () => unsub();
+    const unsub1 = onValue(ref(db, `treatmentPlans/${slotKey}`), snap => setPlan(snap.val() || {}));
+    const unsub2 = onValue(ref(db, `weeklyPlans/${slotKey}`), snap => setWeeklyPlan(snap.val() || {}));
+    return () => { unsub1(); unsub2(); };
+  }, [slotKey]);
+
+  const saveWeeklyPlan = useCallback(async (newPlan) => {
+    setWeeklyPlan(newPlan);
+    await set(ref(db, `weeklyPlans/${slotKey}`), newPlan);
   }, [slotKey]);
 
   const monthKey  = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -192,8 +209,10 @@ export default function TreatmentPage() {
     return treatTotal + (hasRoomCharge(day) ? chargePerNight : 0);
   };
 
-  const dayTreatTotal = (day) =>
-    (monthData[String(day)] || []).reduce((s, e) => s + calcPrice(ALL_ITEMS.find(i => i.id === e.id), e.qty), 0);
+  const dayTreatTotal = (day) => {
+    const dateObj = new Date(year, month, day);
+    return (monthData[String(day)] || []).reduce((s, e) => s + calcPrice(ALL_ITEMS.find(i => i.id === e.id), e.qty, dateObj), 0);
+  };
 
   // 달력에 표시된 날짜 기준 치료 합계 + 병실료
   const allDaysInMonth = Array.from({length: getDaysInMonth(year, month)}, (_,i) => i+1);
@@ -203,17 +222,32 @@ export default function TreatmentPage() {
   const monthTreatTotal = Object.keys(monthData).reduce((s, d) => s + dayTreatTotal(parseInt(d)), 0);
   const monthTotal = monthTreatTotal + monthRoomTotal;
 
+  // 주N회 계획의 주간 예상 금액 (실제 치료 입력 전)
+  const weeklyPlanTotal = Object.entries(weeklyPlan).reduce((sum, [itemId, plan]) => {
+    const item = ALL_ITEMS.find(i => i.id === itemId);
+    if (!item) return sum;
+    const unitPrice = item.price || 0;
+    return sum + unitPrice * (plan.count || 0);
+  }, 0);
+
   const weeklyStats = (() => {
     if (!admitDate) return [];
     const weeks = {};
-    // 치료 옵션 비용만 집계 (병실료 제외)
     Object.keys(monthData).forEach(d => {
       const wk = getWeekNumber(admitDate, new Date(year, month, parseInt(d)));
       if (wk === null) return;
-      if (!weeks[wk]) weeks[wk] = { total: 0, days: [] };
+      if (!weeks[wk]) weeks[wk] = { total: 0, days: [], planTotal: 0 };
       weeks[wk].total += dayTreatTotal(parseInt(d));
       if (!weeks[wk].days.includes(parseInt(d))) weeks[wk].days.push(parseInt(d));
     });
+    // 주N회 계획이 있는 주차에 예상 금액 표시
+    if (weeklyPlanTotal > 0 && admitDate) {
+      const todayWk = getWeekNumber(admitDate, new Date());
+      if (todayWk !== null) {
+        if (!weeks[todayWk]) weeks[todayWk] = { total: 0, days: [], planTotal: 0 };
+        weeks[todayWk].planTotal = weeklyPlanTotal;
+      }
+    }
     return Object.entries(weeks).map(([wk, v]) => ({ week: parseInt(wk), ...v })).sort((a,b) => a.week - b.week);
   })();
 
@@ -286,7 +320,7 @@ export default function TreatmentPage() {
           </span>
         )}
         <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:12, cursor:"pointer",
-          marginLeft:"auto", background: roomFree?"#fef9c3":"#f1f5f9", borderRadius:7,
+          background: roomFree?"#fef9c3":"#f1f5f9", borderRadius:7,
           padding:"3px 10px", border:`1px solid ${roomFree?"#fbbf24":"#e2e8f0"}`, fontWeight:700,
           color: roomFree?"#92400e":"#64748b", flexShrink:0 }}>
           <input type="checkbox" checked={roomFree} onChange={e=>setRoomFree(e.target.checked)}/>
@@ -295,6 +329,12 @@ export default function TreatmentPage() {
             (치료 기준 {(weekBase/10000).toFixed(0)}만원/주)
           </span>}
         </label>
+        <button onClick={()=>setShowWkPlan(p=>!p)}
+          style={{ background:showWkPlan?"#0f2744":"#f1f5f9", color:showWkPlan?"#fff":"#475569",
+            border:"1px solid #e2e8f0", borderRadius:7, padding:"3px 12px", cursor:"pointer",
+            fontSize:12, fontWeight:700, flexShrink:0 }}>
+          📋 주N회 계획 {Object.keys(weeklyPlan).length>0?`(${Object.keys(weeklyPlan).length}종)`:""} {showWkPlan?"▲":"▼"}
+        </button>
         {weeklyStats.map(wk => (
           <span key={wk.week} style={{ ...TS.totalItem, borderLeft:"1px solid #e2e8f0", paddingLeft:14 }}>
             {wk.week}주차&nbsp;
@@ -302,6 +342,7 @@ export default function TreatmentPage() {
             <span style={{ fontSize:11, marginLeft:3, color: wk.total>=weekBase?"#16a34a":"#dc2626" }}>
               {wk.total>=weekBase ? "✓ 충족" : `(${Math.floor((weekBase-wk.total)/10000)}만 부족)`}
             </span>
+            {wk.planTotal>0 && <span style={{ fontSize:11, marginLeft:4, color:"#0369a1" }}>+계획{Math.floor(wk.planTotal/10000)}만</span>}
           </span>
         ))}
         {copiedDay && (
@@ -311,6 +352,56 @@ export default function TreatmentPage() {
           </span>
         )}
       </div>
+
+      {/* 주N회 계획 패널 */}
+      {showWkPlan && (
+        <div style={{ background:"#f0f9ff", borderBottom:"1px solid #bae6fd", padding:"12px 20px" }}>
+          <div style={{ fontSize:14, fontWeight:800, color:"#0369a1", marginBottom:10 }}>
+            📋 주간 치료 계획 (주N회)
+            <span style={{ fontSize:12, fontWeight:400, color:"#64748b", marginLeft:8 }}>
+              — 치료실에서 실제 입력 시 날짜에 반영되고 계획에서 제거됩니다
+            </span>
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 }}>
+            {TREATMENT_GROUPS.flatMap(g=>g.items).filter(item=>
+              ["hyperthermia","pain","manip2","manip1","hyperbaric"].includes(item.id)
+            ).map(item=>{
+              const plan = weeklyPlan[item.id];
+              const grp = getItemGroup(item.id);
+              return (
+                <div key={item.id} style={{ display:"flex", alignItems:"center", gap:6,
+                  background:"#fff", border:`1.5px solid ${grp?.color||"#e2e8f0"}`,
+                  borderRadius:8, padding:"6px 12px" }}>
+                  <span style={{ fontSize:13, fontWeight:700, color:grp?.color }}>{item.name}</span>
+                  <span style={{ fontSize:12, color:"#64748b" }}>주</span>
+                  <select value={plan?.count||0}
+                    onChange={e=>{
+                      const v=parseInt(e.target.value);
+                      const newP={...weeklyPlan};
+                      if(v===0) delete newP[item.id];
+                      else newP[item.id]={count:v, price:item.price};
+                      saveWeeklyPlan(newP);
+                    }}
+                    style={{ border:"1px solid #e2e8f0", borderRadius:5, padding:"2px 6px", fontSize:13, outline:"none" }}>
+                    {[0,1,2,3,4,5,6,7].map(n=><option key={n} value={n}>{n===0?"미설정":`${n}회`}</option>)}
+                  </select>
+                  {plan?.count>0 && (
+                    <span style={{ fontSize:11, color:"#0369a1" }}>
+                      = {(item.price*(plan.count||0)).toLocaleString()}원/주
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {weeklyPlanTotal>0 && (
+            <div style={{ fontSize:13, fontWeight:700, color:"#0369a1" }}>
+              주간 계획 합계: <strong>{weeklyPlanTotal.toLocaleString()}원/주</strong>
+              &nbsp;(7주: {(weeklyPlanTotal*7).toLocaleString()}원)
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 달력 */}
       <div style={TS.calWrap}>
@@ -476,7 +567,7 @@ export default function TreatmentPage() {
                         <span style={{ fontWeight:700, color:grp.color }}>
                           {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}개`:item.name}
                         </span>
-                        <span style={{ color:"#64748b", fontSize:12, marginLeft:8 }}>{calcPrice(item,e.qty).toLocaleString()}원</span>
+                        <span style={{ color:"#64748b", fontSize:12, marginLeft:8 }}>{calcPrice(item,e.qty,new Date(year,month,modalDay)).toLocaleString()}원</span>
                       </div>
                       <button style={TS.btnRemove} onClick={() => removeItem(modalDay, e.id)}>✕</button>
                     </div>
