@@ -873,7 +873,11 @@ const PRINT_CSS=`@media print{
     background:#fff;z-index:9999;display:block!important;
     box-sizing:border-box;
   }
-  .pcard{break-inside:avoid;border:1.5px solid #bbb;border-radius:6px;padding:8px 10px;margin-bottom:6mm;display:inline-block;width:100%}
+  .print-col-wrap{
+    columns:2;column-gap:5mm;column-fill:balance;
+    orphans:1;widows:1;
+  }
+  .pcard{break-inside:avoid;border:1.5px solid #bbb;border-radius:6px;padding:8px 10px;margin-bottom:4mm;display:inline-block;width:100%}
   .no-print{display:none!important}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
@@ -888,7 +892,7 @@ function PhysPrint({patients,selected,weekDates,therapists}){
   return (
     <div className="therapy-print-area" style={{display:"none"}}>
       <style>{PRINT_CSS}</style>
-      <div style={{fontFamily:"'Noto Sans KR',sans-serif",columns:2,columnGap:"5mm",columnFill:"auto"}}>
+      <div className="print-col-wrap" style={{fontFamily:"'Noto Sans KR',sans-serif"}}>
         {list.map(p=>{ const sorted=[...p.entries].sort((a,b)=>a.dayIdx-b.dayIdx||a.time.localeCompare(b.time)); return (
           <div key={p.slotKey} className="pcard">
             <div style={{fontWeight:900,fontSize:16,borderBottom:"1.5px solid #ccc",paddingBottom:4,marginBottom:5}}>
@@ -921,7 +925,7 @@ function HyperPrint({patients,selected,weekDates}){
   return (
     <div className="therapy-print-area" style={{display:"none"}}>
       <style>{PRINT_CSS}</style>
-      <div style={{fontFamily:"'Noto Sans KR',sans-serif",columns:2,columnGap:"5mm",columnFill:"auto"}}>
+      <div className="print-col-wrap" style={{fontFamily:"'Noto Sans KR',sans-serif"}}>
         {list.map(p=>{ const sorted=[...p.entries].sort((a,b)=>a.dayIdx-b.dayIdx||a.time.localeCompare(b.time)); return (
           <div key={p.slotKey} className="pcard">
             <div style={{fontWeight:900,fontSize:16,borderBottom:"1.5px solid #ccc",paddingBottom:4,marginBottom:5}}>
