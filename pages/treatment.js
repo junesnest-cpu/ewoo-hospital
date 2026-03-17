@@ -235,23 +235,40 @@ export default function TreatmentPage() {
 
   const weeklyStats = (() => {
     if (!admitDate) return [];
+    const admit = parseDateStr(admitDate);
+    if (!admit) return [];
+
+    // 이 달에 존재하는 7일 구간(입원일 기준)을 먼저 파악
     const weeks = {};
-    Object.keys(monthData).forEach(d => {
-      const wk = getWeekNumber(admitDate, new Date(year, month, parseInt(d)));
-      if (wk === null) return;
-      if (!weeks[wk]) weeks[wk] = { total: 0, days: [], planTotal: 0 };
-      weeks[wk].total += dayTreatTotal(parseInt(d));
-      if (!weeks[wk].days.includes(parseInt(d))) weeks[wk].days.push(parseInt(d));
-    });
-    // 주N회 계획이 있는 주차에 예상 금액 표시
-    if (weeklyPlanTotal > 0 && admitDate) {
+    const daysInM = getDaysInMonth(year, month);
+
+    for (let d = 1; d <= daysInM; d++) {
+      const thisDate = new Date(year, month, d);
+      const diff = Math.floor((dateOnly(thisDate) - dateOnly(admit)) / 86400000);
+      if (diff < 0) continue; // 입원일 이전
+      const wk = Math.floor(diff / 7) + 1;
+      if (!weeks[wk]) weeks[wk] = { total: 0, days: [], startDay: d, planTotal: 0 };
+      // 치료 있는 날만 합산
+      const dayTreat = dayTreatTotal(d);
+      if (dayTreat > 0) {
+        weeks[wk].total += dayTreat;
+        weeks[wk].days.push(d);
+      }
+    }
+
+    // 주N회 계획: 오늘이 속한 구간에 표시
+    if (weeklyPlanTotal > 0) {
       const todayWk = getWeekNumber(admitDate, new Date());
       if (todayWk !== null) {
         if (!weeks[todayWk]) weeks[todayWk] = { total: 0, days: [], planTotal: 0 };
         weeks[todayWk].planTotal = weeklyPlanTotal;
       }
     }
-    return Object.entries(weeks).map(([wk, v]) => ({ week: parseInt(wk), ...v })).sort((a,b) => a.week - b.week);
+
+    return Object.entries(weeks)
+      .filter(([, v]) => v.total > 0 || v.planTotal > 0)
+      .map(([wk, v]) => ({ week: parseInt(wk), ...v }))
+      .sort((a, b) => a.week - b.week);
   })();
 
   const daysInMonth = getDaysInMonth(year, month);
