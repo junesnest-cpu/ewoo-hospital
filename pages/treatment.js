@@ -574,16 +574,21 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
     <div className="ewoo-print-area" style={{ display:"none" }}>
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 6mm 8mm; }
+          @page { size: A4 portrait; margin: 0; }
+          html, body {
+            width: 210mm; height: 297mm;
+            margin: 0 !important; padding: 0 !important;
+            overflow: hidden !important;
+          }
           body * { visibility: hidden !important; }
           .ewoo-print-area, .ewoo-print-area * { visibility: visible !important; }
           .ewoo-print-area {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            position: absolute; top: 0; left: 0;
+            width: 210mm; height: 297mm;
             background: white; z-index: 9999; display: flex !important;
             flex-direction: column; box-sizing: border-box;
-            padding: 6mm 8mm;
+            padding: 8mm 10mm;
             overflow: hidden;
-            page-break-after: avoid;
           }
           .print-cal-table { flex: 1; border-collapse: collapse; }
           * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
