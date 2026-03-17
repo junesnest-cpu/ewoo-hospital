@@ -78,10 +78,13 @@ function calcPrice(item, qty, dateObj) {
   }
   if (item.custom === "qty") {
     let unitPrice = item.price;
-    // 메시마: 2025/3/15 이전 15000원, 3/16부터 18000원
-    if (item.id === "meshima" && dateObj) {
+    // 날짜별 가격 변동 (2025/3/16 기준)
+    if (dateObj) {
       const cutoff = new Date(2025, 2, 16); // 3/16
-      if (dateOnly(dateObj) < dateOnly(cutoff)) unitPrice = 15000;
+      const before = dateOnly(dateObj) < dateOnly(cutoff);
+      if (item.id === "meshima"    && before) unitPrice = 15000;
+      if (item.id === "iscador_m"  && before) unitPrice = 65000;
+      if (item.id === "iscador_q"  && before) unitPrice = 70000;
     }
     return unitPrice * (parseInt(qty) || 0);
   }
