@@ -896,8 +896,14 @@ function PhysPrint({patients,selected,weekDates,therapists}){
       <div className="print-col-wrap" style={{fontFamily:"'Noto Sans KR',sans-serif"}}>
         {list.map(p=>{ const sorted=[...p.entries].sort((a,b)=>a.dayIdx-b.dayIdx||a.time.localeCompare(b.time)); return (
           <div key={p.slotKey} className="pcard">
-            <div style={{fontWeight:900,fontSize:32,borderBottom:"2px solid #ccc",paddingBottom:6,marginBottom:8}}>
-              {p.name}님 {p.isOuter&&<span style={{fontSize:22,color:"#d97706"}}>(외래)</span>}
+            <div style={{fontWeight:900,fontSize:32,borderBottom:"2px solid #ccc",paddingBottom:6,marginBottom:8,display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+              <span>{p.name}님</span>
+              {p.isOuter&&<span style={{fontSize:22,color:"#d97706"}}>(외래)</span>}
+              {p.slotKey&&!p.slotKey.startsWith("__")&&!p.slotKey.startsWith("pending_")&&(
+                <span style={{fontSize:16,fontWeight:700,color:"#64748b"}}>
+                  {p.slotKey.split("-")[0]}호 {p.slotKey.split("-")[1]}번
+                </span>
+              )}
             </div>
             <div style={{fontSize:22,color:"#555",marginBottom:6}}>물리치료 안내 · {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:24}}>
@@ -929,8 +935,14 @@ function HyperPrint({patients,selected,weekDates}){
       <div className="print-col-wrap" style={{fontFamily:"'Noto Sans KR',sans-serif"}}>
         {list.map(p=>{ const sorted=[...p.entries].sort((a,b)=>a.dayIdx-b.dayIdx||a.time.localeCompare(b.time)); return (
           <div key={p.slotKey} className="pcard">
-            <div style={{fontWeight:900,fontSize:32,borderBottom:"2px solid #ccc",paddingBottom:6,marginBottom:8}}>
-              {p.name}님 {p.isOuter&&<span style={{fontSize:22,color:"#d97706"}}>(외래)</span>}
+            <div style={{fontWeight:900,fontSize:32,borderBottom:"2px solid #ccc",paddingBottom:6,marginBottom:8,display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+              <span>{p.name}님</span>
+              {p.isOuter&&<span style={{fontSize:22,color:"#d97706"}}>(외래)</span>}
+              {p.slotKey&&!p.slotKey.startsWith("__")&&!p.slotKey.startsWith("pending_")&&(
+                <span style={{fontSize:16,fontWeight:700,color:"#64748b"}}>
+                  {p.slotKey.split("-")[0]}호 {p.slotKey.split("-")[1]}번
+                </span>
+              )}
             </div>
             <div style={{fontSize:22,color:"#555",marginBottom:6}}>치료 안내 · {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:24}}>
