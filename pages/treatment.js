@@ -206,7 +206,7 @@ export default function TreatmentPage() {
   const weeklyStats = (() => {
     if (!admitDate) return [];
     const weeks = {};
-    // 치료 있는 날 집계
+    // 치료 옵션 비용만 집계 (병실료 제외)
     Object.keys(monthData).forEach(d => {
       const wk = getWeekNumber(admitDate, new Date(year, month, parseInt(d)));
       if (wk === null) return;
@@ -214,17 +214,6 @@ export default function TreatmentPage() {
       weeks[wk].total += dayTreatTotal(parseInt(d));
       if (!weeks[wk].days.includes(parseInt(d))) weeks[wk].days.push(parseInt(d));
     });
-    // 병실료 있는 날도 주차에 포함
-    if (chargePerNight > 0) {
-      allDaysInMonth.forEach(d => {
-        if (!hasRoomCharge(d)) return;
-        const wk = getWeekNumber(admitDate, new Date(year, month, d));
-        if (wk === null) return;
-        if (!weeks[wk]) weeks[wk] = { total: 0, days: [] };
-        weeks[wk].total += chargePerNight;
-        if (!weeks[wk].days.includes(d)) weeks[wk].days.push(d);
-      });
-    }
     return Object.entries(weeks).map(([wk, v]) => ({ week: parseInt(wk), ...v })).sort((a,b) => a.week - b.week);
   })();
 
@@ -276,11 +265,24 @@ export default function TreatmentPage() {
       {/* 합계 바 */}
       <div style={TS.totalBar}>
         <span style={TS.totalItem}>
-          {month+1}월 합계&nbsp;<strong style={{ color:"#dc2626" }}>{monthTotal.toLocaleString()}원</strong>
+          💊 치료비&nbsp;<strong style={{ color:"#dc2626" }}>{monthTreatTotal.toLocaleString()}원</strong>
         </span>
-        {chargePerNight > 0 && (
-          <span style={{ ...TS.totalItem, borderLeft:"1px solid #e2e8f0", paddingLeft:14, color:"#0369a1", fontSize:12 }}>
-            🏠 {roomType} 병실료 {chargePerNight.toLocaleString()}원/박 × {monthRoomTotal/chargePerNight}박 = {monthRoomTotal.toLocaleString()}원
+        {ROOM_CHARGE[roomType] > 0 && (
+          <span style={{ ...TS.totalItem, borderLeft:"1px solid #e2e8f0", paddingLeft:14, fontSize:12,
+            color: roomFree ? "#94a3b8" : "#0369a1" }}>
+            🏠 병실료&nbsp;
+            {roomFree
+              ? <strong style={{ color:"#94a3b8", textDecoration:"line-through" }}>{monthRoomTotal.toLocaleString()}원</strong>
+              : <strong style={{ color:"#0369a1" }}>{monthRoomTotal.toLocaleString()}원</strong>
+            }
+            {!roomFree && <span style={{ fontSize:11, color:"#64748b", marginLeft:4 }}>
+              ({chargePerNight.toLocaleString()}원 × {allDaysInMonth.filter(d=>hasRoomCharge(d)).length}박)
+            </span>}
+          </span>
+        )}
+        {ROOM_CHARGE[roomType] > 0 && !roomFree && (
+          <span style={{ ...TS.totalItem, borderLeft:"1px solid #e2e8f0", paddingLeft:14, fontWeight:800 }}>
+            합계&nbsp;<strong style={{ color:"#dc2626" }}>{monthTotal.toLocaleString()}원</strong>
           </span>
         )}
         <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:12, cursor:"pointer",
@@ -290,7 +292,7 @@ export default function TreatmentPage() {
           <input type="checkbox" checked={roomFree} onChange={e=>setRoomFree(e.target.checked)}/>
           🎁 병실료 Free
           {roomFree && <span style={{ fontSize:11, color:"#059669", marginLeft:4 }}>
-            (기준금액 {(weekBase/10000).toFixed(0)}만원/주)
+            (치료 기준 {(weekBase/10000).toFixed(0)}만원/주)
           </span>}
         </label>
         {weeklyStats.map(wk => (
@@ -298,7 +300,7 @@ export default function TreatmentPage() {
             {wk.week}주차&nbsp;
             <strong style={{ color: wk.total>=weekBase?"#16a34a":"#dc2626" }}>{Math.floor(wk.total/10000)}만원</strong>
             <span style={{ fontSize:11, marginLeft:3, color: wk.total>=weekBase?"#16a34a":"#dc2626" }}>
-              {wk.total>=1300000 ? "✓ 충족" : `(${Math.floor((weekBase-wk.total)/10000)}만 부족)`}
+              {wk.total>=weekBase ? "✓ 충족" : `(${Math.floor((weekBase-wk.total)/10000)}만 부족)`}
             </span>
           </span>
         ))}
@@ -401,9 +403,28 @@ export default function TreatmentPage() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={3} style={{ ...TS.td, fontWeight:800 }}>월 합계</td>
-                  <td style={{ ...TS.td, textAlign:"right", fontWeight:800, color:"#dc2626", fontSize:16 }}>{monthTotal.toLocaleString()}원</td>
+                  <td colSpan={3} style={{ ...TS.td, fontWeight:800 }}>💊 치료비 합계</td>
+                  <td style={{ ...TS.td, textAlign:"right", fontWeight:800, color:"#dc2626", fontSize:15 }}>{monthTreatTotal.toLocaleString()}원</td>
                 </tr>
+                {ROOM_CHARGE[roomType] > 0 && (
+                  <tr style={{ background:"#f0f9ff" }}>
+                    <td colSpan={3} style={{ ...TS.td, fontWeight:700, color:"#0369a1" }}>
+                      🏠 병실료 ({roomType} {chargePerNight.toLocaleString()}원 × {allDaysInMonth.filter(d=>hasRoomCharge(d)).length}박)
+                      {roomFree && <span style={{ marginLeft:6, color:"#94a3b8", fontWeight:400 }}>→ Free 적용</span>}
+                    </td>
+                    <td style={{ ...TS.td, textAlign:"right", fontWeight:700,
+                      color: roomFree?"#94a3b8":"#0369a1",
+                      textDecoration: roomFree?"line-through":"none" }}>
+                      {monthRoomTotal.toLocaleString()}원
+                    </td>
+                  </tr>
+                )}
+                {ROOM_CHARGE[roomType] > 0 && !roomFree && (
+                  <tr style={{ background:"#fff0f0" }}>
+                    <td colSpan={3} style={{ ...TS.td, fontWeight:800 }}>총 합계</td>
+                    <td style={{ ...TS.td, textAlign:"right", fontWeight:800, color:"#dc2626", fontSize:16 }}>{monthTotal.toLocaleString()}원</td>
+                  </tr>
+                )}
                 {weeklyStats.map(wk => (
                   <tr key={wk.week} style={{ background: wk.total>=weekBase?"#f0fdf4":"#fef2f2" }}>
                     <td colSpan={3} style={{ ...TS.td, fontSize:13 }}>
