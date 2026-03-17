@@ -79,6 +79,7 @@ export default function TherapyPage() {
   const [printTab,  setPrintTab]  = useState("physical");
 
   const physRef=React.useRef({}), hyperRef=React.useRef({}), treatRef=React.useRef({});
+  const weeklyPlansRef=React.useRef({});
   const weekStartRef=React.useRef(weekStart);
   React.useEffect(()=>{ weekStartRef.current=weekStart; },[weekStart]);
 
@@ -92,7 +93,8 @@ export default function TherapyPage() {
     const u3=onValue(ref(db,"physicalSchedule"),    s=>{ const v=s.val()||{}; setPhysSched(v);  physRef.current=v; });
     const u4=onValue(ref(db,"hyperthermiaSchedule"),s=>{ const v=s.val()||{}; setHyperSched(v); hyperRef.current=v; });
     const u5=onValue(ref(db,"settings"),            s=>{ const v=s.val()||{}; setTherapists([v.therapist1||"치료사1",v.therapist2||"치료사2"]); });
-    return ()=>{ u1();u2();u3();u4();u5(); };
+    const u6=onValue(ref(db,"weeklyPlans"),         s=>{ weeklyPlansRef.current=s.val()||{}; });
+    return ()=>{ u1();u2();u3();u4();u5();u6(); };
   },[]);
 
   // ── 셀 조회 (th1/th2 고정 키) ─────────────────────────────────────────────
@@ -128,6 +130,19 @@ export default function TherapyPage() {
     tp[slotKey][mKey][dKey]=action==="add"?ex.some(e=>e.id===treatmentId)?ex:[...ex,{id:treatmentId,qty:"1"}]:ex.filter(e=>e.id!==treatmentId);
     treatRef.current=tp; setTreatPlans(tp);
     await set(ref(db,`treatmentPlans/${slotKey}/${mKey}/${dKey}`),tp[slotKey][mKey][dKey]);
+
+    // 주N회 계획에서 차감: 치료 추가 시 weeklyPlan의 해당 항목 count -1, 0되면 삭제
+    if(action==="add"){
+      const wp=weeklyPlansRef.current[slotKey];
+      if(wp&&wp[treatmentId]&&wp[treatmentId].count>0){
+        const newCount=wp[treatmentId].count-1;
+        const newWp={...wp};
+        if(newCount<=0) delete newWp[treatmentId];
+        else newWp[treatmentId]={...wp[treatmentId],count:newCount};
+        weeklyPlansRef.current={...weeklyPlansRef.current,[slotKey]:newWp};
+        await set(ref(db,`weeklyPlans/${slotKey}`),newWp);
+      }
+    }
   },[]);
 
   // ── 물리치료 저장 (th1/th2 고정 키) ─────────────────────────────────────
