@@ -567,39 +567,41 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
 
   // 주 수에 따라 셀 높이 동적 계산 (A4 세로 297mm - 여백 - 헤더 - 푸터)
   const numWeeks = weeks.length;
-  // 헤더~푸터 제외 달력 영역: 약 230mm / 주 수
-  const rowHeightMm = Math.floor(225 / numWeeks);
+  // A4(297mm) - 여백12mm - 헤더22mm - 요일행8mm - 푸터12mm = 약243mm
+  const rowHeightMm = Math.floor(240 / numWeeks);
 
   return (
     <div className="ewoo-print-area" style={{ display:"none" }}>
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 8mm 10mm; }
-          html, body { height: 100%; margin: 0; padding: 0; }
+          @page { size: A4 portrait; margin: 6mm 8mm; }
           body * { visibility: hidden !important; }
           .ewoo-print-area, .ewoo-print-area * { visibility: visible !important; }
           .ewoo-print-area {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             background: white; z-index: 9999; display: flex !important;
             flex-direction: column; box-sizing: border-box;
-            padding: 8mm 10mm;
+            padding: 6mm 8mm;
             overflow: hidden;
+            page-break-after: avoid;
           }
-          .print-cal-table { flex: 1; }
+          .print-cal-table { flex: 1; border-collapse: collapse; }
+          * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
+        @media screen { .ewoo-print-area { display: none !important; } }
       `}</style>
       <div style={{ fontFamily:"'Noto Sans KR', sans-serif", color:"#000",
         display:"flex", flexDirection:"column", height:"100%", gap:0 }}>
 
         {/* 헤더 */}
-        <div style={{ borderBottom:"3px solid #0f4c35", paddingBottom:8, marginBottom:10, flexShrink:0 }}>
+        <div style={{ borderBottom:"2px solid #0f4c35", paddingBottom:6, marginBottom:8, flexShrink:0 }}>
           <div style={{ display:"flex", alignItems:"baseline", gap:12, flexWrap:"wrap" }}>
-            <span style={{ fontSize:38, fontWeight:900, color:"#0f2744", lineHeight:1.1 }}>치료 일정표</span>
-            <span style={{ fontSize:26, fontWeight:700, color:"#334155" }}>
+            <span style={{ fontSize:30, fontWeight:900, color:"#0f2744", lineHeight:1.1 }}>치료 일정표</span>
+            <span style={{ fontSize:21, fontWeight:700, color:"#334155" }}>
               {year}년 {month+1}월 &nbsp;·&nbsp; {roomId}호 {bedNum}번 &nbsp;·&nbsp;
-              <span style={{ fontSize:30, fontWeight:900 }}>{name}</span>님
+              <span style={{ fontSize:26, fontWeight:900 }}>{name}</span>님
             </span>
-            {admitDate && <span style={{ fontSize:22, color:"#64748b", marginLeft:4 }}>
+            {admitDate && <span style={{ fontSize:18, color:"#64748b", marginLeft:4 }}>
               입원 {admitDate}{discharge && discharge!=="미정" ? ` · 퇴원예정 ${discharge}` : ""}
             </span>}
           </div>
@@ -611,8 +613,8 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
           <thead>
             <tr>
               {DAY_KO.map((d, i) => (
-                <th key={d} style={{ border:"1.5px solid #aaa", padding:"7px 0",
-                  fontSize:17, fontWeight:800, textAlign:"center", background:"#f0f0f0",
+                <th key={d} style={{ border:"1px solid #bbb", padding:"4px 0",
+                  fontSize:11, fontWeight:800, textAlign:"center", background:"#f0f0f0",
                   color: i===0?"#cc0000":i===6?"#0033cc":"#222", width:"14.28%" }}>
                   {d}
                 </th>
@@ -630,9 +632,9 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                   const items = monthData[String(day)] || [];
                   return (
                     <td key={di} style={{ border:"1px solid #ddd", verticalAlign:"top",
-                      padding:"4px 5px", background:"#fff" }}>
+                      padding:"2px 3px", background:"#fff" }}>
                       {/* 날짜 */}
-                      <div style={{ fontSize:18, fontWeight:900, marginBottom:4,
+                      <div style={{ fontSize:11, fontWeight:900, marginBottom:1,
                         color: dow===0?"#cc0000":dow===6?"#0033cc":"#222" }}>
                         {day}
                       </div>
@@ -645,9 +647,9 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                                     : item.custom==="qty"  ? `${item.name} ${e.qty}개`
                                     : item.name;
                         return (
-                          <div key={e.id} style={{ fontSize:17, lineHeight:1.6, color:"#111",
-                            borderLeft:`3px solid ${grp?.color||"#555"}`,
-                            paddingLeft:5, marginBottom:3 }}>
+                          <div key={e.id} style={{ fontSize:9, lineHeight:1.4, color:"#111",
+                            borderLeft:`2px solid ${grp?.color||"#555"}`,
+                            paddingLeft:3, marginBottom:1 }}>
                             {label}
                           </div>
                         );
@@ -661,10 +663,10 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
         </table>
 
         {/* 하단 로고 */}
-        <div style={{ flexShrink:0, marginTop:6, paddingTop:6, borderTop:"1px solid #ddd",
+        <div style={{ flexShrink:0, marginTop:4, paddingTop:4, borderTop:"1px solid #ddd",
           display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <img src="/ewoo-logo.png" alt="이우요양병원"
-            style={{ height:44, objectFit:"contain" }}/>
+            style={{ height:28, objectFit:"contain" }}/>
           <div style={{ fontSize:10, color:"#aaa" }}>
             출력일: {new Date().toLocaleDateString("ko-KR")}
           </div>
