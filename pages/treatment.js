@@ -565,31 +565,45 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
   for (let i = 0; i < calCells.length; i += 7) weeks.push(calCells.slice(i, i+7));
 
   return (
-    <div className="print-only" style={{ display:"none" }}>
+    <div className="ewoo-print-area" style={{ display:"none" }}>
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 8mm 10mm; }
+          @page { size: A4 portrait; margin: 6mm 8mm; }
           body * { visibility: hidden !important; }
-          .print-only, .print-only * { visibility: visible !important; }
-          .print-only { position: fixed; top: 0; left: 0; width: 100%; background: white; z-index: 9999; display: block !important; }
+          .ewoo-print-area, .ewoo-print-area * { visibility: visible !important; }
+          .ewoo-print-area {
+            position: absolute; top: 0; left: 0; width: 100%;
+            background: white; z-index: 9999; display: block !important;
+            box-sizing: border-box;
+          }
         }
       `}</style>
-      <div style={{ fontFamily:"'Noto Sans KR', sans-serif", color:"#000" }}>
+      <div style={{ fontFamily:"'Noto Sans KR', sans-serif", color:"#000", padding:"2mm 0" }}>
 
         {/* 헤더 */}
-        <div style={{ textAlign:"center", marginBottom:8, borderBottom:"2px solid #222", paddingBottom:6 }}>
-          <div style={{ fontSize:18, fontWeight:800, letterSpacing:-0.5 }}>치료 일정표</div>
-          <div style={{ fontSize:12, fontWeight:600, marginTop:3, color:"#333" }}>
-            {roomId}호 {bedNum}번 병상 &nbsp;·&nbsp; {name}님 &nbsp;·&nbsp; {year}년 {month+1}월
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end",
+          borderBottom:"2.5px solid #0f4c35", paddingBottom:8, marginBottom:10 }}>
+          <div>
+            <div style={{ fontSize:22, fontWeight:900, letterSpacing:-0.5, color:"#0f2744" }}>치료 일정표</div>
+            <div style={{ fontSize:15, fontWeight:700, marginTop:4, color:"#334155" }}>
+              {roomId}호 {bedNum}번 병상 &nbsp;·&nbsp; <span style={{ fontSize:17, fontWeight:900 }}>{name}</span>님
+              &nbsp;·&nbsp; {year}년 {month+1}월
+            </div>
+            {admitDate && <div style={{ fontSize:13, color:"#64748b", marginTop:2 }}>
+              입원일: {admitDate}{discharge && discharge!=="미정" ? ` · 퇴원예정: ${discharge}` : ""}
+              {roomFree && <span style={{ marginLeft:8, color:"#059669", fontWeight:700 }}>🎁 병실료 Free</span>}
+            </div>}
           </div>
         </div>
 
         {/* 달력 */}
-        <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed", height:"calc(100vh - 80px)" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed" }}>
           <thead>
             <tr>
               {DAY_KO.map((d, i) => (
-                <th key={d} style={{ border:"1px solid #bbb", padding:"5px 0", fontSize:11, fontWeight:700, textAlign:"center", background:"#f0f0f0", color: i===0?"#cc0000":i===6?"#0033cc":"#222", width:"14.28%" }}>
+                <th key={d} style={{ border:"1.5px solid #999", padding:"7px 0", fontSize:14, fontWeight:800,
+                  textAlign:"center", background:"#f0f0f0",
+                  color: i===0?"#cc0000":i===6?"#0033cc":"#222", width:"14.28%" }}>
                   {d}
                 </th>
               ))}
@@ -597,26 +611,35 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
           </thead>
           <tbody>
             {weeks.map((week, wi) => (
-              <tr key={wi} style={{ height: `${Math.floor(100/weeks.length)}%` }}>
+              <tr key={wi}>
                 {week.map((day, di) => {
-                  if (!day) return <td key={di} style={{ border:"1px solid #bbb", verticalAlign:"top", background:"#fafafa" }} />;
-                  const dow   = (firstDow + day - 1) % 7;
-                  const items = monthData[String(day)] || [];
+                  if (!day) return <td key={di} style={{ border:"1px solid #ccc", verticalAlign:"top", background:"#f8f8f8", minHeight:80 }} />;
+                  const dow    = (firstDow + day - 1) % 7;
+                  const items  = monthData[String(day)] || [];
+                  const isDisch = dischargeDate && dateOnly(dischargeDate).getTime()===dateOnly(new Date(year,month,day)).getTime();
+                  const roomChg = hasRoomCharge(day) && !roomFree;
+                  const dTotal  = dayTreatTotal(day) + (roomChg ? chargePerNight : 0);
                   return (
-                    <td key={di} style={{ border:"1px solid #bbb", verticalAlign:"top", padding:"4px 5px", background:"#fff" }}>
-                      {/* 날짜 숫자 */}
-                      <div style={{ fontSize:12, fontWeight:800, marginBottom:3, color: dow===0?"#cc0000":dow===6?"#0033cc":"#222" }}>
-                        {day}
+                    <td key={di} style={{ border:"1px solid #ccc", verticalAlign:"top",
+                      padding:"5px 6px", background: isDisch?"#fffbeb":"#fff", minHeight:80 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                        <span style={{ fontSize:16, fontWeight:900,
+                          color: dow===0?"#cc0000":dow===6?"#0033cc":"#222" }}>{day}</span>
+                        {dTotal > 0 && <span style={{ fontSize:11, color:"#dc2626", fontWeight:700 }}>{Math.floor(dTotal/10000)}만</span>}
                       </div>
-                      {/* 치료 항목 */}
+                      {isDisch && <div style={{ fontSize:11, color:"#d97706", fontWeight:700, marginBottom:3 }}>🚪 퇴원</div>}
+                      {roomChg && <div style={{ fontSize:11, color:"#0369a1", marginBottom:2 }}>🏠 {(chargePerNight/10000)}만원</div>}
                       {items.map(e => {
                         const item = allItems.find(i => i.id === e.id);
                         if (!item) return null;
+                        const grp  = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === e.id));
                         const label = item.custom==="vitc" ? `비타민C ${e.qty}g`
                                     : item.custom==="qty"  ? `${item.name} ${e.qty}개`
                                     : item.name;
                         return (
-                          <div key={e.id} style={{ fontSize:9.5, lineHeight:1.5, color:"#111", borderLeft:"2px solid #555", paddingLeft:3, marginBottom:2 }}>
+                          <div key={e.id} style={{ fontSize:12, lineHeight:1.6, color:"#111",
+                            borderLeft:`3px solid ${grp?.color||"#555"}`,
+                            paddingLeft:4, marginBottom:2 }}>
                             {label}
                           </div>
                         );
@@ -629,9 +652,35 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
           </tbody>
         </table>
 
-        {/* 푸터 */}
-        <div style={{ marginTop:8, fontSize:9, color:"#888", textAlign:"right" }}>
-          출력일: {new Date().toLocaleDateString("ko-KR")}
+        {/* 주간 합계 */}
+        {weeklyStats.length > 0 && (
+          <div style={{ marginTop:10, display:"flex", gap:10, flexWrap:"wrap" }}>
+            {weeklyStats.map(wk => (
+              <div key={wk.week} style={{ border:`1.5px solid ${wk.total>=weekBase?"#16a34a":"#dc2626"}`,
+                borderRadius:6, padding:"4px 12px", fontSize:13, fontWeight:700,
+                color: wk.total>=weekBase?"#16a34a":"#dc2626",
+                background: wk.total>=weekBase?"#f0fdf4":"#fef2f2" }}>
+                {wk.week}주차 치료비 {wk.total.toLocaleString()}원
+                {wk.total>=weekBase ? " ✓ 충족" : ` (${Math.floor((weekBase-wk.total)/10000)}만 부족)`}
+              </div>
+            ))}
+            {monthRoomTotal > 0 && !roomFree && (
+              <div style={{ border:"1.5px solid #0369a1", borderRadius:6, padding:"4px 12px",
+                fontSize:13, fontWeight:700, color:"#0369a1", background:"#f0f9ff", marginLeft:"auto" }}>
+                🏠 병실료 {monthRoomTotal.toLocaleString()}원
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 하단 로고 + 출력일 */}
+        <div style={{ marginTop:14, paddingTop:10, borderTop:"1px solid #ddd",
+          display:"flex", justifyContent:"space-between", alignItems:"flex-end" }}>
+          <img src="/ewoo-logo.png" alt="이우요양병원"
+            style={{ height:48, objectFit:"contain", opacity:0.85 }}/>
+          <div style={{ fontSize:11, color:"#888", textAlign:"right" }}>
+            출력일: {new Date().toLocaleDateString("ko-KR")}
+          </div>
         </div>
       </div>
     </div>
