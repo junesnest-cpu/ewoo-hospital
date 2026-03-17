@@ -869,13 +869,15 @@ const PRINT_CSS=`@media print{
   body *{visibility:hidden!important}
   .therapy-print-area,.therapy-print-area *{visibility:visible!important}
   .therapy-print-area{
-    position:absolute;top:0;left:0;width:100%;
+    position:static;width:100%;
     background:#fff;z-index:9999;display:block!important;
-    padding:4mm;box-sizing:border-box;
+    box-sizing:border-box;
   }
   .pcard{break-inside:avoid;border:1.5px solid #bbb;border-radius:6px;padding:8px 10px;margin-bottom:6mm;display:inline-block;width:100%}
   .no-print{display:none!important}
-}`;
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+@media screen{.therapy-print-area{display:none!important}}`;
 
 // ── 물리치료 인쇄 ──────────────────────────────────────────────────────────────
 function PhysPrint({patients,selected,weekDates,therapists}){
