@@ -90,7 +90,7 @@ function BedCalendar({ slot, year, month }) {
       {/* 색상 범례 */}
       <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:4 }}>
         {[["#0ea5e9","입원"],["#10b981","입원일"],["#fbbf24","퇴원일"],["#a78bfa","예약"]].map(([col,lbl])=>(
-          <span key={lbl} style={{ display:"flex",alignItems:"center",gap:2,fontSize:9,color:"#64748b",whiteSpace:"nowrap" }}>
+          <span key={lbl} style={{ display:"flex",alignItems:"center",gap:2,fontSize:11,color:"#64748b",whiteSpace:"nowrap" }}>
             <span style={{ width:8,height:8,borderRadius:2,background:col,display:"inline-block",flexShrink:0 }}/>
             {lbl}
           </span>
@@ -109,7 +109,7 @@ function BedCalendar({ slot, year, month }) {
               border:isToday?"1.5px solid #0f2744":"none",
               boxSizing:"border-box",
             }}>
-              {day&&<span style={{ fontSize:8, fontWeight:isToday?900:500,
+              {day&&<span style={{ fontSize:10, fontWeight:isToday?900:500,
                 color:status==="empty"?"#94a3b8":"#fff", lineHeight:1 }}>{day}</span>}
             </div>
           );
@@ -251,9 +251,9 @@ export default function RoomPage() {
             borderRadius:7, padding:"5px 12px", cursor:"pointer", fontSize:13, fontWeight:600 }}>
           ← 병실 현황
         </button>
-        <span style={{ fontSize:20, fontWeight:900 }}>{room.id}호</span>
-        <span style={{ background:TYPE_BG[room.type], color:TYPE_COLOR[room.type], borderRadius:6, padding:"2px 10px", fontSize:13, fontWeight:700 }}>{room.type}</span>
-        <span style={{ fontSize:13, color:"#94a3b8" }}>{occupied}/{room.capacity} 병상 사용</span>
+        <span style={{ fontSize:24, fontWeight:900 }}>{room.id}호</span>
+        <span style={{ background:TYPE_BG[room.type], color:TYPE_COLOR[room.type], borderRadius:6, padding:"2px 10px", fontSize:15, fontWeight:700 }}>{room.type}</span>
+        <span style={{ fontSize:15, color:"#94a3b8" }}>{occupied}/{room.capacity} 병상 사용</span>
         {isPreview && <span style={{ background:"#d1fae5", color:"#065f46", borderRadius:8, padding:"3px 12px", fontSize:12, fontWeight:800 }}>🔭 미리보기: {viewDate.toLocaleDateString("ko-KR")}</span>}
         {movingPatient && <span style={{ background:"#ede9fe", color:"#6d28d9", borderRadius:8, padding:"4px 12px", fontSize:13, fontWeight:700 }}>🚚 {movingPatient.data.name} 이동 중</span>}
         <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
@@ -271,10 +271,10 @@ export default function RoomPage() {
 
       {/* 캘린더 월 네비 */}
       <div style={{ background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"8px 16px", display:"flex", alignItems:"center", gap:10 }}>
-        <span style={{ fontSize:13, fontWeight:700, color:"#0f2744" }}>📅 병상 캘린더</span>
+        <span style={{ fontSize:15, fontWeight:700, color:"#0f2744" }}>📅 병상 캘린더</span>
         <button onClick={()=>{ if(calMonth===0){setCalYear(y=>y-1);setCalMonth(11);}else setCalMonth(m=>m-1); }}
           style={NS.btnMonth}>‹</button>
-        <span style={{ fontSize:13, fontWeight:700, minWidth:70 }}>{calYear}년 {calMonth+1}월</span>
+        <span style={{ fontSize:15, fontWeight:700, minWidth:80 }}>{calYear}년 {calMonth+1}월</span>
         <button onClick={()=>{ if(calMonth===11){setCalYear(y=>y+1);setCalMonth(0);}else setCalMonth(m=>m+1); }}
           style={NS.btnMonth}>›</button>
         <button onClick={()=>{ setCalYear(today.getFullYear()); setCalMonth(today.getMonth()); }}
@@ -313,24 +313,24 @@ export default function RoomPage() {
 
                 {/* 병상 번호 */}
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-                  <span style={{ background:"#1e3a5f",color:"#fff",borderRadius:5,padding:"2px 10px",fontSize:14,fontWeight:800 }}>{i+1}번</span>
-                  {isMovingFrom   && <span style={{ color:"#d97706",fontWeight:700,fontSize:12 }}>📦 이동 중</span>}
-                  {isMoveTarget&&!person && <span style={{ color:"#059669",fontWeight:700,fontSize:12 }}>← 여기로</span>}
-                  {isDischarging  && <span style={{ color:"#d97706",fontWeight:700,fontSize:13 }}>🚪 당일 퇴원</span>}
-                  {isAdmitting    && <span style={{ color:"#2563eb",fontWeight:700,fontSize:13 }}>🛏 당일 입원</span>}
-                  {isReservedType && <span style={{ color:"#7c3aed",fontWeight:700,fontSize:13 }}>📅 예약 입원 중</span>}
+                  <span style={{ background:"#1e3a5f",color:"#fff",borderRadius:5,padding:"2px 10px",fontSize:17,fontWeight:800 }}>{i+1}번</span>
+                  {isMovingFrom   && <span style={{ color:"#d97706",fontWeight:700,fontSize:14 }}>📦 이동 중</span>}
+                  {isMoveTarget&&!person && <span style={{ color:"#059669",fontWeight:700,fontSize:14 }}>← 여기로</span>}
+                  {isDischarging  && <span style={{ color:"#d97706",fontWeight:700,fontSize:15 }}>🚪 당일 퇴원</span>}
+                  {isAdmitting    && <span style={{ color:"#2563eb",fontWeight:700,fontSize:15 }}>🛏 당일 입원</span>}
+                  {isReservedType && <span style={{ color:"#7c3aed",fontWeight:700,fontSize:15 }}>📅 예약 입원 중</span>}
                 </div>
 
                 {/* 환자 정보 */}
                 {person ? (
                   <div>
-                    <div style={{ fontSize:15, fontWeight:800,
+                    <div style={{ fontSize:20, fontWeight:800,
                       color:isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
                       marginBottom:4 }}>{person.name}</div>
-                    {person.admitDate&&<div style={{ fontSize:12,color:"#7c3aed",marginBottom:2 }}>입원일: {person.admitDate}</div>}
-                    <div style={{ fontSize:13,color:"#64748b",marginBottom:4 }}>퇴원: {person.discharge||"미정"}</div>
-                    {person.note&&<div style={{ fontSize:12,color:"#475569",background:"#f8fafc",borderRadius:6,padding:"6px 8px",marginBottom:6,lineHeight:1.5 }}>{person.note}</div>}
-                    {person.scheduleAlert&&<div style={{ background:"#fef3c7",color:"#92400e",borderRadius:6,padding:"4px 8px",fontSize:12,fontWeight:700,marginBottom:6 }}>⚠ 스케줄 확인 필요</div>}
+                    {person.admitDate&&<div style={{ fontSize:14,color:"#7c3aed",marginBottom:2 }}>입원일: {person.admitDate}</div>}
+                    <div style={{ fontSize:15,color:"#64748b",marginBottom:4 }}>퇴원: {person.discharge||"미정"}</div>
+                    {person.note&&<div style={{ fontSize:14,color:"#475569",background:"#f8fafc",borderRadius:6,padding:"6px 8px",marginBottom:6,lineHeight:1.5 }}>{person.note}</div>}
+                    {person.scheduleAlert&&<div style={{ background:"#fef3c7",color:"#92400e",borderRadius:6,padding:"4px 8px",fontSize:14,fontWeight:700,marginBottom:6 }}>⚠ 스케줄 확인 필요</div>}
 
                     {/* 현재 입원 환자 버튼 */}
                     {!isPreview&&!movingPatient&&(type==="current"||type==="discharging_today"||type==="admitting_today")&&(
@@ -365,26 +365,26 @@ export default function RoomPage() {
                     {!isPreview&&!movingPatient&&(
                       <button style={NS.btnAdmit} onClick={()=>setAddingTo({slotKey,mode:"current"})}>입원 등록</button>
                     )}
-                    {isPreview&&<span style={{ color:"#94a3b8",fontSize:13 }}>입원 가능</span>}
+                    {isPreview&&<span style={{ color:"#94a3b8",fontSize:15 }}>입원 가능</span>}
                   </div>
                 )}
 
                 {/* 예약 목록 */}
                 {!isPreview&&reservations.length>0&&(
                   <div style={{ marginTop:10,borderTop:"1px solid #e2e8f0",paddingTop:8 }}>
-                    <div style={{ fontSize:12,fontWeight:700,color:"#7c3aed",marginBottom:6 }}>📅 입원 예약 ({reservations.length}건)</div>
+                    <div style={{ fontSize:15,fontWeight:700,color:"#7c3aed",marginBottom:6 }}>📅 입원 예약 ({reservations.length}건)</div>
                     {reservations.map((r,ri)=>(
                       <div key={ri} style={{ background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:8,padding:"8px 10px",marginBottom:6 }}>
                         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4 }}>
-                          <span style={{ fontWeight:700,color:"#7c3aed",fontSize:14 }}>{r.name}</span>
+                          <span style={{ fontWeight:700,color:"#7c3aed",fontSize:17 }}>{r.name}</span>
                           <div style={{ display:"flex",gap:4 }}>
                             <button style={{...NS.btnSmall,color:"#7c3aed"}} onClick={()=>setMovingPatient({slotKey,mode:"reservation",data:r,resIndex:ri})}>🚚</button>
                             <button style={NS.btnSmall} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...r},resIndex:ri})}>수정</button>
                             <button style={{...NS.btnSmall,background:"#059669",color:"#fff",borderColor:"#059669"}} onClick={()=>convertReservation(slotKey,ri)}>🛏 입원전환</button>
                           </div>
                         </div>
-                        <div style={{ fontSize:12,color:"#64748b",marginTop:3 }}>입원: {r.admitDate} → 퇴원: {r.discharge||"미정"}</div>
-                        {r.note&&<div style={{ fontSize:11,color:"#94a3b8" }}>{r.note}</div>}
+                        <div style={{ fontSize:14,color:"#64748b",marginTop:3 }}>입원: {r.admitDate} → 퇴원: {r.discharge||"미정"}</div>
+                        {r.note&&<div style={{ fontSize:13,color:"#94a3b8" }}>{r.note}</div>}
                       </div>
                     ))}
                   </div>
@@ -480,10 +480,10 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose }) {
 }
 
 const NS = {
-  btnMonth:{ background:"rgba(255,255,255,0.1)",border:"1px solid #e2e8f0",borderRadius:6,width:28,height:28,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center" },
-  btnEdit: { background:"#0f2744",color:"#fff",border:"none",borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:13,fontWeight:600 },
-  btnSmall:{ background:"#f1f5f9",color:"#64748b",border:"1px solid #e2e8f0",borderRadius:5,padding:"2px 8px",cursor:"pointer",fontSize:12,fontWeight:600 },
-  btnAdmit:{ background:"#dcfce7",color:"#166534",border:"none",borderRadius:6,padding:"6px 14px",cursor:"pointer",fontSize:13,fontWeight:600,textAlign:"center" },
+  btnMonth:{ background:"rgba(255,255,255,0.1)",border:"1px solid #e2e8f0",borderRadius:6,width:32,height:32,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center" },
+  btnEdit: { background:"#0f2744",color:"#fff",border:"none",borderRadius:6,padding:"6px 14px",cursor:"pointer",fontSize:14,fontWeight:600 },
+  btnSmall:{ background:"#f1f5f9",color:"#64748b",border:"1px solid #e2e8f0",borderRadius:5,padding:"3px 10px",cursor:"pointer",fontSize:13,fontWeight:600 },
+  btnAdmit:{ background:"#dcfce7",color:"#166534",border:"none",borderRadius:6,padding:"7px 16px",cursor:"pointer",fontSize:15,fontWeight:600,textAlign:"center" },
   label:   { display:"block",fontSize:13,fontWeight:700,color:"#475569",marginBottom:4,marginTop:10 },
   input:   { width:"100%",border:"1.5px solid #e2e8f0",borderRadius:7,padding:"8px 10px",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"inherit" },
 };
