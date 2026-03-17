@@ -821,7 +821,9 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
       {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => (
         <div key={wardNo}>
           <div style={{ ...S.wardTitle, borderLeftColor: isPreview ? "#10b981":"#0ea5e9" }}>{ward.name}</div>
-          <div style={{ ...S.roomGrid, gridTemplateColumns:`repeat(${ward.rooms.length},1fr)` }}>
+          <div style={{ ...S.roomGrid,
+            gridTemplateColumns:`repeat(${ward.rooms.length},1fr)`,
+            maxWidth: ward.rooms.length < 6 ? `${ward.rooms.length * (100/6)}%` : "100%" }}>
             {ward.rooms.map(room => {
               const { occupied, available, bedList } = getRoomStats(room.id, room.capacity);
               const alertCount = bedList.filter(b => b.person?.scheduleAlert && b.type !== null).length;
