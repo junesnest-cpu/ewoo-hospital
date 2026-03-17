@@ -900,8 +900,8 @@ function PhysPrint({patients,selected,weekDates,therapists}){
               <span>{p.name}님</span>
               {p.isOuter&&<span style={{fontSize:22,color:"#d97706"}}>(외래)</span>}
               {p.slotKey&&!p.slotKey.startsWith("__")&&!p.slotKey.startsWith("pending_")&&(
-                <span style={{fontSize:16,fontWeight:700,color:"#64748b"}}>
-                  {p.slotKey.split("-")[0]}호 {p.slotKey.split("-")[1]}번
+                <span style={{fontSize:24,fontWeight:700,color:"#64748b"}}>
+                  {p.slotKey.split("-")[0]} - {p.slotKey.split("-")[1]}
                 </span>
               )}
             </div>
@@ -939,8 +939,8 @@ function HyperPrint({patients,selected,weekDates}){
               <span>{p.name}님</span>
               {p.isOuter&&<span style={{fontSize:22,color:"#d97706"}}>(외래)</span>}
               {p.slotKey&&!p.slotKey.startsWith("__")&&!p.slotKey.startsWith("pending_")&&(
-                <span style={{fontSize:16,fontWeight:700,color:"#64748b"}}>
-                  {p.slotKey.split("-")[0]}호 {p.slotKey.split("-")[1]}번
+                <span style={{fontSize:24,fontWeight:700,color:"#64748b"}}>
+                  {p.slotKey.split("-")[0]} - {p.slotKey.split("-")[1]}
                 </span>
               )}
             </div>
