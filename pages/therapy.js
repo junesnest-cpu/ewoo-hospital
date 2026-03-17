@@ -866,10 +866,11 @@ export default function TherapyPage() {
 // ── 공통 인쇄 CSS (한 번만 선언) ──────────────────────────────────────────────
 const PRINT_CSS=`@media print{
   @page{size:A4 portrait;margin:10mm}
-  body *{visibility:hidden!important}
+  html,body{height:auto!important;overflow:visible!important}
+  body *{visibility:hidden!important;height:auto!important}
   .therapy-print-area,.therapy-print-area *{visibility:visible!important}
   .therapy-print-area{
-    position:static;width:100%;
+    position:absolute;top:0;left:0;width:100%;
     background:#fff;z-index:9999;display:block!important;
     box-sizing:border-box;
   }
