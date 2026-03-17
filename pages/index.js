@@ -304,7 +304,7 @@ export default function HospitalWardManager() {
     setAvailResults(results);
   };
 
-  const applyPreview = () => { setPreviewDate(new Date(previewInput + "T00:00:00")); setView("ward"); setSelectedRoom(null); };
+  const applyPreview = () => { setPreviewDate(new Date(previewInput + "T00:00:00")); };
   const clearPreview = () => { setPreviewDate(null); setPreviewInput(toInputValue(todayDate())); };
 
   const getRoomStats = useCallback((roomId, capacity) => {
@@ -739,7 +739,7 @@ export default function HospitalWardManager() {
             slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
             showReserved={showReserved} highlightEmpty={highlightEmpty} currentEmptySlotKey={currentEmptySlotKey}
             movingPatient={movingPatient} onMoveTarget={executeMove}
-            onSelectRoom={r => { setSelectedRoom(r); setView("room"); }}
+            onSelectRoom={r => { router.push(`/room?roomId=${r.id}${previewDate?`&preview=${toInputValue(previewDate)}`:""}`) }}
             cardRefs={cardRefs}
           />
         )}
