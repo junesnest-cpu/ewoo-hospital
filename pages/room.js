@@ -276,7 +276,7 @@ export default function RoomPage() {
 
       {/* 병상 그리드 */}
       <main style={{ padding:"14px 12px" }}>
-        <div style={{ display:"grid", gridTemplateColumns:isMobile?`1fr`:`repeat(${room.capacity},1fr)`, gap:8 }}>
+        <div style={{ display:"grid", gridTemplateColumns:isMobile?`1fr`:`repeat(6,1fr)`, gap:8 }}>
           {bedList.map(({slotKey,slot,person,type},i)=>{
             const isDischarging = type==="discharging_today";
             const isAdmitting   = type==="admitting_today";
