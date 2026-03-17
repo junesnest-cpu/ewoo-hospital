@@ -130,8 +130,25 @@ export default function ConsultationPage() {
       return (parseInt(pa[1])*31+parseInt(pa[2])) - (parseInt(pb[1])*31+parseInt(pb[2]));
     });
     await set(ref(db,`slots/${reserveSlot}`), {...existing, reservations});
-    // 상담 상태 -> 예약완료
-    await set(ref(db,`consultations/${reserveModal.id}`), {...reserveModal.consultation, status:"예약완료", reservedSlot: reserveSlot});
+    // 상담 상태 -> 예약완료 + slots에 예약 자동 등록
+    const consult = reserveModal.consultation;
+    await set(ref(db,`consultations/${reserveModal.id}`), {...consult, status:"예약완료", reservedSlot: reserveSlot});
+    // slots에도 예약 추가
+    const slotSnap = await new Promise(res=>{ const u=onValue(ref(db,`slots/${reserveSlot}`),s=>{u();res(s.val());},{onlyOnce:true}); });
+    const slotData = slotSnap || { current:null, reservations:[] };
+    const newReservations = [...(slotData.reservations||[])];
+    // 중복 방지: 같은 이름+날짜 예약이 없을 때만 추가
+    const dup = newReservations.find(r=>r.name===consult.name && r.admitDate===consult.admitDate);
+    if (!dup) {
+      newReservations.push({
+        name: consult.name,
+        admitDate: consult.admitDate ? fmtDate(consult.admitDate) : "",
+        discharge: consult.discharge || "미정",
+        note: consult.diagnosis || "",
+        consultationId: reserveModal.id,
+      });
+      await set(ref(db,`slots/${reserveSlot}`), {...slotData, reservations: newReservations});
+    }
     setReserveModal(null); setReserveSlot("");
     alert(`${c.name}님 ${reserveSlot} 예약 등록 완료`);
   };
@@ -492,8 +509,6 @@ export default function ConsultationPage() {
           let cardStyle = { ...S.card };
           if (isAdmitted) {
             cardStyle = { ...cardStyle, background:"#f0fdf4", border:"1.5px solid #86efac", boxShadow:"0 2px 10px rgba(16,185,129,0.12)" };
-          } else if (isReserved) {
-            cardStyle = { ...cardStyle, background:"#eff6ff", border:"1.5px solid #93c5fd", boxShadow:"0 2px 10px rgba(59,130,246,0.12)" };
           } else if (hasAdmit) {
             cardStyle = { ...cardStyle, background:"#fefce8", border:"1.5px solid #fde68a", boxShadow:"0 2px 8px rgba(245,158,11,0.1)" };
           }
@@ -504,11 +519,11 @@ export default function ConsultationPage() {
               <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:5}}>
                 {c._monthSeq && (
                   <span style={{ fontSize:10, fontWeight:800, borderRadius:5, padding:"2px 7px", minWidth:28, textAlign:"center",
-                    background: isAdmitted?"#10b981":isReserved?"#3b82f6":"#94a3b8", color:"#fff" }}>
+                    background: isAdmitted?"#10b981":"#94a3b8", color:"#fff" }}>
                     {c._monthSeq}
                   </span>
                 )}
-                <span style={{fontSize:16, fontWeight:800, color: isAdmitted?"#065f46":isReserved?"#1e40af":"#0f2744"}}>{c.name}</span>
+                <span style={{fontSize:16, fontWeight:800, color: isAdmitted?"#065f46":"#0f2744"}}>{c.name}</span>
                 {c.birthYear && <span style={{fontSize:12, color:"#64748b"}}>{c.birthYear}년생</span>}
                 {c.age && <span style={{fontSize:12, color:"#64748b"}}>({c.age})</span>}
                 {c.recontact && c.status !== "입원완료" && c.status !== "취소" && (
@@ -533,10 +548,10 @@ export default function ConsultationPage() {
               <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center"}}>
                 {hasAdmit && (
                   <span style={{...S.tag,
-                    background: isAdmitted?"#bbf7d0":isReserved?"#bfdbfe":"#fef08a",
-                    color: isAdmitted?"#065f46":isReserved?"#1d4ed8":"#92400e",
+                    background: isAdmitted?"#bbf7d0":"#fef08a",
+                    color: isAdmitted?"#065f46":"#92400e",
                     fontWeight:700}}>
-                    📅 {fmtDate(c.admitDate)} 입원{isAdmitted?"완료":isReserved?"예약":"예정"}
+                    📅 {fmtDate(c.admitDate)} 입원{isAdmitted?"완료":"예정"}
                   </span>
                 )}
                 {c.roomTypes?.map(rt=>(
