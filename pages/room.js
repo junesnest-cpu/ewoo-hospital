@@ -48,6 +48,7 @@ function getSlotOccupant(slot, viewDate) {
 
 // ── 병상 캘린더 ──────────────────────────────────────────────────────────────
 function BedCalendar({ slot, year, month }) {
+  const [tooltip, setTooltip] = React.useState(null); // {day, text, x, y}
   const days = getDaysInMonth(year, month);
   const firstDow = getFirstDow(year, month);
   const cells = [];
@@ -55,8 +56,8 @@ function BedCalendar({ slot, year, month }) {
   for (let d=1;d<=days;d++) cells.push(d);
   while (cells.length%7!==0) cells.push(null);
 
-  const getDayStatus = (day) => {
-    if (!day) return null;
+  const getDayInfo = (day) => {
+    if (!day) return { status: null, label: "" };
     const d = new Date(year, month, day);
     if (slot?.current?.name) {
       const dd = parseDateStr(slot.current.discharge);
@@ -64,20 +65,23 @@ function BedCalendar({ slot, year, month }) {
       const start = ad ? dateOnly(ad) : null;
       const end   = dd ? dateOnly(dd) : null;
       if ((!start || d >= start) && (!end || d <= end)) {
-        if (end && dateOnly(end).getTime()===dateOnly(d).getTime()) return "discharge";
-        return "occupied";
+        if (end && dateOnly(end).getTime()===dateOnly(d).getTime())
+          return { status:"discharge", label:`${slot.current.name} 퇴원` };
+        return { status:"occupied", label:`${slot.current.name} 입원중` };
       }
     }
     for (const r of (slot?.reservations||[])) {
       const ad = parseDateStr(r.admitDate), dd = parseDateStr(r.discharge);
       if (!ad) continue;
       if (d >= dateOnly(ad) && (!dd || d <= dateOnly(dd))) {
-        if (dateOnly(ad).getTime()===dateOnly(d).getTime()) return "admit";
-        if (dd && dateOnly(dd).getTime()===dateOnly(d).getTime()) return "reserve_discharge";
-        return "reserved";
+        if (dateOnly(ad).getTime()===dateOnly(d).getTime())
+          return { status:"admit", label:`${r.name} 입원일` };
+        if (dd && dateOnly(dd).getTime()===dateOnly(d).getTime())
+          return { status:"reserve_discharge", label:`${r.name} 예약퇴원` };
+        return { status:"reserved", label:`${r.name} 예약` };
       }
     }
-    return "empty";
+    return { status:"empty", label:"" };
   };
 
   const statusColor = {
@@ -86,7 +90,7 @@ function BedCalendar({ slot, year, month }) {
   };
 
   return (
-    <div style={{ marginTop:6, borderTop:"1px solid #e2e8f0", paddingTop:5 }}>
+    <div style={{ marginTop:6, borderTop:"1px solid #e2e8f0", paddingTop:5, position:"relative" }}>
       {/* 색상 범례 */}
       <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:4 }}>
         {[["#0ea5e9","입원"],["#10b981","입원일"],["#fbbf24","퇴원일"],["#a78bfa","예약"]].map(([col,lbl])=>(
@@ -96,25 +100,43 @@ function BedCalendar({ slot, year, month }) {
           </span>
         ))}
       </div>
-      {/* 날짜 */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:1 }}>
+      {/* 날짜 그리드 */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2 }}>
         {cells.map((day,idx)=>{
-          const status = getDayStatus(day);
+          const { status, label } = getDayInfo(day);
           const bg = status ? statusColor[status] : "transparent";
           const isToday = day && dateOnly(new Date()).getTime()===dateOnly(new Date(year,month,day)).getTime();
+          const dow = day ? (firstDow+day-1)%7 : 0;
           return (
-            <div key={idx} style={{
-              height:14, borderRadius:2, background:day?bg:"transparent",
-              display:"flex", alignItems:"center", justifyContent:"center",
-              border:isToday?"1.5px solid #0f2744":"none",
-              boxSizing:"border-box",
-            }}>
-              {day&&<span style={{ fontSize:10, fontWeight:isToday?900:500,
-                color:status==="empty"?"#94a3b8":"#fff", lineHeight:1 }}>{day}</span>}
+            <div key={idx}
+              onMouseEnter={e=>{ if(day&&label) setTooltip({day,label,x:e.clientX,y:e.clientY}); }}
+              onMouseLeave={()=>setTooltip(null)}
+              style={{
+                aspectRatio:"1/1", borderRadius:3, background:day?bg:"transparent",
+                display:"flex", alignItems:"center", justifyContent:"center",
+                border:isToday?"2px solid #0f2744":"1px solid rgba(0,0,0,0.05)",
+                boxSizing:"border-box", cursor:day&&label?"pointer":"default",
+                transition:"transform 0.1s",
+              }}>
+              {day&&<span style={{
+                fontSize:11, fontWeight:isToday?900:600,
+                color:status==="empty"?(dow===0?"#dc2626":dow===6?"#2563eb":"#94a3b8"):"#fff",
+                lineHeight:1, userSelect:"none" }}>{day}</span>}
             </div>
           );
         })}
       </div>
+      {/* 툴팁 */}
+      {tooltip&&(
+        <div style={{
+          position:"fixed", left:tooltip.x+10, top:tooltip.y-30, zIndex:9999,
+          background:"#0f2744", color:"#fff", borderRadius:6, padding:"4px 10px",
+          fontSize:12, fontWeight:600, pointerEvents:"none", whiteSpace:"nowrap",
+          boxShadow:"0 2px 8px rgba(0,0,0,0.3)"
+        }}>
+          {month+1}/{tooltip.day} · {tooltip.label}
+        </div>
+      )}
     </div>
   );
 }
