@@ -87,7 +87,16 @@ function BedCalendar({ slot, year, month }) {
 
   return (
     <div style={{ marginTop:6, borderTop:"1px solid #e2e8f0", paddingTop:5 }}>
-      {/* 날짜만 - 최소화 */}
+      {/* 색상 범례 */}
+      <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:4 }}>
+        {[["#0ea5e9","입원"],["#10b981","입원일"],["#fbbf24","퇴원일"],["#a78bfa","예약"]].map(([col,lbl])=>(
+          <span key={lbl} style={{ display:"flex",alignItems:"center",gap:2,fontSize:9,color:"#64748b",whiteSpace:"nowrap" }}>
+            <span style={{ width:8,height:8,borderRadius:2,background:col,display:"inline-block",flexShrink:0 }}/>
+            {lbl}
+          </span>
+        ))}
+      </div>
+      {/* 날짜 */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:1 }}>
         {cells.map((day,idx)=>{
           const status = getDayStatus(day);
@@ -269,7 +278,7 @@ export default function RoomPage() {
         <button onClick={()=>{ if(calMonth===11){setCalYear(y=>y+1);setCalMonth(0);}else setCalMonth(m=>m+1); }}
           style={NS.btnMonth}>›</button>
         <button onClick={()=>{ setCalYear(today.getFullYear()); setCalMonth(today.getMonth()); }}
-          style={{ ...NS.btnMonth, fontSize:11, padding:"3px 8px" }}>이번달</button>
+          style={{ ...NS.btnMonth, width:"auto", padding:"0 10px", fontSize:13, fontWeight:700 }}>이번달</button>
       </div>
 
       {/* 범례 - 헤더 바에 통합 */}
