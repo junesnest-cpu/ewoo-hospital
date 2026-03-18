@@ -1,0 +1,19 @@
+# 환경 변수 (절대 커밋 금지)
+.env
+.env.local
+.env*.local
+
+# Next.js 빌드 결과물
+.next/
+out/
+
+# 의존성
+node_modules/
+
+# 디버그
+npm-debug.log*
+
+# 기타
+.DS_Store
+.claude/
+context.md

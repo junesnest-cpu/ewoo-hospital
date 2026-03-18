@@ -147,6 +147,7 @@ export default function HospitalWardManager() {
   const [jsonPasteOpen,  setJsonPasteOpen]  = useState(false);
   const [jsonPasteText,  setJsonPasteText]  = useState("");
   const [logs,           setLogs]           = useState([]);
+  const [pendingCount,   setPendingCount]   = useState(0);
   const [lastSync,       setLastSync]       = useState(null);
   const [syncing,        setSyncing]        = useState(true);
   const [previewDate,    setPreviewDate]    = useState(null);
@@ -187,7 +188,16 @@ export default function HospitalWardManager() {
       const val = snap.val();
       if (val) setLogs(Array.isArray(val) ? val : Object.values(val));
     });
-    return () => { unsubS(); unsubL(); };
+    const unsubP = onValue(ref(db, "pendingChanges"), snap => {
+      const val = snap.val();
+      if (val) {
+        const pending = Object.values(val).filter(c => c.status === "pending").length;
+        setPendingCount(pending);
+      } else {
+        setPendingCount(0);
+      }
+    });
+    return () => { unsubS(); unsubL(); unsubP(); };
   }, []);
 
   const saveSlots = useCallback(async (newS) => {
@@ -518,6 +528,7 @@ export default function HospitalWardManager() {
                       {[
                         { label:"🏠 홈", action:() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); } },
                         { label:"📜 변경 이력", action:() => setView("log") },
+                        { label:`🔔 웹훅 승인${pendingCount > 0 ? ` (${pendingCount})` : ""}`, action:() => router.push("/history") },
                         { label:"📋 일일 치료", action:() => router.push("/daily") },
                         { label:"🏥 치료실", action:() => router.push("/therapy") },
                         { label:"📋 상담일지", action:() => router.push("/consultation") },
@@ -569,6 +580,17 @@ export default function HospitalWardManager() {
               🏠 홈
             </button>
             <button style={{ ...S.navBtn, background: view==="log" ? "#1e3a5f":"transparent" }} onClick={() => setView("log")}>변경 이력</button>
+            <button
+              style={{ ...S.navBtn, background:"#7c2d12", color:"#fed7aa", position:"relative" }}
+              onClick={() => router.push("/history")}
+            >
+              🔔 웹훅 승인
+              {pendingCount > 0 && (
+                <span style={{ position:"absolute", top:-6, right:-6, background:"#ef4444", color:"#fff", borderRadius:10, fontSize:11, fontWeight:800, padding:"1px 6px", minWidth:18, textAlign:"center" }}>
+                  {pendingCount}
+                </span>
+              )}
+            </button>
             <button style={{ ...S.navBtn, background:"#065f46", color:"#6ee7b7" }} onClick={() => router.push("/daily")}>📋 일일 치료</button>
             <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/therapy")}>🏥 치료실</button>
             <button style={{ ...S.navBtn, background:"#713f12", color:"#fef08a" }} onClick={() => router.push("/consultation")}>📋 상담일지</button>
