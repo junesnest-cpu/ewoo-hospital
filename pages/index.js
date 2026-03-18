@@ -200,6 +200,45 @@ export default function HospitalWardManager() {
     return () => { unsubS(); unsubL(); unsubP(); };
   }, []);
 
+  // ── 자동 처리: 입원일 도달 예약 자동 전환 + 지난 예약 자동 삭제 ──────────────
+  useEffect(() => {
+    if (Object.keys(slots).length === 0) return;
+    const today = todayDate();
+    const newSlots = JSON.parse(JSON.stringify(slots));
+    let changed = false;
+    Object.entries(newSlots).forEach(([slotKey, slot]) => {
+      if (!slot?.reservations?.length) return;
+      const keep = [];
+      let promoted = false;
+      slot.reservations.forEach((r) => {
+        const admitD    = parseDateStr(r.admitDate);
+        const dischargeD = parseDateStr(r.discharge);
+        // 퇴원 예정일이 어제 이전인 예약 → 자동 삭제
+        if (dischargeD && dateOnly(dischargeD) < today) { changed = true; return; }
+        // 입원일 도달 + current 빈 자리 → 자동 입원 전환
+        if (!promoted && admitD && dateOnly(admitD) <= today && !newSlots[slotKey].current?.name) {
+          const { admitDate, ...rest } = r;
+          newSlots[slotKey].current = rest;
+          promoted = true;
+          changed = true;
+          return;
+        }
+        keep.push(r);
+      });
+      newSlots[slotKey].reservations = keep;
+    });
+    if (changed) set(ref(db, "slots"), newSlots);
+  }, [slots]);
+
+  // ── sessionStorage에서 pendingMove 복원 (room.js에서 이동 시작 시) ─────────
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pendingMove");
+    if (pending) {
+      try { setMovingPatient(JSON.parse(pending)); } catch(e) {}
+      sessionStorage.removeItem("pendingMove");
+    }
+  }, []);
+
   const saveSlots = useCallback(async (newS) => {
     setSlots(newS);
     await set(ref(db, "slots"), newS);

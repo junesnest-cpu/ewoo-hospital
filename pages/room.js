@@ -174,6 +174,36 @@ export default function RoomPage() {
     return ()=>unsub();
   },[]);
 
+  // ── 자동 처리: 입원일 도달 예약 자동 전환 + 지난 예약 자동 삭제 ──────────────
+  useEffect(() => {
+    if (Object.keys(slots).length === 0) return;
+    const today = todayDate();
+    const newSlots = JSON.parse(JSON.stringify(slots));
+    let changed = false;
+    Object.entries(newSlots).forEach(([slotKey, slot]) => {
+      if (!slot?.reservations?.length) return;
+      const keep = [];
+      let promoted = false;
+      slot.reservations.forEach((r) => {
+        const admitD    = parseDateStr(r.admitDate);
+        const dischargeD = parseDateStr(r.discharge);
+        // 퇴원 예정일이 어제 이전인 예약 → 자동 삭제
+        if (dischargeD && dateOnly(dischargeD) < today) { changed = true; return; }
+        // 입원일 도달 + current 빈 자리 → 자동 입원 전환
+        if (!promoted && admitD && dateOnly(admitD) <= today && !newSlots[slotKey].current?.name) {
+          const { admitDate, ...rest } = r;
+          newSlots[slotKey].current = rest;
+          promoted = true;
+          changed = true;
+          return;
+        }
+        keep.push(r);
+      });
+      newSlots[slotKey].reservations = keep;
+    });
+    if (changed) set(ref(db,"slots"), newSlots);
+  }, [slots]);
+
   // 병실 정보
   const room = qRoomId ? Object.values(WARD_STRUCTURE).flatMap(w=>w.rooms).find(r=>r.id===qRoomId) : null;
 
@@ -372,7 +402,7 @@ export default function RoomPage() {
                         <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginTop:8 }}>
                           <button style={{...NS.btnEdit,background:"#059669"}} onClick={()=>resIdx>=0&&convertReservation(slotKey,resIdx)}>🛏 입원 전환</button>
                           {resIdx>=0&&<button style={NS.btnEdit} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...(slot.reservations[resIdx])},resIndex:resIdx})}>수정</button>}
-                          {resIdx>=0&&<button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>setMovingPatient({slotKey,mode:"reservation",data:slot.reservations[resIdx],resIndex:resIdx})}>🚚 이동</button>}
+                          {resIdx>=0&&<button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:slot.reservations[resIdx],resIndex:resIdx})); router.push("/"); }}>🚚 이동</button>}
                           <button style={{...NS.btnEdit,background:"#dc2626",width:"100%",marginTop:2}}
                             onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}`)}>
                             📋 치료 일정표
@@ -400,7 +430,7 @@ export default function RoomPage() {
                         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4 }}>
                           <span style={{ fontWeight:700,color:"#7c3aed",fontSize:17 }}>{r.name}</span>
                           <div style={{ display:"flex",gap:4 }}>
-                            <button style={{...NS.btnSmall,color:"#7c3aed"}} onClick={()=>setMovingPatient({slotKey,mode:"reservation",data:r,resIndex:ri})}>🚚</button>
+                            <button style={{...NS.btnSmall,color:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:r,resIndex:ri})); router.push("/"); }}>🚚</button>
                             <button style={NS.btnSmall} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...r},resIndex:ri})}>수정</button>
                             <button style={{...NS.btnSmall,background:"#059669",color:"#fff",borderColor:"#059669"}} onClick={()=>convertReservation(slotKey,ri)}>🛏 입원전환</button>
                           </div>
