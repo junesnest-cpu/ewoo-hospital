@@ -191,8 +191,7 @@ export default function RoomPage() {
         if (dischargeD && dateOnly(dischargeD) < today) { changed = true; return; }
         // 입원일 도달 + current 빈 자리 → 자동 입원 전환
         if (!promoted && admitD && dateOnly(admitD) <= today && !newSlots[slotKey].current?.name) {
-          const { admitDate, ...rest } = r;
-          newSlots[slotKey].current = rest;
+          newSlots[slotKey].current = { ...r };
           promoted = true;
           changed = true;
           return;
@@ -244,8 +243,7 @@ export default function RoomPage() {
     const r = slot.reservations[resIndex];
     if (!window.confirm(`${r.name}님을 현재 입원 환자로 전환하시겠습니까?`)) return;
     const newSlots = JSON.parse(JSON.stringify(slots));
-    const { admitDate, ...rest } = r;
-    newSlots[slotKey].current = rest;
+    newSlots[slotKey].current = { ...r };
     newSlots[slotKey].reservations = slot.reservations.filter((_,i)=>i!==resIndex);
     await saveSlots(newSlots);
     await addLog({ action:"입원전환", slotKey, name:r.name });
@@ -389,6 +387,9 @@ export default function RoomPage() {
                       <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginTop:8 }}>
                         <button style={NS.btnEdit} onClick={()=>setEditingSlot({slotKey,mode:"current",data:{...person}})}>수정</button>
                         <button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>setMovingPatient({slotKey,mode:"current",data:person})}>🚚 이동</button>
+                        {person.patientId&&(
+                          <button style={{...NS.btnEdit,background:"#0ea5e9"}} onClick={()=>router.push(`/patients?id=${encodeURIComponent(person.patientId)}`)}>👤 환자 정보</button>
+                        )}
                         <button style={{...NS.btnEdit,background:"#dc2626",width:"100%",marginTop:2}}
                           onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}`)}>
                           📋 치료 일정표
@@ -510,6 +511,11 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose }) {
           <label style={NS.label}>입원 예정일 ★</label>
           <input style={{...NS.input,borderColor:"#a78bfa"}} value={form.admitDate||""} onChange={e=>setF("admitDate",e.target.value)} placeholder="예: 3/18"/>
           <div style={{ fontSize:11,color:"#94a3b8",marginTop:2,marginBottom:8 }}>M/D 형식 (예: 3/18)</div>
+        </>}
+        {!isRes&&<>
+          <label style={NS.label}>입원일</label>
+          <input style={NS.input} value={form.admitDate||""} onChange={e=>setF("admitDate",e.target.value)} placeholder="예: 3/10"/>
+          <div style={{ fontSize:11,color:"#94a3b8",marginTop:2,marginBottom:8 }}>M/D 형식 (예: 3/10) — 치료 일정표 주차 계산에 사용됩니다</div>
         </>}
         <label style={NS.label}>환자명 ★</label>
         <input style={NS.input} value={form.name||""} onChange={e=>setF("name",e.target.value)} placeholder="환자명"/>
