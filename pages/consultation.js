@@ -322,7 +322,6 @@ export default function ConsultationPage() {
         <header style={S.header}>
           <button style={S.btnBack} onClick={()=>{setView("list");setEditId(null);setForm({...EMPTY_FORM});setPtSearchOpen(false);setPtSearchQ("");}}>← 목록</button>
           <span style={S.htitle}>{editId ? "상담 기록 수정" : "신규 상담 등록"}</span>
-          {editId && <span style={{marginLeft:8, fontSize:12, color:"#94a3b8", fontWeight:500}}>등록일: {form.createdAt}</span>}
           {editId && <button style={{...S.btnBack, background:"#fef2f2", color:"#dc2626", marginLeft:"auto"}}
             onClick={()=>deleteConsultation(editId)}>삭제</button>}
         </header>
@@ -361,7 +360,12 @@ export default function ConsultationPage() {
 
           {/* 기본 인적사항 */}
           <div style={S.section}>
-            <div style={S.sectionTitle}>👤 기본 정보</div>
+            <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:12}}>
+              <span style={{fontSize:14, fontWeight:800, color:"#0f2744"}}>👤 기본 정보</span>
+              {editId && form.createdAt && (
+                <span style={{fontSize:12, color:"#94a3b8", fontWeight:500}}>등록일: {form.createdAt}</span>
+              )}
+            </div>
             <div style={S.row2}>
               <div style={S.field}>
                 <label style={S.lbl}>이름 *</label>
@@ -679,8 +683,8 @@ export default function ConsultationPage() {
                 {(c.birthYear || c.age) && (
                   <span style={{fontSize:12, color:"#64748b"}}>
                     {c.birthYear ? `${c.birthYear}년생` : ""}
-                    {c.birthYear && c.age ? " / " : ""}
-                    {c.age ? `만 ${c.age}세` : (c.birthYear && calcAge(c.birthYear) ? `만 ${calcAge(c.birthYear)}세` : "")}
+                    {c.birthYear && (c.age || calcAge(c.birthYear)) ? " / " : ""}
+                    {c.age ? `${c.age}세` : (c.birthYear && calcAge(c.birthYear) ? `${calcAge(c.birthYear)}세` : "")}
                   </span>
                 )}
                 {c.recontact && c.status !== "입원완료" && c.status !== "취소" && (
