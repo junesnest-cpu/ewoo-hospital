@@ -71,6 +71,9 @@ function calcBirthYear(age) {
   if (isNaN(n) || n < 0 || n > 130) return "";
   return String(CUR_YEAR - n);
 }
+function normPhone(p) {
+  return (p||"").replace(/[^0-9]/g, "");
+}
 
 export default function ConsultationPage() {
   const router = useRouter();
@@ -93,6 +96,13 @@ export default function ConsultationPage() {
   // 폼 내 기존 환자 검색
   const [ptSearchQ, setPtSearchQ] = useState("");
   const [ptSearchOpen, setPtSearchOpen] = useState(false);
+
+  // 연락처 자동 매칭
+  const [phoneMatch, setPhoneMatch]   = useState(null); // { name, info, data }
+  const [phone2Match, setPhone2Match] = useState(null);
+
+  // 전체 상담 (연락처 검색용 — 별도 구독)
+  const [allConsultations, setAllConsultations] = useState({});
 
   // 병실 모달 (예약 등록)
   const [reserveModal, setReserveModal] = useState(null); // { consultation }
@@ -129,6 +139,14 @@ export default function ConsultationPage() {
     return unsub3;
   }, []);
 
+  // 연락처 매칭용 전체 상담 로드 (한 번만)
+  useEffect(() => {
+    const unsub4 = onValue(ref(db,"consultations"), snap => {
+      setAllConsultations(snap.val() || {});
+    });
+    return unsub4;
+  }, []);
+
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
   // 기존 환자 검색 결과
@@ -140,6 +158,40 @@ export default function ConsultationPage() {
       .filter(p => (p.name||"").toLowerCase().includes(q) || (p.phone||"").includes(q))
       .slice(0, 8);
   }, [ptSearchQ, patients]);
+
+  // 연락처로 기존 환자/상담 검색
+  function lookupByPhone(phone) {
+    const norm = normPhone(phone);
+    if (norm.length < 10) return null;
+    // patients 우선
+    for (const [id, p] of Object.entries(patients)) {
+      if (p.name && normPhone(p.phone) === norm) {
+        const by = p.birthDate ? p.birthDate.slice(0,4) : (p.birthYear||"");
+        return { name: p.name, info: [by ? `${by}년생` : "", p.diagnosis].filter(Boolean).join(" · "),
+          fill: { name:p.name, phone:phone, birthYear:by, age:by?calcAge(by):"", diagnosis:p.diagnosis||"",
+                  patientId:p.internalId||id } };
+      }
+    }
+    // 전체 상담 검색
+    for (const [id, c] of Object.entries(allConsultations)) {
+      if (editId && id === editId) continue; // 자기 자신 제외
+      if (c.name && (normPhone(c.phone) === norm || normPhone(c.phone2) === norm)) {
+        return { name: c.name, info: [c.birthYear ? `${c.birthYear}년생` : "", c.diagnosis].filter(Boolean).join(" · "),
+          fill: { name:c.name, phone:normPhone(c.phone)===norm?phone:c.phone,
+                  phone2:normPhone(c.phone2)===norm?phone:c.phone2,
+                  phone2Note:c.phone2Note||"", phoneNote:c.phoneNote||"",
+                  birthYear:c.birthYear||"", age:c.age||"", diagnosis:c.diagnosis||"",
+                  hospital:c.hospital||"", patientId:c.patientId||"" } };
+      }
+    }
+    return null;
+  }
+
+  function applyPhoneMatch(match) {
+    setForm(f => ({ ...f, ...match.fill,
+      phone: f.phone, phone2: f.phone2, // 현재 입력한 번호 유지
+    }));
+  }
 
   function fillFromPatient(p) {
     const by = p.birthDate ? p.birthDate.slice(0,4) : (p.birthYear||"");
@@ -320,7 +372,7 @@ export default function ConsultationPage() {
     return (
       <div style={S.page}>
         <header style={S.header}>
-          <button style={S.btnBack} onClick={()=>{setView("list");setEditId(null);setForm({...EMPTY_FORM});setPtSearchOpen(false);setPtSearchQ("");}}>← 목록</button>
+          <button style={S.btnBack} onClick={()=>{setView("list");setEditId(null);setForm({...EMPTY_FORM});setPtSearchOpen(false);setPtSearchQ("");setPhoneMatch(null);setPhone2Match(null);}}>← 목록</button>
           <span style={S.htitle}>{editId ? "상담 기록 수정" : "신규 상담 등록"}</span>
           {editId && <button style={{...S.btnBack, background:"#fef2f2", color:"#dc2626", marginLeft:"auto"}}
             onClick={()=>deleteConsultation(editId)}>삭제</button>}
@@ -412,10 +464,15 @@ export default function ConsultationPage() {
             </div>
 
             {/* 연락처 2행 */}
-            <div style={{display:"grid", gridTemplateColumns:"2fr 1fr 2fr 1fr", gap:8, marginBottom:8}}>
+            <div style={{display:"grid", gridTemplateColumns:"2fr 1fr 2fr 1fr", gap:8, marginBottom: phoneMatch||phone2Match ? 4 : 8}}>
               <div style={S.field}>
                 <label style={S.lbl}>연락처 (본인)</label>
-                <input style={S.inp} value={form.phone} onChange={e=>setF("phone",e.target.value)} placeholder="010-0000-0000"/>
+                <input style={S.inp} value={form.phone}
+                  onChange={e=>{
+                    const v=e.target.value; setF("phone",v);
+                    const m=lookupByPhone(v);
+                    setPhoneMatch(m && m.name !== form.name ? m : null);
+                  }} placeholder="010-0000-0000"/>
               </div>
               <div style={S.field}>
                 <label style={S.lbl}>관계</label>
@@ -423,13 +480,43 @@ export default function ConsultationPage() {
               </div>
               <div style={S.field}>
                 <label style={S.lbl}>연락처 (보호자)</label>
-                <input style={S.inp} value={form.phone2} onChange={e=>setF("phone2",e.target.value)} placeholder="010-0000-0000"/>
+                <input style={S.inp} value={form.phone2}
+                  onChange={e=>{
+                    const v=e.target.value; setF("phone2",v);
+                    const m=lookupByPhone(v);
+                    setPhone2Match(m && m.name !== form.name ? m : null);
+                  }} placeholder="010-0000-0000"/>
               </div>
               <div style={S.field}>
                 <label style={S.lbl}>관계</label>
                 <input style={S.inp} value={form.phone2Note} onChange={e=>setF("phone2Note",e.target.value)} placeholder="딸"/>
               </div>
             </div>
+
+            {/* 연락처 매칭 배너 */}
+            {(phoneMatch || phone2Match) && (() => {
+              const m = phoneMatch || phone2Match;
+              return (
+                <div style={{display:"flex", alignItems:"center", gap:10, flexWrap:"wrap",
+                  background:"#eff6ff", border:"1.5px solid #93c5fd", borderRadius:8,
+                  padding:"8px 12px", marginBottom:8, fontSize:13}}>
+                  <span style={{fontSize:15}}>🔍</span>
+                  <span>
+                    <strong>{m.name}</strong>
+                    {m.info && <span style={{color:"#475569", marginLeft:6}}>{m.info}</span>}
+                    <span style={{color:"#64748b"}}> 님의 기록과 일치합니다. 정보를 불러올까요?</span>
+                  </span>
+                  <div style={{display:"flex", gap:6, marginLeft:"auto"}}>
+                    <button onClick={()=>{ applyPhoneMatch(m); setPhoneMatch(null); setPhone2Match(null); }}
+                      style={{background:"#2563eb", color:"#fff", border:"none", borderRadius:6,
+                        padding:"5px 14px", cursor:"pointer", fontSize:13, fontWeight:700}}>불러오기</button>
+                    <button onClick={()=>{ setPhoneMatch(null); setPhone2Match(null); }}
+                      style={{background:"#f1f5f9", color:"#374151", border:"none", borderRadius:6,
+                        padding:"5px 12px", cursor:"pointer", fontSize:13, fontWeight:600}}>무시</button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* 치료 이력: 수술 | 항암 | 방사선 한 줄 */}
             <div style={{display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-start"}}>
