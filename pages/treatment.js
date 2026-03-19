@@ -140,7 +140,7 @@ function getWeekNumber(admitDateStr, targetDate) {
 export default function TreatmentPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { slotKey, name, discharge, admitDate } = router.query;
+  const { slotKey, name, discharge, admitDate, patientId } = router.query;
 
   const roomId = slotKey ? slotKey.split("-")[0] : "";
   const bedNum = slotKey ? slotKey.split("-")[1] : "";
@@ -309,7 +309,11 @@ export default function TreatmentPage() {
           <button style={TS.btnBack} onClick={() => router.back()}>← 병실로</button>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize: isMobile ? 16 : 20, fontWeight:800, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-              {name || slotKey}님
+              <span
+                onClick={patientId ? () => router.push(`/patients?id=${encodeURIComponent(patientId)}`) : undefined}
+                style={patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}}>
+                {name || slotKey}
+              </span>님
             </div>
             <div style={{ fontSize:11, color:"#7dd3fc", fontWeight:600 }}>{roomId}호 {bedNum}번 병상{admitDate ? ` · 입원 ${admitDate}` : ""}{discharge && discharge !== "미정" ? ` · 퇴원 ${discharge}` : ""}</div>
           </div>

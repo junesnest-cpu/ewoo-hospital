@@ -475,7 +475,12 @@ export default function ConsultationPage() {
                 <div key={c.id} style={{background:"#fff", border:`1.5px solid ${isOverdue?"#fca5a5":isToday?"#fcd34d":"#e2e8f0"}`,
                   borderRadius:8, padding:"8px 12px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap"}}
                   onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setView("form"); }}>
-                  <span style={{fontWeight:800, fontSize:14}}>{c.name}</span>
+                  <span
+                    style={{fontWeight:800, fontSize:14,
+                      ...(c.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                    onClick={c.patientId ? (e) => { e.stopPropagation(); router.push(`/patients?id=${encodeURIComponent(c.patientId)}`); } : undefined}>
+                    {c.name}
+                  </span>
                   {c.phone && <span style={{fontSize:12, color:"#475569"}}>📞 {c.phone}</span>}
                   {c.recontactDate && (
                     <span style={{fontSize:11, fontWeight:700, borderRadius:5, padding:"2px 8px",
@@ -554,7 +559,12 @@ export default function ConsultationPage() {
                     {c._monthSeq}
                   </span>
                 )}
-                <span style={{fontSize:16, fontWeight:800, color: isAdmitted?"#065f46":"#0f2744"}}>{c.name}</span>
+                <span
+                  style={{fontSize:16, fontWeight:800, color: isAdmitted?"#065f46":"#0f2744",
+                    ...(c.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                  onClick={c.patientId ? (e) => { e.stopPropagation(); router.push(`/patients?id=${encodeURIComponent(c.patientId)}`); } : undefined}>
+                  {c.name}
+                </span>
                 {c.birthYear && <span style={{fontSize:12, color:"#64748b"}}>{c.birthYear}년생</span>}
                 {c.age && <span style={{fontSize:12, color:"#64748b"}}>({c.age})</span>}
                 {c.recontact && c.status !== "입원완료" && c.status !== "취소" && (

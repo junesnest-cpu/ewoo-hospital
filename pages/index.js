@@ -990,7 +990,12 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                             {isDischarging && <span style={{ fontSize:11 }}>🚪</span>}
                             {isAdmitting   && <span style={{ fontSize:11 }}>🛏</span>}
                             <span style={{ ...S.bedPositionBadge, background: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{posNum}</span>
-                            <span style={{ ...S.patientName, color: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{b.person.name}</span>
+                            <span
+                              style={{ ...S.patientName, color: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f",
+                                ...(b.person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                              onClick={b.person.patientId ? (e) => { e.stopPropagation(); router.push(`/patients?id=${encodeURIComponent(b.person.patientId)}`); } : undefined}>
+                              {b.person.name}
+                            </span>
                             {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
                             {b.person.discharge && b.person.discharge !== "미정" && (
                               <span style={S.dischargeDateWrap}>
@@ -1106,7 +1111,12 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
 
               {b.person ? (
                 <>
-                  <div style={{ ...S.bedPatientName, color: isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744" }}>{b.person.name}</div>
+                  <div
+                    style={{ ...S.bedPatientName, color: isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
+                      ...(b.person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                    onClick={b.person.patientId ? (e) => { e.stopPropagation(); router.push(`/patients?id=${encodeURIComponent(b.person.patientId)}`); } : undefined}>
+                    {b.person.name}
+                  </div>
                   {b.person.admitDate && <div style={{ fontSize:12, color:"#7c3aed", marginBottom:4 }}>입원일: {b.person.admitDate}</div>}
                   <div style={S.bedDischarge}>퇴원: {b.person.discharge}</div>
                   {b.person.note && <div style={S.bedNote}>{b.person.note}</div>}
@@ -1116,7 +1126,7 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
                       <button style={S.btnEdit} onClick={() => onEditCurrent(slotKey, { ...b.person })}>수정</button>
                       <button style={{ ...S.btnEdit, background:"#7c3aed" }} onClick={() => onStartMove(slotKey, "current", b.person, undefined)}>🚚 이동</button>
                       <button style={{ ...S.btnEdit, background:"#dc2626", width:"100%", marginTop:2 }}
-                        onClick={() => router.push("/treatment?slotKey=" + encodeURIComponent(slotKey) + "&name=" + encodeURIComponent(b.person.name) + "&discharge=" + encodeURIComponent(b.person.discharge||"") + "&admitDate=" + encodeURIComponent(b.person.admitDate||""))}>
+                        onClick={() => router.push("/treatment?slotKey=" + encodeURIComponent(slotKey) + "&name=" + encodeURIComponent(b.person.name) + "&discharge=" + encodeURIComponent(b.person.discharge||"") + "&admitDate=" + encodeURIComponent(b.person.admitDate||"") + (b.person.patientId ? "&patientId=" + encodeURIComponent(b.person.patientId) : ""))}>
                         📋 치료 일정표
                       </button>
                     </div>
@@ -1136,7 +1146,7 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
                         {resIdx>=0 && <button style={{ ...S.btnEdit, background:"#7c3aed" }}
                           onClick={() => onStartMove(slotKey, "reservation", slot.reservations[resIdx], resIdx)}>🚚 이동</button>}
                         <button style={{ ...S.btnEdit, background:"#dc2626", width:"100%", marginTop:2 }}
-                          onClick={() => router.push("/treatment?slotKey=" + encodeURIComponent(slotKey) + "&name=" + encodeURIComponent(b.person.name) + "&discharge=" + encodeURIComponent(b.person.discharge||"") + "&admitDate=" + encodeURIComponent(b.person.admitDate||""))}>
+                          onClick={() => router.push("/treatment?slotKey=" + encodeURIComponent(slotKey) + "&name=" + encodeURIComponent(b.person.name) + "&discharge=" + encodeURIComponent(b.person.discharge||"") + "&admitDate=" + encodeURIComponent(b.person.admitDate||"") + (b.person.patientId ? "&patientId=" + encodeURIComponent(b.person.patientId) : ""))}>
                           📋 치료 일정표
                         </button>
                       </div>

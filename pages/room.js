@@ -374,9 +374,14 @@ export default function RoomPage() {
                 {/* 환자 정보 */}
                 {person ? (
                   <div>
-                    <div style={{ fontSize:20, fontWeight:800,
-                      color:isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
-                      marginBottom:4 }}>{person.name}</div>
+                    <div
+                      style={{ fontSize:20, fontWeight:800,
+                        color:isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
+                        marginBottom:4,
+                        ...(person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                      onClick={person.patientId ? () => router.push(`/patients?id=${encodeURIComponent(person.patientId)}`) : undefined}>
+                      {person.name}
+                    </div>
                     {person.admitDate&&<div style={{ fontSize:14,color:"#7c3aed",marginBottom:2 }}>입원일: {person.admitDate}</div>}
                     <div style={{ fontSize:15,color:"#64748b",marginBottom:4 }}>퇴원: {person.discharge||"미정"}</div>
                     {person.note&&<div style={{ fontSize:14,color:"#475569",background:"#f8fafc",borderRadius:6,padding:"6px 8px",marginBottom:6,lineHeight:1.5 }}>{person.note}</div>}
@@ -387,11 +392,8 @@ export default function RoomPage() {
                       <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginTop:8 }}>
                         <button style={NS.btnEdit} onClick={()=>setEditingSlot({slotKey,mode:"current",data:{...person}})}>수정</button>
                         <button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>setMovingPatient({slotKey,mode:"current",data:person})}>🚚 이동</button>
-                        {person.patientId&&(
-                          <button style={{...NS.btnEdit,background:"#0ea5e9"}} onClick={()=>router.push(`/patients?id=${encodeURIComponent(person.patientId)}`)}>👤 환자 정보</button>
-                        )}
                         <button style={{...NS.btnEdit,background:"#dc2626",width:"100%",marginTop:2}}
-                          onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}`)}>
+                          onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}${person.patientId?"&patientId="+encodeURIComponent(person.patientId):""}`)}>
                           📋 치료 일정표
                         </button>
                       </div>
@@ -405,7 +407,7 @@ export default function RoomPage() {
                           {resIdx>=0&&<button style={NS.btnEdit} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...(slot.reservations[resIdx])},resIndex:resIdx})}>수정</button>}
                           {resIdx>=0&&<button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:slot.reservations[resIdx],resIndex:resIdx})); router.push("/"); }}>🚚 이동</button>}
                           <button style={{...NS.btnEdit,background:"#dc2626",width:"100%",marginTop:2}}
-                            onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}`)}>
+                            onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}${person.patientId?"&patientId="+encodeURIComponent(person.patientId):""}`)}>
                             📋 치료 일정표
                           </button>
                         </div>
