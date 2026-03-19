@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
+import PatientSearchModal from "../components/PatientSearchModal";
 
 const DAYS  = ["월","화","수","목","금","토","일"];
 const TIMES = ["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00"];
@@ -57,6 +58,8 @@ export default function TherapyPage() {
   const [physPend,   setPhysPend]  = useState("");
   const [physMemo,   setPhysMemo]  = useState("");
   const [physOuter,  setPhysOuter] = useState(false); // 외래 여부
+  const [physSearchOpen, setPhysSearchOpen] = useState(false); // 환자 DB 검색 모달
+  const [physDbName,     setPhysDbName]     = useState(""); // DB 검색으로 선택한 환자 이름
   // 고주파/고압 모달
   const [selHyper,   setSelHyper]  = useState("");
   const [hyperMemo,  setHyperMemo] = useState("");
@@ -67,6 +70,8 @@ export default function TherapyPage() {
   const [selHBb,     setSelHBb]    = useState("");
   const [pendHBb,    setPendHBb]   = useState("");
   const [hyperBMemo, setHyperBMemo]= useState("");
+  const [hyperSearchFor, setHyperSearchFor] = useState(null); // "hyper"|"hba"|"hbb"
+  const [hyperDbNames,   setHyperDbNames]   = useState({}); // {hyper, hba, hbb} → 환자 이름
   const [extraTime,  setExtraTime] = useState("");
   const [showExtra,  setShowExtra] = useState(false);
   const [mobileDayIdx,setMobileDayIdx]=useState(()=>{ const d=new Date().getDay(); return d===0?6:d-1; });
@@ -119,7 +124,7 @@ export default function TherapyPage() {
 
   // ── treatmentPlan 동기화 ──────────────────────────────────────────────────
   const syncTreat=useCallback(async(slotKey,dayIdx,treatmentId,action)=>{
-    if(!slotKey||slotKey.startsWith("pending_")||slotKey==="__pending__") return;
+    if(!slotKey||slotKey.startsWith("pending_")||slotKey==="__pending__"||slotKey.startsWith("db_")) return;
     const date=addDays(weekStartRef.current,parseInt(dayIdx));
     const mKey=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
     const dKey=String(date.getDate());
@@ -197,11 +202,17 @@ export default function TherapyPage() {
       const ex=getCell(roomId,dayIdx,time);
       setPhysSlot(ex?.slotKey||""); setPhysTreat(ex?.treatmentId||"");
       setPhysMemo(ex?.memo||""); setPhysOuter(ex?.isOuter||false); setPhysPend("");
+      setPhysDbName(ex?.slotKey?.startsWith("db_") ? (ex.patientName||"") : "");
     } else {
       const exH=getCell("hyperthermia",dayIdx,time);
       const exHBa=getHBCell(dayIdx,time,"a"), exHBb=getHBCell(dayIdx,time,"b");
       setSelHyper(exH?.slotKey||""); setHyperMemo(exH?.memo||""); setHyperOuter(exH?.isOuter||false); setPendH("");
       setSelHBa(exHBa?.slotKey||""); setPendHBa(""); setSelHBb(exHBb?.slotKey||""); setPendHBb(""); setHyperBMemo("");
+      setHyperDbNames({
+        hyper: exH?.slotKey?.startsWith("db_") ? (exH.patientName||"") : "",
+        hba:   exHBa?.slotKey?.startsWith("db_") ? (exHBa.patientName||"") : "",
+        hbb:   exHBb?.slotKey?.startsWith("db_") ? (exHBb.patientName||"") : "",
+      });
     }
     setShowExtra(false); setExtraTime(""); setModal({roomId,dayIdx,time});
   };
@@ -213,6 +224,7 @@ export default function TherapyPage() {
     const time=showExtra&&extraTime?toHHMM(extraTime):base;
     let slotKey=physSlot,name="",roomI="",bedNum="";
     if(physSlot==="__pending__"){ if(!physPend.trim()) return; slotKey=`pending_${Date.now()}`; name=physPend.trim(); }
+    else if(physSlot.startsWith("db_")){ name=physDbName; }
     else { name=slots[physSlot]?.current?.name||""; roomI=physSlot.split("-")[0]; bedNum=physSlot.split("-")[1]; }
     if(!slotKey) return;
     await savePhys(roomId,dayIdx,time,{slotKey,patientName:name,treatmentId:physTreat,isPending:physSlot==="__pending__",isOuter:physOuter,memo:physMemo,roomId:roomI,bedNum});
@@ -272,6 +284,7 @@ export default function TherapyPage() {
     const prevHKey=prevH?.slotKey||"";
     if(selHyper!==prevHKey || (selHyper&&hyperMemo!==prevH?.memo) || (selHyper&&hyperOuter!==prevH?.isOuter)){
       if(selHyper==="__pending__"){ if(pendH.trim()) await saveHyper("hyperthermia",dayIdx,time,{slotKey:`pending_${Date.now()}`,patientName:pendH.trim(),memo:hyperMemo,isOuter:hyperOuter,roomId:"",bedNum:"",isPending:true}); else await saveHyper("hyperthermia",dayIdx,time,null); }
+      else if(selHyper?.startsWith("db_")){ const name=hyperDbNames.hyper||""; await saveHyper("hyperthermia",dayIdx,time,{slotKey:selHyper,patientName:name,memo:hyperMemo,isOuter:hyperOuter,roomId:"",bedNum:""}); }
       else if(selHyper){ const name=slots[selHyper]?.current?.name||""; await saveHyper("hyperthermia",dayIdx,time,{slotKey:selHyper,patientName:name,memo:hyperMemo,isOuter:hyperOuter,roomId:selHyper.split("-")[0],bedNum:selHyper.split("-")[1]}); }
       else await saveHyper("hyperthermia",dayIdx,time,null);
     }
@@ -280,6 +293,7 @@ export default function TherapyPage() {
     const prevHBa=getHBCell(dayIdx,time,"a"); const prevHBaKey=prevHBa?.slotKey||"";
     if(selHBa!==prevHBaKey){
       if(selHBa==="__pending__"){ if(pendHBa.trim()) await saveHyper("hyperbaric",dayIdx,time,{slotKey:`pending_${Date.now()}a`,patientName:pendHBa.trim(),roomId:"",bedNum:"",isPending:true,subTime:time},"a"); else await saveHyper("hyperbaric",dayIdx,time,null,"a"); }
+      else if(selHBa?.startsWith("db_")){ const name=hyperDbNames.hba||""; await saveHyper("hyperbaric",dayIdx,time,{slotKey:selHBa,patientName:name,roomId:"",bedNum:"",subTime:time},"a"); }
       else if(selHBa){ const name=slots[selHBa]?.current?.name||""; await saveHyper("hyperbaric",dayIdx,time,{slotKey:selHBa,patientName:name,roomId:selHBa.split("-")[0],bedNum:selHBa.split("-")[1],subTime:time},"a"); }
       else await saveHyper("hyperbaric",dayIdx,time,null,"a");
     }
@@ -289,6 +303,7 @@ export default function TherapyPage() {
     const prevHBb=getHBCell(dayIdx,time,"b"); const prevHBbKey=prevHBb?.slotKey||"";
     if(selHBb!==prevHBbKey){
       if(selHBb==="__pending__"){ if(pendHBb.trim()) await saveHyper("hyperbaric",dayIdx,time,{slotKey:`pending_${Date.now()}b`,patientName:pendHBb.trim(),roomId:"",bedNum:"",isPending:true,subTime:timeB},"b"); else await saveHyper("hyperbaric",dayIdx,time,null,"b"); }
+      else if(selHBb?.startsWith("db_")){ const name=hyperDbNames.hbb||""; await saveHyper("hyperbaric",dayIdx,time,{slotKey:selHBb,patientName:name,roomId:"",bedNum:"",subTime:timeB},"b"); }
       else if(selHBb){ const name=slots[selHBb]?.current?.name||""; await saveHyper("hyperbaric",dayIdx,time,{slotKey:selHBb,patientName:name,roomId:selHBb.split("-")[0],bedNum:selHBb.split("-")[1],subTime:timeB},"b"); }
       else await saveHyper("hyperbaric",dayIdx,time,null,"b");
     }
@@ -705,12 +720,23 @@ export default function TherapyPage() {
             </div>
             <div style={{padding:16}}>
               <label style={S.lbl}>환자 선택</label>
-              <select style={S.sel} value={physSlot} onChange={e=>{setPhysSlot(e.target.value);setPhysTreat("");setPhysPend("");}}>
+              <select style={S.sel} value={physSlot.startsWith("db_")?"":physSlot} onChange={e=>{setPhysSlot(e.target.value);setPhysTreat("");setPhysPend("");setPhysDbName("");}}>
                 <option value="">— 선택 —</option>
                 <option value="__pending__">✏️ 예정 환자 (이름 직접 입력)</option>
                 {physModalPatients.map(p=><option key={p.slotKey} value={p.slotKey}>{p.name} ({p.slotKey})</option>)}
               </select>
               {physSlot==="__pending__"&&<input style={{...S.inp,marginTop:8}} value={physPend} onChange={e=>setPhysPend(e.target.value)} placeholder="환자 이름 입력"/>}
+              {physSlot.startsWith("db_")&&(
+                <div style={{marginTop:6,padding:"6px 10px",background:"#f0f9ff",borderRadius:7,border:"1px solid #7dd3fc",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <span style={{fontWeight:700,fontSize:14,color:"#0369a1"}}>👤 {physDbName}</span>
+                  <button onClick={()=>{setPhysSlot("");setPhysDbName("");}} style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:14,lineHeight:1}}>✕</button>
+                </div>
+              )}
+              <button onClick={()=>setPhysSearchOpen(true)} style={{marginTop:6,width:"100%",background:"#f8fafc",border:"1.5px solid #cbd5e1",borderRadius:7,padding:"7px 0",cursor:"pointer",fontSize:12,fontWeight:700,color:"#475569"}}>
+                🔍 기존 환자 검색 (DB)
+              </button>
+              {/* placeholder to avoid duplicate closing brace */}
+              {false&&null}
 
               <label style={S.lbl} className="mt-3">치료 종류</label>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>
@@ -771,11 +797,18 @@ export default function TherapyPage() {
               {/* 고주파 */}
               <div style={{background:"#fef2f2",borderRadius:8,padding:"10px 12px",marginBottom:10,border:"1px solid #fca5a5"}}>
                 <div style={{fontSize:13,fontWeight:800,color:"#dc2626",marginBottom:6}}>🔥 고주파 온열치료</div>
-                <select style={S.sel} value={selHyper} onChange={e=>{setSelHyper(e.target.value);setPendH("");}}>
+                <select style={S.sel} value={selHyper?.startsWith("db_")?"":selHyper} onChange={e=>{setSelHyper(e.target.value);setPendH("");setHyperDbNames(p=>({...p,hyper:""}));}}>
                   <option value="">— 없음 —</option><option value="__pending__">✏️ 예정 환자</option>
                   {allPatients.map(p=><option key={p.slotKey} value={p.slotKey}>{p.name} ({p.slotKey})</option>)}
                 </select>
                 {selHyper==="__pending__"&&<input style={{...S.inp,marginTop:6}} value={pendH} onChange={e=>setPendH(e.target.value)} placeholder="환자 이름"/>}
+                {selHyper?.startsWith("db_")&&(
+                  <div style={{marginTop:6,padding:"5px 10px",background:"#fff7ed",borderRadius:7,border:"1px solid #fed7aa",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <span style={{fontWeight:700,fontSize:13,color:"#9a3412"}}>👤 {hyperDbNames.hyper}</span>
+                    <button onClick={()=>{setSelHyper("");setHyperDbNames(p=>({...p,hyper:""}));}} style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:13}}>✕</button>
+                  </div>
+                )}
+                <button onClick={()=>setHyperSearchFor("hyper")} style={{marginTop:4,width:"100%",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:6,padding:"5px 0",cursor:"pointer",fontSize:11,fontWeight:700,color:"#9a3412"}}>🔍 기존 환자 검색</button>
                 {selHyper&&<>
                   <input style={{...S.inp,marginTop:6}} value={hyperMemo} onChange={e=>setHyperMemo(e.target.value)} placeholder="메모 (선택)"/>
                   <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,cursor:"pointer",marginTop:6}}>
@@ -787,20 +820,34 @@ export default function TherapyPage() {
               {/* 고압산소 A */}
               <div style={{background:"#f0f9ff",borderRadius:8,padding:"10px 12px",marginBottom:6,border:"1px solid #7dd3fc"}}>
                 <div style={{fontSize:13,fontWeight:800,color:"#0284c7",marginBottom:6}}>💨 고압산소 A — {modal.time} (정시)</div>
-                <select style={S.sel} value={selHBa} onChange={e=>{setSelHBa(e.target.value);setPendHBa("");}}>
+                <select style={S.sel} value={selHBa?.startsWith("db_")?"":selHBa} onChange={e=>{setSelHBa(e.target.value);setPendHBa("");setHyperDbNames(p=>({...p,hba:""}));}}>
                   <option value="">— 없음 —</option><option value="__pending__">✏️ 예정 환자</option>
                   {allPatients.map(p=><option key={p.slotKey} value={p.slotKey}>{p.name} ({p.slotKey})</option>)}
                 </select>
                 {selHBa==="__pending__"&&<input style={{...S.inp,marginTop:6}} value={pendHBa} onChange={e=>setPendHBa(e.target.value)} placeholder="환자 이름"/>}
+                {selHBa?.startsWith("db_")&&(
+                  <div style={{marginTop:6,padding:"5px 10px",background:"#f0f9ff",borderRadius:7,border:"1px solid #7dd3fc",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <span style={{fontWeight:700,fontSize:13,color:"#075985"}}>👤 {hyperDbNames.hba}</span>
+                    <button onClick={()=>{setSelHBa("");setHyperDbNames(p=>({...p,hba:""}));}} style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:13}}>✕</button>
+                  </div>
+                )}
+                <button onClick={()=>setHyperSearchFor("hba")} style={{marginTop:4,width:"100%",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:6,padding:"5px 0",cursor:"pointer",fontSize:11,fontWeight:700,color:"#075985"}}>🔍 기존 환자 검색</button>
               </div>
               {/* 고압산소 B */}
               <div style={{background:"#e0f2fe",borderRadius:8,padding:"10px 12px",marginBottom:10,border:"1px solid #7dd3fc"}}>
                 <div style={{fontSize:13,fontWeight:800,color:"#0284c7",marginBottom:6}}>💨 고압산소 B — {addMinutes(modal.time,30)} (+30분)</div>
-                <select style={S.sel} value={selHBb} onChange={e=>{setSelHBb(e.target.value);setPendHBb("");}}>
+                <select style={S.sel} value={selHBb?.startsWith("db_")?"":selHBb} onChange={e=>{setSelHBb(e.target.value);setPendHBb("");setHyperDbNames(p=>({...p,hbb:""}));}}>
                   <option value="">— 없음 —</option><option value="__pending__">✏️ 예정 환자</option>
                   {allPatients.map(p=><option key={p.slotKey} value={p.slotKey}>{p.name} ({p.slotKey})</option>)}
                 </select>
                 {selHBb==="__pending__"&&<input style={{...S.inp,marginTop:6}} value={pendHBb} onChange={e=>setPendHBb(e.target.value)} placeholder="환자 이름"/>}
+                {selHBb?.startsWith("db_")&&(
+                  <div style={{marginTop:6,padding:"5px 10px",background:"#e0f2fe",borderRadius:7,border:"1px solid #7dd3fc",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <span style={{fontWeight:700,fontSize:13,color:"#075985"}}>👤 {hyperDbNames.hbb}</span>
+                    <button onClick={()=>{setSelHBb("");setHyperDbNames(p=>({...p,hbb:""}));}} style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:13}}>✕</button>
+                  </div>
+                )}
+                <button onClick={()=>setHyperSearchFor("hbb")} style={{marginTop:4,width:"100%",background:"#e0f2fe",border:"1px solid #bae6fd",borderRadius:6,padding:"5px 0",cursor:"pointer",fontSize:11,fontWeight:700,color:"#075985"}}>🔍 기존 환자 검색</button>
               </div>
 
               <label style={{display:"flex",alignItems:"center",gap:6,fontSize:13,cursor:"pointer"}}>
@@ -874,6 +921,32 @@ export default function TherapyPage() {
       {/* 인쇄 전용 */}
       {printMode&&printTab==="physical"&&<PhysPrint patients={physPrintPatients} selected={printSel} weekDates={weekDates} therapists={therapists}/>}
       {printMode&&printTab==="hyper"   &&<HyperPrint patients={hyperPrintPatients} selected={printSel} weekDates={weekDates}/>}
+
+      {/* 물리치료 환자 DB 검색 */}
+      {physSearchOpen&&(
+        <PatientSearchModal
+          onClose={()=>setPhysSearchOpen(false)}
+          onSelect={(patient)=>{
+            setPhysSlot(`db_${patient.internalId}`);
+            setPhysDbName(patient.name);
+            setPhysSearchOpen(false);
+          }}
+        />
+      )}
+
+      {/* 고주파/고압 환자 DB 검색 */}
+      {hyperSearchFor&&(
+        <PatientSearchModal
+          onClose={()=>setHyperSearchFor(null)}
+          onSelect={(patient)=>{
+            const key=`db_${patient.internalId}`;
+            if(hyperSearchFor==="hyper"){ setSelHyper(key); setHyperDbNames(p=>({...p,hyper:patient.name})); }
+            else if(hyperSearchFor==="hba"){ setSelHBa(key); setHyperDbNames(p=>({...p,hba:patient.name})); }
+            else if(hyperSearchFor==="hbb"){ setSelHBb(key); setHyperDbNames(p=>({...p,hbb:patient.name})); }
+            setHyperSearchFor(null);
+          }}
+        />
+      )}
     </div>
   );
 }
