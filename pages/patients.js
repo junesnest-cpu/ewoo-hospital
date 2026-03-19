@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
@@ -34,7 +34,6 @@ export default function PatientsPage() {
   const router   = useRouter();
   const isMobile = useIsMobile();
 
-  const [queryType, setQueryType] = useState("phone"); // phone | name
   const [query,     setQuery]     = useState("");
   const [searching, setSearching] = useState(false);
   const [results,   setResults]   = useState(null);
@@ -53,22 +52,32 @@ export default function PatientsPage() {
     if (id) loadPatientById(id);
   }, [router.query]);
 
-  const doSearch = async () => {
-    if (!query.trim()) return;
+  // 숫자 포함 → 전화번호 검색, 아니면 이름 검색
+  const doSearch = useCallback(async (q) => {
+    const trimmed = (q || query).trim();
+    if (!trimmed || trimmed.length < 2) return;
     setSearching(true); setResults(null); setSelected(null);
     try {
       let found;
-      if (queryType === "phone") {
-        const p = await findPatientByPhone(query.trim());
+      if (/\d/.test(trimmed)) {
+        const p = await findPatientByPhone(trimmed);
         found = p ? [p] : [];
       } else {
-        found = await searchPatientsByName(query.trim());
+        found = await searchPatientsByName(trimmed);
       }
       if (found.length === 1) selectPatient(found[0]);
       else setResults(found);
     } catch(e) { setResults([]); }
     setSearching(false);
-  };
+  }, [query]);
+
+  // 입력 즉시 자동 검색 (500ms debounce)
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 2) { setResults(null); return; }
+    const timer = setTimeout(() => doSearch(trimmed), 500);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const loadPatientById = async (internalId) => {
     const snap = await get(ref(db, "patients"));
@@ -127,24 +136,13 @@ export default function PatientsPage() {
       <div style={S.body}>
         {/* 검색 */}
         <div style={{ ...S.card, marginBottom:16 }}>
-          <div style={{ display:"flex", gap:6, marginBottom:10 }}>
-            {[["phone","📱 전화번호"],["name","👤 이름"]].map(([t,l]) => (
-              <button key={t} onClick={() => { setQueryType(t); setQuery(""); setResults(null); }}
-                style={{ padding:"5px 14px", borderRadius:6, border:"1.5px solid", cursor:"pointer", fontSize:13, fontWeight:700,
-                  borderColor:queryType===t?"#0f2744":"#e2e8f0", background:queryType===t?"#0f2744":"#f8fafc", color:queryType===t?"#fff":"#64748b" }}>
-                {l}
-              </button>
-            ))}
-          </div>
+          <div style={{ fontSize:12, color:"#94a3b8", marginBottom:6 }}>이름 또는 전화번호를 입력하면 자동으로 검색됩니다</div>
           <div style={{ display:"flex", gap:8 }}>
             <input style={{ ...S.input, flex:1 }}
-              placeholder={queryType==="phone" ? "010-0000-0000" : "환자 이름 입력"}
+              placeholder="이름 또는 전화번호"
               value={query} onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key==="Enter" && doSearch()} autoFocus />
-            <button onClick={doSearch} disabled={searching}
-              style={{ background:"#0f2744", color:"#fff", border:"none", borderRadius:8, padding:"9px 20px", cursor:"pointer", fontSize:14, fontWeight:700, flexShrink:0 }}>
-              {searching ? "..." : "검색"}
-            </button>
+            {searching && <span style={{ display:"flex", alignItems:"center", color:"#94a3b8", fontSize:13, flexShrink:0 }}>검색 중...</span>}
           </div>
         </div>
 
@@ -230,10 +228,17 @@ export default function PatientsPage() {
                           { label:"퇴원 예정",  value:currentSlot.data.discharge },
                           { label:"메모",       value:currentSlot.data.note },
                         ]} />
-                        <button onClick={() => router.push(`/room?roomId=${currentSlot.slotKey.split("-")[0]}`)}
-                          style={{ marginTop:10, background:"#0f2744", color:"#fff", border:"none", borderRadius:7, padding:"7px 16px", cursor:"pointer", fontSize:13, fontWeight:700 }}>
-                          병실 상세 보기 →
-                        </button>
+                        <div style={{ display:"flex", gap:8, marginTop:10, flexWrap:"wrap" }}>
+                          <button onClick={() => router.push(`/room?roomId=${currentSlot.slotKey.split("-")[0]}`)}
+                            style={{ background:"#0f2744", color:"#fff", border:"none", borderRadius:7, padding:"7px 16px", cursor:"pointer", fontSize:13, fontWeight:700 }}>
+                            병실 상세 보기 →
+                          </button>
+                          <button onClick={() => router.push(
+                            `/treatment?slotKey=${encodeURIComponent(currentSlot.slotKey)}&name=${encodeURIComponent(selected.name)}&discharge=${encodeURIComponent(currentSlot.data.discharge||"")}&admitDate=${encodeURIComponent(currentSlot.data.admitDate||"")}&patientId=${encodeURIComponent(selected.internalId)}`
+                          )} style={{ background:"#dc2626", color:"#fff", border:"none", borderRadius:7, padding:"7px 16px", cursor:"pointer", fontSize:13, fontWeight:700 }}>
+                            📋 치료 일정표 →
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div style={{ color:"#94a3b8", fontSize:14, marginBottom:reservations.length?16:0 }}>현재 입원 중인 병실 없음</div>
