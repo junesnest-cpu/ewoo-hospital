@@ -268,7 +268,6 @@ export default function MonthlySchedule() {
           <span style={{ background:"#dcfce7", color:"#166534", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>↑ 입원</span>
           <span style={{ background:"#fee2e2", color:"#991b1b", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>↓ 퇴원</span>
           <span style={{ background:"#fef9c3", color:"#854d0e", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>★ 신환</span>
-          <span style={{ background:"#ede9fe", color:"#5b21b6", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>◎ 예약</span>
           <span style={{ background:"#e0f2fe", color:"#0369a1", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>✏ 수동편집</span>
         </div>
         <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
@@ -591,14 +590,6 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
                         onChange={e => updateAdm(row.id,"isNew",e.target.checked)} style={{ margin:0 }} />
                       ★신환
                     </label>
-                    <label style={{ display:"flex", alignItems:"center", gap:3, fontSize:13, cursor:"pointer",
-                      background: row.isReserved ? "#ede9fe":"#f1f5f9", borderRadius:5, padding:"3px 9px",
-                      border:"1px solid", borderColor: row.isReserved?"#c4b5fd":"#e2e8f0",
-                      color: row.isReserved?"#5b21b6":"#64748b", fontWeight: row.isReserved?700:500, whiteSpace:"nowrap" }}>
-                      <input type="checkbox" checked={!!row.isReserved}
-                        onChange={e => updateAdm(row.id,"isReserved",e.target.checked)} style={{ margin:0 }} />
-                      ◎예약
-                    </label>
                   </div>
                 </div>
                 <button onClick={() => onChangeAdm(r => r.filter(x => x.id !== row.id))}
@@ -665,7 +656,6 @@ function PatientChip({ p, type }) {
   return (
     <div style={{ display:"flex", alignItems:"center", gap:3, flexWrap:"wrap", marginBottom:3, lineHeight:1.4 }}>
       {p.isNew && <span style={{ fontSize:12, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>★신</span>}
-      {p.isReserved && !p.isNew && <span style={{ fontSize:12, background:"#ede9fe", color:"#5b21b6", borderRadius:3, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>◎</span>}
       <span style={{ fontSize:16, fontWeight:700, color: type==="admission" ? "#065f46" : "#991b1b" }}>{p.name}</span>
       {p.room && <span style={{ fontSize:13, color:"#64748b" }}>({p.room})</span>}
     </div>
