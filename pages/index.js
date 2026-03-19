@@ -167,11 +167,13 @@ export default function HospitalWardManager() {
   const searchRef = useRef();
 
   // ── 가용 병실 조회 ────────────────────────────────────────────────────────
-  const [availOpen,      setAvailOpen]      = useState(false);
-  const [availAdmit,     setAvailAdmit]     = useState("");
-  const [availDischarge, setAvailDischarge] = useState("");
-  const [availTypes,     setAvailTypes]     = useState([]); // 선택된 병실 종류들
-  const [availResults,   setAvailResults]   = useState(null); // null=미조회, []=결과없음, [...]
+  const [availOpen,        setAvailOpen]        = useState(false);
+  const [availAdmit,       setAvailAdmit]       = useState("");
+  const [availDischarge,   setAvailDischarge]   = useState("");
+  const [availTypes,       setAvailTypes]       = useState([]);
+  const [availResults,     setAvailResults]     = useState(null);
+  const [availAdjustments, setAvailAdjustments] = useState([]);
+  const [applyingMove,     setApplyingMove]     = useState(false);
   const cardRefs = useRef({});
 
   const isPreview = previewDate !== null;
@@ -308,51 +310,143 @@ export default function HospitalWardManager() {
     }, 100);
   };
 
-  // ── 가용 병실 조회 ──────────────────────────────────────────────────────────
-  const doAvailCheck = () => {
-    if (!availAdmit) return;
-    const admitD  = dateOnly(new Date(availAdmit + "T00:00:00"));
-    const dischargeD = availDischarge ? dateOnly(new Date(availDischarge + "T00:00:00")) : null;
-    const results = [];
+  // ── 가용 병실 조회 (개선판) ────────────────────────────────────────────────
 
-    Object.values(WARD_STRUCTURE).forEach(ward => {
+  // 특정 기간 동안 병상이 비어있는지 확인
+  const slotFreeForPeriod = (slotsData, slotKey, fromD, toD) => {
+    const slot = slotsData[slotKey];
+    if (!slot) return true;
+    if (slot.current?.name) {
+      const d = parseDateStr(slot.current.discharge);
+      if (!d || dateOnly(d) >= fromD) return false;
+    }
+    for (const r of (slot.reservations || [])) {
+      const rA = parseDateStr(r.admitDate);
+      if (!rA) continue;
+      const rD = parseDateStr(r.discharge);
+      const rEnd = rD ? dateOnly(rD) : null;
+      if (rEnd && toD) { if (dateOnly(rA) <= toD && rEnd >= fromD) return false; }
+      else if (rEnd)   { if (rEnd >= fromD) return false; }
+      else             { if (dateOnly(rA) >= fromD) return false; }
+    }
+    return true;
+  };
+
+  // 같은 병실 유형의 이동 가능한 대체 병상 목록
+  const findAltSlots = (slotsData, excludeKey, roomType, fromD, toD) => {
+    const alts = [];
+    Object.entries(WARD_STRUCTURE).forEach(([, ward]) => {
       ward.rooms.forEach(room => {
-        // 병실 종류 필터
-        if (availTypes.length > 0 && !availTypes.includes(room.type)) return;
+        if (room.type !== roomType) return;
         for (let b = 1; b <= room.capacity; b++) {
-          const slotKey = `${room.id}-${b}`;
-          const slot = slots[slotKey];
-          // 해당 기간 동안 사용 가능한지 확인
-          let occupied = false;
-          // 현재 환자 체크
-          if (slot?.current?.name) {
-            const curDischarge = parseDateStr(slot.current.discharge);
-            // 퇴원일이 미정이거나 입원예정일 이후면 겹침
-            if (!curDischarge || dateOnly(curDischarge) >= admitD) occupied = true;
-          }
-          // 예약 체크
-          if (!occupied) {
-            (slot?.reservations || []).forEach(r => {
-              const rAdmit = parseDateStr(r.admitDate);
-              const rDischarge = parseDateStr(r.discharge);
-              if (!rAdmit) return;
-              // 예약 기간과 겹치는지
-              const rEnd = rDischarge ? dateOnly(rDischarge) : null;
-              const myEnd = dischargeD;
-              if (rEnd && myEnd) {
-                if (dateOnly(rAdmit) <= myEnd && rEnd >= admitD) occupied = true;
-              } else {
-                if (dateOnly(rAdmit) >= admitD) occupied = true;
-              }
-            });
-          }
-          if (!occupied) {
-            results.push({ slotKey, roomId: room.id, bedNum: b, roomType: room.type, wardName: ward.name });
-          }
+          const sk = `${room.id}-${b}`;
+          if (sk === excludeKey) continue;
+          if (slotFreeForPeriod(slotsData, sk, fromD, toD))
+            alts.push({ slotKey: sk, roomId: room.id, bedNum: b, wardName: ward.name });
         }
       });
     });
+    return alts;
+  };
+
+  // 직접 가용 + 조정 가능 목록 동시 계산
+  const computeAvail = (slotsData, admitD, dischargeD, types) => {
+    const allRooms = Object.entries(WARD_STRUCTURE).flatMap(([, ward]) =>
+      ward.rooms.map(r => ({ ...r, wardName: ward.name }))
+    );
+    const results = [], adjustments = [];
+
+    allRooms.forEach(room => {
+      if (types.length > 0 && !types.includes(room.type)) return;
+      for (let b = 1; b <= room.capacity; b++) {
+        const slotKey = `${room.id}-${b}`;
+
+        // 직접 가용
+        if (slotFreeForPeriod(slotsData, slotKey, admitD, dischargeD)) {
+          results.push({ slotKey, roomId: room.id, bedNum: b, roomType: room.type, wardName: room.wardName });
+          continue;
+        }
+
+        const slot = slotsData[slotKey];
+
+        // 현재 입원 환자가 막고 있는 경우 → 대안 병상 탐색 (수동 이동)
+        if (slot?.current?.name) {
+          const curD = parseDateStr(slot.current.discharge);
+          if (!curD || dateOnly(curD) >= admitD) {
+            const curAdmitD = parseDateStr(slot.current.admitDate);
+            const fromD2 = curAdmitD ? dateOnly(curAdmitD) : admitD;
+            const alts = findAltSlots(slotsData, slotKey, room.type, fromD2, curD ? dateOnly(curD) : null);
+            if (alts.length > 0) {
+              adjustments.push({
+                slotKey, roomId: room.id, bedNum: b, roomType: room.type, wardName: room.wardName,
+                blocker: { type: "current", name: slot.current.name,
+                  admitDate: slot.current.admitDate, discharge: slot.current.discharge },
+                alternatives: alts,
+              });
+            }
+          }
+        }
+
+        // 예약이 막고 있는 경우 → 대안 병상 탐색 (자동 이동 가능)
+        (slot?.reservations || []).forEach((r, resIdx) => {
+          const rA = parseDateStr(r.admitDate);
+          if (!rA) return;
+          const rD = parseDateStr(r.discharge);
+          const rEnd = rD ? dateOnly(rD) : null;
+          let overlaps = false;
+          if (rEnd && dischargeD) overlaps = dateOnly(rA) <= dischargeD && rEnd >= admitD;
+          else if (rEnd)          overlaps = rEnd >= admitD;
+          else                    overlaps = dateOnly(rA) >= admitD;
+          if (!overlaps) return;
+
+          const alts = findAltSlots(slotsData, slotKey, room.type, dateOnly(rA), rEnd);
+          if (alts.length > 0) {
+            adjustments.push({
+              slotKey, roomId: room.id, bedNum: b, roomType: room.type, wardName: room.wardName,
+              blocker: { type: "reservation", name: r.name,
+                admitDate: r.admitDate, discharge: r.discharge, resIndex: resIdx },
+              alternatives: alts,
+            });
+          }
+        });
+      }
+    });
+    return { results, adjustments };
+  };
+
+  const doAvailCheck = (slotsOverride) => {
+    if (!availAdmit) return;
+    const admitD     = dateOnly(new Date(availAdmit + "T00:00:00"));
+    const dischargeD = availDischarge ? dateOnly(new Date(availDischarge + "T00:00:00")) : null;
+    const { results, adjustments } = computeAvail(slotsOverride || slots, admitD, dischargeD, availTypes);
     setAvailResults(results);
+    setAvailAdjustments(adjustments);
+  };
+
+  // 예약을 다른 병상으로 이동 적용
+  const applyReservationMove = async (fromSlot, resIndex, toSlot, patientName) => {
+    if (!confirm(`${patientName}님 예약을 ${toSlot.replace("-", "호 ")}번으로 이동하시겠습니까?`)) return;
+    setApplyingMove(true);
+    try {
+      const fromData   = slots[fromSlot] || {};
+      const reservation = (fromData.reservations || [])[resIndex];
+      if (!reservation) return;
+      const newFromRes = (fromData.reservations || []).filter((_, i) => i !== resIndex);
+      const toData     = slots[toSlot] || { current: null, reservations: [] };
+      const newToRes   = [...(toData.reservations || []), reservation]
+        .sort((a, b2) => {
+          const da = parseDateStr(a.admitDate), db2 = parseDateStr(b2.admitDate);
+          if (!da) return 1; if (!db2) return -1;
+          return dateOnly(da) - dateOnly(db2);
+        });
+      await set(ref(db, `slots/${fromSlot}`), { ...fromData, reservations: newFromRes });
+      await set(ref(db, `slots/${toSlot}`),   { ...toData,   reservations: newToRes   });
+      // 낙관적 업데이트로 즉시 재조회
+      doAvailCheck({ ...slots, [fromSlot]: { ...fromData, reservations: newFromRes }, [toSlot]: { ...toData, reservations: newToRes } });
+    } catch (e) {
+      alert("이동 중 오류: " + e.message);
+    }
+    setApplyingMove(false);
   };
 
   const applyPreview = () => { setPreviewDate(new Date(previewInput + "T00:00:00")); };
@@ -754,14 +848,11 @@ export default function HospitalWardManager() {
               {/* 결과 */}
               {availResults !== null && (
                 <div style={{width:"100%",marginTop:4}}>
-                  {availResults.length === 0 ? (
-                    <div style={{color:"#ef4444",fontWeight:700,fontSize:13,padding:"8px 0"}}>
-                      ⚠️ 해당 기간에 가용한 병상이 없습니다.
-                    </div>
-                  ) : (
-                    <>
-                      <div style={{fontSize:12,fontWeight:700,color:"#0f2744",marginBottom:6}}>
-                        ✅ 가용 병상 {availResults.length}개
+                  {/* ① 직접 가용 병상 */}
+                  {availResults.length > 0 ? (
+                    <div style={{marginBottom:10}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#16a34a",marginBottom:6}}>
+                        ✅ 직접 가용 병상 {availResults.length}개
                         {availTypes.length>0&&<span style={{fontWeight:400,color:"#64748b",marginLeft:4}}>({availTypes.join("·")})</span>}
                       </div>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -776,7 +867,74 @@ export default function HospitalWardManager() {
                           </button>
                         ))}
                       </div>
-                    </>
+                    </div>
+                  ) : (
+                    <div style={{color:"#ef4444",fontWeight:700,fontSize:12,marginBottom:8}}>
+                      ⚠️ 직접 가용한 병상 없음
+                    </div>
+                  )}
+
+                  {/* ② 예약 조정으로 확보 가능 */}
+                  {availAdjustments.length > 0 && (
+                    <div style={{borderTop:"1.5px solid #e9d5ff",paddingTop:10}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#7c3aed",marginBottom:8}}>
+                        🔄 예약 조정으로 확보 가능 {availAdjustments.length}건
+                        <span style={{fontSize:11,fontWeight:400,color:"#64748b",marginLeft:6}}>
+                          — 기존 예약/입원을 같은 유형 다른 병상으로 이동 시
+                        </span>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        {availAdjustments.map((adj, i) => (
+                          <div key={i} style={{background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:8,padding:"8px 12px"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:5}}>
+                              <span style={{background:"#7c3aed",color:"#fff",borderRadius:5,padding:"2px 8px",fontSize:11,fontWeight:700,flexShrink:0}}>
+                                {adj.roomId}호 {adj.bedNum}번
+                              </span>
+                              <span style={{fontSize:10,background:TYPE_BG[adj.roomType],color:TYPE_COLOR[adj.roomType],borderRadius:4,padding:"1px 6px",fontWeight:700}}>
+                                {adj.roomType}
+                              </span>
+                              <span style={{fontSize:12,color:"#374151"}}>
+                                <strong>{adj.blocker.name}</strong>님{" "}
+                                {adj.blocker.type==="current"
+                                  ? `현재 입원 중 (퇴원: ${adj.blocker.discharge||"미정"})`
+                                  : `예약 ${adj.blocker.admitDate}~${adj.blocker.discharge||"미정"}`}
+                              </span>
+                              {adj.blocker.type==="current" && (
+                                <span style={{fontSize:10,background:"#fef9c3",color:"#92400e",borderRadius:4,padding:"1px 6px",fontWeight:700,flexShrink:0}}>
+                                  ⚠ 수동 이동 필요
+                                </span>
+                              )}
+                            </div>
+                            <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                              <span style={{fontSize:11,color:"#7c3aed",fontWeight:700,flexShrink:0}}>이동 →</span>
+                              {adj.alternatives.map((alt, ai) => (
+                                <button key={ai}
+                                  disabled={adj.blocker.type==="current" || applyingMove}
+                                  onClick={() => applyReservationMove(adj.slotKey, adj.blocker.resIndex, alt.slotKey, adj.blocker.name)}
+                                  style={{
+                                    border:`1.5px solid ${adj.blocker.type==="current"?"#e2e8f0":"#7c3aed"}`,
+                                    borderRadius:6,padding:"3px 10px",
+                                    fontSize:11,fontWeight:700,
+                                    background: adj.blocker.type==="current"?"#f1f5f9":"#fff",
+                                    color:       adj.blocker.type==="current"?"#94a3b8":"#7c3aed",
+                                    cursor:      adj.blocker.type==="current"?"not-allowed":"pointer",
+                                    opacity:     applyingMove?0.6:1,
+                                  }}>
+                                  {alt.wardName} {alt.roomId}호 {alt.bedNum}번
+                                  {adj.blocker.type==="reservation" && " ✓ 적용"}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {availResults.length===0 && availAdjustments.length===0 && (
+                    <div style={{color:"#94a3b8",fontSize:12,marginTop:4}}>
+                      조정 가능한 예약도 없습니다.
+                    </div>
                   )}
                 </div>
               )}
