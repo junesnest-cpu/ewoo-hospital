@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, set, push, remove } from "firebase/database";
+import { ref, onValue, set, push, remove, query, orderByChild, startAt, endAt } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 import PatientSearchModal from "../components/PatientSearchModal";
@@ -69,7 +69,10 @@ export default function ConsultationPage() {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({...EMPTY_FORM});
   const [search, setSearch] = useState("");
-  const [filterMonth, setFilterMonth] = useState("");
+  const [filterMonth, setFilterMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  });
   const [filterStatus, setFilterStatus] = useState("전체");
   const [filterAdmitDate, setFilterAdmitDate] = useState(""); // 예약날짜 검색
 
@@ -80,14 +83,28 @@ export default function ConsultationPage() {
   // 환자 검색 모달 (신규 상담 등록 전)
   const [patientPickOpen, setPatientPickOpen] = useState(false);
 
+  // 월별 상담일지 로드 (월 변경 시 해당 월만 로드)
   useEffect(() => {
-    const unsub1 = onValue(ref(db,"consultations"), snap => {
+    setConsultations({});
+    let q;
+    if (filterMonth) {
+      const monthStart = `${filterMonth}-01`;
+      const monthEnd   = `${filterMonth}-31`;
+      q = query(ref(db,"consultations"), orderByChild("createdAt"), startAt(monthStart), endAt(monthEnd));
+    } else {
+      q = ref(db,"consultations");
+    }
+    const unsub = onValue(q, snap => {
       setConsultations(snap.val() || {});
     });
+    return unsub;
+  }, [filterMonth]);
+
+  useEffect(() => {
     const unsub2 = onValue(ref(db,"slots"), snap => {
       setSlots(snap.val() || {});
     });
-    return () => { unsub1(); unsub2(); };
+    return unsub2;
   }, []);
 
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
@@ -183,11 +200,24 @@ export default function ConsultationPage() {
     return (b.id||"").localeCompare(a.id||""); // 같은 날이면 나중 입력이 위
   });
 
-  const months = [...new Set(allList.map(c=>monthKey(c.createdAt)).filter(Boolean))].sort().reverse();
+  // 월 목록: 현재 월 기준 최근 24개월 고정 생성 (월별 로드이므로 loaded data에서 추출 불가)
+  const months = (() => {
+    const result = [];
+    const d = new Date();
+    for (let i = 0; i < 24; i++) {
+      result.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+      d.setMonth(d.getMonth() - 1);
+    }
+    return result;
+  })();
 
   const filtered = allList.filter(c => {
-    if (filterMonth && monthKey(c.createdAt) !== filterMonth) return false;
-    if (filterStatus !== "전체" && c.status !== filterStatus) return false;
+    if (filterStatus !== "전체") {
+      // admitDate가 있고 입원완료/취소가 아니면 예약완료로 간주
+      const effectiveStatus = (c.admitDate && c.status !== "입원완료" && c.status !== "취소")
+        ? "예약완료" : c.status;
+      if (effectiveStatus !== filterStatus) return false;
+    }
     // 예약날짜 필터: admitDate가 선택한 날짜와 일치
     if (filterAdmitDate) {
       if (!c.admitDate) return false;
@@ -477,7 +507,7 @@ export default function ConsultationPage() {
           )}
         </div>
         <select style={{...S.inp, width:110}} value={filterMonth} onChange={e=>setFilterMonth(e.target.value)}>
-          <option value="">전체 기간</option>
+          <option value="">전체 (느림)</option>
           {months.map(m=><option key={m} value={m}>{korMonth(m)}</option>)}
         </select>
         <select style={{...S.inp, width:90}} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
