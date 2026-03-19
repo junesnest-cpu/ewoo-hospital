@@ -260,16 +260,16 @@ export default function MonthlySchedule() {
       <div className="no-print" style={{ background:"#fff", borderBottom:"1px solid #e2e8f0",
         padding:"8px 16px", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
         <button onClick={prevMonth} style={NS.monthBtn}>◀</button>
-        <span style={{ fontSize:20, fontWeight:900, color:"#0f2744", minWidth:110, textAlign:"center" }}>
+        <span style={{ fontSize:22, fontWeight:900, color:"#0f2744", minWidth:120, textAlign:"center" }}>
           {year}년 {month}월
         </span>
         <button onClick={nextMonth} style={NS.monthBtn}>▶</button>
-        <div style={{ display:"flex", gap:8, fontSize:12, marginLeft:8 }}>
-          <span style={{ background:"#dcfce7", color:"#166534", borderRadius:4, padding:"2px 8px", fontWeight:700 }}>↑ 입원</span>
-          <span style={{ background:"#fee2e2", color:"#991b1b", borderRadius:4, padding:"2px 8px", fontWeight:700 }}>↓ 퇴원</span>
-          <span style={{ background:"#fef9c3", color:"#854d0e", borderRadius:4, padding:"2px 8px", fontWeight:700 }}>★ 신환</span>
-          <span style={{ background:"#ede9fe", color:"#5b21b6", borderRadius:4, padding:"2px 8px", fontWeight:700 }}>◎ 예약</span>
-          <span style={{ background:"#e0f2fe", color:"#0369a1", borderRadius:4, padding:"2px 8px", fontWeight:700 }}>✏ 수동편집</span>
+        <div style={{ display:"flex", gap:8, fontSize:14, marginLeft:8 }}>
+          <span style={{ background:"#dcfce7", color:"#166534", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>↑ 입원</span>
+          <span style={{ background:"#fee2e2", color:"#991b1b", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>↓ 퇴원</span>
+          <span style={{ background:"#fef9c3", color:"#854d0e", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>★ 신환</span>
+          <span style={{ background:"#ede9fe", color:"#5b21b6", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>◎ 예약</span>
+          <span style={{ background:"#e0f2fe", color:"#0369a1", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>✏ 수동편집</span>
         </div>
         <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
           <button onClick={autoFillMonth} disabled={autoFilling}
@@ -356,20 +356,20 @@ export default function MonthlySchedule() {
                       border: isManual ? "2px solid #bae6fd" : "1px solid #e2e8f0",
                       verticalAlign:"top", padding:0,
                       background: isToday ? "#fffbeb" : "#fff",
-                      minHeight:90, position:"relative",
+                      minHeight:120, position:"relative",
                     }}>
                       {/* 날짜 헤더 */}
                       <div style={{
-                        padding:"3px 5px", fontWeight:900,
-                        fontSize: isMobile ? 12 : 13,
+                        padding:"4px 6px", fontWeight:900,
+                        fontSize: isMobile ? 16 : 18,
                         color: isToday ? "#d97706" : isSun ? "#dc2626" : isSat ? "#2563eb" : "#1e293b",
                         background: isToday ? "#fef3c7" : isSun ? "#fff5f5" : isSat ? "#eff6ff" : "#f8fafc",
                         borderBottom:"1px solid #e2e8f0",
                         display:"flex", alignItems:"center", gap:3,
                       }}>
                         <span>{day}</span>
-                        {isToday && <span style={{ fontSize:9, background:"#f59e0b", color:"#fff", borderRadius:3, padding:"0 3px", fontWeight:700 }}>오늘</span>}
-                        {isManual && <span style={{ fontSize:8, background:"#bae6fd", color:"#0369a1", borderRadius:3, padding:"0 3px", fontWeight:700 }}>✏</span>}
+                        {isToday && <span style={{ fontSize:11, background:"#f59e0b", color:"#fff", borderRadius:3, padding:"0 4px", fontWeight:700 }}>오늘</span>}
+                        {isManual && <span style={{ fontSize:10, background:"#bae6fd", color:"#0369a1", borderRadius:3, padding:"0 4px", fontWeight:700 }}>✏</span>}
                         {/* 편집 버튼 */}
                         <button className="no-print" onClick={() => openEdit(key)}
                           title="이 날 편집"
@@ -390,8 +390,8 @@ export default function MonthlySchedule() {
                       {/* 입원 섹션 */}
                       {(dayData.admissions||[]).length > 0 && (
                         <div style={{ borderBottom:(dayData.discharges||[]).length > 0 ? "1px dashed #bbf7d0":"none",
-                          padding:"3px 4px", background:"#f0fdf4" }}>
-                          <div style={{ fontSize:9, fontWeight:800, color:"#166534", marginBottom:2 }}>
+                          padding:"4px 5px", background:"#f0fdf4" }}>
+                          <div style={{ fontSize:13, fontWeight:800, color:"#166534", marginBottom:3 }}>
                             ↑ 입원 {(dayData.admissions||[]).length}
                           </div>
                           {(dayData.admissions||[]).map((p, pi) => (
@@ -402,8 +402,8 @@ export default function MonthlySchedule() {
 
                       {/* 퇴원 섹션 */}
                       {(dayData.discharges||[]).length > 0 && (
-                        <div style={{ padding:"3px 4px", background:"#fff5f5" }}>
-                          <div style={{ fontSize:9, fontWeight:800, color:"#991b1b", marginBottom:2 }}>
+                        <div style={{ padding:"4px 5px", background:"#fff5f5" }}>
+                          <div style={{ fontSize:13, fontWeight:800, color:"#991b1b", marginBottom:3 }}>
                             ↓ 퇴원 {(dayData.discharges||[]).length}
                           </div>
                           {(dayData.discharges||[]).map((p, pi) => (
@@ -414,10 +414,10 @@ export default function MonthlySchedule() {
 
                       {/* 빈 공간 + 빠른 추가 버튼 */}
                       {!hasData && (
-                        <div style={{ minHeight:55, display:"flex", alignItems:"flex-end", justifyContent:"center", paddingBottom:4 }}>
+                        <div style={{ minHeight:70, display:"flex", alignItems:"flex-end", justifyContent:"center", paddingBottom:5 }}>
                           <button className="no-print" onClick={() => openEdit(key)}
                             style={{ background:"none", border:"1px dashed #cbd5e1", borderRadius:4,
-                              color:"#cbd5e1", cursor:"pointer", fontSize:10, padding:"1px 8px" }}>
+                              color:"#cbd5e1", cursor:"pointer", fontSize:13, padding:"2px 10px" }}>
                             + 추가
                           </button>
                         </div>
@@ -434,9 +434,9 @@ export default function MonthlySchedule() {
       {/* 하단 요약 */}
       <div className="no-print" style={{ padding:"10px 20px", background:"#fff",
         borderTop:"1px solid #e2e8f0", display:"flex", gap:20, fontSize:13, color:"#64748b" }}>
-        <span>이번 달 입원 예정: <strong style={{color:"#166534"}}>{summaryStats.totalAdmit}명</strong></span>
-        <span>퇴원 예정: <strong style={{color:"#991b1b"}}>{summaryStats.totalDischarge}명</strong></span>
-        <span>신환: <strong style={{color:"#854d0e"}}>{summaryStats.totalNew}명</strong></span>
+        <span style={{ fontSize:15 }}>이번 달 입원 예정: <strong style={{color:"#166534", fontSize:17}}>{summaryStats.totalAdmit}명</strong></span>
+        <span style={{ fontSize:15 }}>퇴원 예정: <strong style={{color:"#991b1b", fontSize:17}}>{summaryStats.totalDischarge}명</strong></span>
+        <span style={{ fontSize:15 }}>신환: <strong style={{color:"#854d0e", fontSize:17}}>{summaryStats.totalNew}명</strong></span>
       </div>
 
       {/* 날짜 편집 모달 */}
@@ -479,7 +479,7 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
         {/* 모달 헤더 */}
         <div style={{ background:"#0f2744", color:"#fff", padding:"12px 20px",
           display:"flex", alignItems:"center", gap:10, borderRadius:"12px 12px 0 0" }}>
-          <span style={{ fontWeight:800, fontSize:16 }}>📅 {label} 편집</span>
+          <span style={{ fontWeight:800, fontSize:18 }}>📅 {label} 편집</span>
           <button onClick={onClose} style={{ marginLeft:"auto", background:"none", border:"none",
             color:"#94a3b8", cursor:"pointer", fontSize:20, lineHeight:1 }}>✕</button>
         </div>
@@ -489,7 +489,7 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
           {/* 입원 섹션 */}
           <div>
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-              <span style={{ fontWeight:800, fontSize:14, color:"#166534" }}>↑ 입원</span>
+              <span style={{ fontWeight:800, fontSize:17, color:"#166534" }}>↑ 입원</span>
               <button onClick={() => onChangeAdm(r => [...r, EMPTY_ADM()])}
                 style={MS.addBtn}>+ 추가</button>
             </div>
@@ -536,7 +536,7 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
           {/* 퇴원 섹션 */}
           <div>
             <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-              <span style={{ fontWeight:800, fontSize:14, color:"#991b1b" }}>↓ 퇴원</span>
+              <span style={{ fontWeight:800, fontSize:17, color:"#991b1b" }}>↓ 퇴원</span>
               <button onClick={() => onChangeDis(r => [...r, EMPTY_DIS()])}
                 style={MS.addBtn}>+ 추가</button>
             </div>
@@ -581,11 +581,11 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
 
 function PatientChip({ p, type }) {
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:2, flexWrap:"wrap", marginBottom:2, lineHeight:1.3 }}>
-      {p.isNew && <span style={{ fontSize:8, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"0 3px", fontWeight:800, flexShrink:0 }}>★신</span>}
-      {p.isReserved && !p.isNew && <span style={{ fontSize:8, background:"#ede9fe", color:"#5b21b6", borderRadius:3, padding:"0 3px", fontWeight:800, flexShrink:0 }}>◎</span>}
-      <span style={{ fontSize:11, fontWeight:700, color: type==="admission" ? "#065f46" : "#991b1b" }}>{p.name}</span>
-      {p.room && <span style={{ fontSize:9, color:"#64748b" }}>({p.room})</span>}
+    <div style={{ display:"flex", alignItems:"center", gap:3, flexWrap:"wrap", marginBottom:3, lineHeight:1.4 }}>
+      {p.isNew && <span style={{ fontSize:12, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>★신</span>}
+      {p.isReserved && !p.isNew && <span style={{ fontSize:12, background:"#ede9fe", color:"#5b21b6", borderRadius:3, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>◎</span>}
+      <span style={{ fontSize:16, fontWeight:700, color: type==="admission" ? "#065f46" : "#991b1b" }}>{p.name}</span>
+      {p.room && <span style={{ fontSize:13, color:"#64748b" }}>({p.room})</span>}
     </div>
   );
 }
@@ -597,10 +597,10 @@ const NS = {
     padding:"4px 12px", cursor:"pointer", fontSize:14, fontWeight:700, color:"#374151" },
 };
 const MS = {
-  input: { border:"1px solid #e2e8f0", borderRadius:6, padding:"5px 8px", fontSize:12,
+  input: { border:"1px solid #e2e8f0", borderRadius:6, padding:"7px 10px", fontSize:16,
     fontFamily:"inherit", outline:"none", background:"#fff" },
   addBtn: { background:"#f0fdf4", color:"#166534", border:"1px solid #bbf7d0",
-    borderRadius:6, padding:"3px 10px", cursor:"pointer", fontSize:12, fontWeight:700 },
+    borderRadius:6, padding:"5px 14px", cursor:"pointer", fontSize:15, fontWeight:700 },
   delBtn: { background:"none", border:"none", cursor:"pointer", color:"#ef4444",
-    fontSize:16, lineHeight:1, flexShrink:0, padding:"0 4px" },
+    fontSize:20, lineHeight:1, flexShrink:0, padding:"0 4px" },
 };
