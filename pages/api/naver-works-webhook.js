@@ -1,5 +1,18 @@
-import { ref, get, set } from 'firebase/database';
-import { db } from '../../lib/firebaseConfig';
+import admin from 'firebase-admin';
+
+// ── Firebase Admin SDK 초기화 (싱글턴) ───────────────────────────────────────
+if (!admin.apps.length) {
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId:   process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey,
+    }),
+    databaseURL: 'https://ewoo-hospital-ward-default-rtdb.firebaseio.com',
+  });
+}
+const adminDb = admin.database();
 
 const WARD_ROOMS = {
   '201': 4, '202': 1, '203': 4, '204': 2, '205': 6, '206': 6,
@@ -11,7 +24,7 @@ const WARD_ROOMS = {
 async function parseMessageWithClaude(text) {
   const today = new Date();
   const month = today.getMonth() + 1;
-  const year = today.getFullYear();
+  const year  = today.getFullYear();
 
   const prompt = `오늘은 ${year}년 ${month}월입니다.
 병원 병동 채팅 메시지에서 환자 정보를 추출하여 JSON만 반환하세요 (설명 없이).
@@ -63,7 +76,7 @@ async function parseMessageWithClaude(text) {
   const data = await response.json();
   if (data.error) throw new Error(`Claude API 오류: ${data.error.message}`);
 
-  const raw = data.content?.map((c) => c.text || '').join('') || '';
+  const raw     = data.content?.map((c) => c.text || '').join('') || '';
   const cleaned = raw.replace(/```json|```/g, '').trim();
   return JSON.parse(cleaned);
 }
@@ -72,7 +85,7 @@ function findPatientInRoom(slots, roomId, patientName) {
   const capacity = WARD_ROOMS[roomId] || 1;
   for (let i = 1; i <= capacity; i++) {
     const slotKey = `${roomId}-${i}`;
-    const slot = slots[slotKey];
+    const slot    = slots[slotKey];
     if (!slot) continue;
     if (slot.current?.name === patientName) return slotKey;
     if ((slot.reservations || []).some((r) => r.name === patientName)) return slotKey;
@@ -90,69 +103,88 @@ function findEmptyBed(slots, roomId) {
 }
 
 export default async function handler(req, res) {
-  // Naver Works webhook 검증 (GET)
+  // Naver Works 웹훅 검증 (GET)
   if (req.method === 'GET') {
     const challenge = req.query['hub.challenge'] || req.query.hub_challenge || 'OK';
     return res.status(200).send(challenge);
   }
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  if (!process.env.ANTHROPIC_API_KEY)
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY가 설정되지 않았습니다.' });
 
   try {
     const body = req.body;
 
-    if (body?.type !== 'message' || body?.content?.type !== 'text') {
+    // Naver Works 메시지 타입 확인 (문자열 body 대비 파싱)
+    const payload = typeof body === 'string' ? JSON.parse(body) : body;
+
+    if (payload?.type !== 'message' || payload?.content?.type !== 'text') {
       return res.status(200).json({ status: 'ignored', reason: 'text message가 아닙니다.' });
     }
 
-    const messageText = body.content.text?.trim();
+    const messageText = payload.content.text?.trim();
     if (!messageText) return res.status(200).json({ status: 'ignored', reason: '빈 메시지' });
 
-    // Claude로 파싱
-    const parsed = await parseMessageWithClaude(messageText);
+    const changeId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const baseEntry = {
+      id:        changeId,
+      ts:        new Date().toISOString(),
+      status:    'pending',
+      source:    'naver-works',
+      userId:    payload.source?.userId    || null,
+      channelId: payload.source?.channelId || null,
+      message:   messageText,
+    };
 
-    if (parsed.action === 'ignore' || !parsed.name) {
-      return res.status(200).json({ status: 'ignored', reason: '관련 없는 메시지', parsed });
-    }
+    // Claude로 파싱 (실패 시 raw 메시지만이라도 저장)
+    let parsed = null;
+    let suggestedSlotKey = null;
+    let parseError = null;
 
-    // 예상 병상 계산 (현황판 표시용, 실제 반영 안 함)
-    const snap = await get(ref(db, 'slots'));
-    const slots = snap.val() || {};
+    if (!process.env.ANTHROPIC_API_KEY) {
+      parseError = 'ANTHROPIC_API_KEY 미설정';
+    } else {
+      try {
+        parsed = await parseMessageWithClaude(messageText);
 
-    let suggestedSlotKey = parsed.slotKey;
-    if (!suggestedSlotKey && parsed.room) {
-      if (parsed.bedNumber) {
-        suggestedSlotKey = `${parsed.room}-${parsed.bedNumber}`;
-      } else if (parsed.name) {
-        suggestedSlotKey =
-          findPatientInRoom(slots, parsed.room, parsed.name) ||
-          findEmptyBed(slots, parsed.room);
+        if (parsed.action !== 'ignore' && parsed.name) {
+          const snap  = await adminDb.ref('slots').once('value');
+          const slots = snap.val() || {};
+          if (parsed.slotKey) {
+            suggestedSlotKey = parsed.slotKey;
+          } else if (parsed.room) {
+            suggestedSlotKey = parsed.bedNumber
+              ? `${parsed.room}-${parsed.bedNumber}`
+              : findPatientInRoom(slots, parsed.room, parsed.name) ||
+                findEmptyBed(slots, parsed.room);
+          }
+        }
+      } catch (e) {
+        parseError = e.message;
       }
     }
 
-    // pendingChanges에 대기 상태로 저장 (현황판 직접 반영 안 함)
-    const changeId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    await set(ref(db, `pendingChanges/${changeId}`), {
-      id: changeId,
-      ts: new Date().toISOString(),
-      status: 'pending',
-      source: 'naver-works',
-      userId: body.source?.userId || null,
-      channelId: body.source?.channelId || null,
-      message: messageText,
-      parsed,
-      suggestedSlotKey: suggestedSlotKey || null,
+    // action=ignore 이면 저장하지 않음
+    if (parsed?.action === 'ignore') {
+      return res.status(200).json({ status: 'ignored', reason: '관련 없는 메시지', parsed });
+    }
+
+    // Firebase Admin SDK 로 pendingChanges 저장
+    await adminDb.ref(`pendingChanges/${changeId}`).set({
+      ...baseEntry,
+      parsed:           parsed            || null,
+      suggestedSlotKey: suggestedSlotKey  || null,
+      parseError:       parseError        || null,
     });
 
     return res.status(200).json({
-      status: 'pending',
+      status: parseError ? 'pending_no_parse' : 'pending',
       message: '변경 승인 대기 중입니다.',
       changeId,
       suggestedSlotKey,
       parsed,
+      parseError,
     });
+
   } catch (err) {
     console.error('[naver-works-webhook] 오류:', err);
     return res.status(500).json({ error: `처리 중 오류: ${err.message}` });
