@@ -253,13 +253,17 @@ async function addTreatmentPlan(slotKey, treatmentIds, dateStr) {
 export default function HistoryPage() {
   const router = useRouter();
   const [changes, setChanges] = useState({});
+  const [webhookLogs, setWebhookLogs] = useState({});
   const [activeTab, setActiveTab] = useState("pending");
 
   useEffect(() => {
-    const unsub = onValue(ref(db, "pendingChanges"), (snap) => {
+    const unsub1 = onValue(ref(db, "pendingChanges"), (snap) => {
       setChanges(snap.val() || {});
     });
-    return () => unsub();
+    const unsub2 = onValue(ref(db, "webhookLogs"), (snap) => {
+      setWebhookLogs(snap.val() || {});
+    });
+    return () => { unsub1(); unsub2(); };
   }, []);
 
   const handleApprove = useCallback(async (changeId, form, addTreat, treatDate) => {
@@ -328,17 +332,14 @@ export default function HistoryPage() {
       </header>
 
       <div style={H.tabBar}>
-        <button
-          style={{ ...H.tab, ...(activeTab === "pending" ? H.tabActive : {}) }}
-          onClick={() => setActiveTab("pending")}
-        >
+        <button style={{ ...H.tab, ...(activeTab === "pending"  ? H.tabActive : {}) }} onClick={() => setActiveTab("pending")}>
           대기중{pendingList.length > 0 ? ` (${pendingList.length})` : ""}
         </button>
-        <button
-          style={{ ...H.tab, ...(activeTab === "resolved" ? H.tabActive : {}) }}
-          onClick={() => setActiveTab("resolved")}
-        >
+        <button style={{ ...H.tab, ...(activeTab === "resolved" ? H.tabActive : {}) }} onClick={() => setActiveTab("resolved")}>
           처리완료{resolvedList.length > 0 ? ` (${resolvedList.length})` : ""}
+        </button>
+        <button style={{ ...H.tab, ...(activeTab === "logs"     ? H.tabActive : {}) }} onClick={() => setActiveTab("logs")}>
+          🔍 진단
         </button>
       </div>
 
@@ -363,6 +364,9 @@ export default function HistoryPage() {
             : resolvedList.map((change) => (
                 <ResolvedCard key={change.id} change={change} />
               ))
+        )}
+        {activeTab === "logs" && (
+          <WebhookLogsTab logs={webhookLogs} />
         )}
       </main>
     </div>
@@ -720,6 +724,65 @@ function ResolvedCard({ change }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 진단 탭 ──────────────────────────────────────────────────────────────────
+function WebhookLogsTab({ logs }) {
+  const list = Object.entries(logs)
+    .map(([id, v]) => ({ ...v, id }))
+    .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+    .slice(0, 30);
+
+  if (list.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "40px 20px", color: "#94a3b8" }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>📭</div>
+        <div style={{ fontSize: 15, fontWeight: 700 }}>수신된 웹훅 없음</div>
+        <div style={{ fontSize: 13, marginTop: 8 }}>
+          네이버 웍스에서 메시지를 보내면 여기에 수신 기록이 표시됩니다.
+        </div>
+        <div style={{ marginTop: 16, background: "#f8fafc", borderRadius: 10, padding: "14px 16px", textAlign: "left", fontSize: 13, color: "#475569" }}>
+          <b>웹훅 URL 확인:</b><br/>
+          <code style={{ background: "#e2e8f0", padding: "2px 6px", borderRadius: 4, fontSize: 12 }}>
+            https://ewoo-hospital.vercel.app/api/naver-works-webhook
+          </code>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 10 }}>최근 {list.length}건 수신 기록 (진단용)</div>
+      {list.map((log) => (
+        <div key={log.id} style={{ background: "#fff", borderRadius: 10, padding: "10px 14px", marginBottom: 8, boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span style={{
+              fontSize: 12, fontWeight: 700, borderRadius: 8, padding: "2px 8px",
+              background: log.status === "saved" ? "#d1fae5" : log.status === "ignored" ? "#fef9c3" : "#fee2e2",
+              color:      log.status === "saved" ? "#065f46" : log.status === "ignored" ? "#854d0e" : "#dc2626",
+            }}>{log.status || "unknown"}</span>
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>{log.ts ? new Date(log.ts).toLocaleString("ko-KR") : ""}</span>
+          </div>
+          <div style={{ fontSize: 12, color: "#475569", marginBottom: 4 }}>
+            <b>Content-Type:</b> {log.contentType || "없음"} &nbsp;|&nbsp;
+            <b>type:</b> {log.payloadType || "없음"} &nbsp;|&nbsp;
+            <b>content.type:</b> {log.contentSubType || "없음"}
+          </div>
+          {log.reason && <div style={{ fontSize: 12, color: "#f59e0b" }}>무시 사유: {log.reason}</div>}
+          {log.error  && <div style={{ fontSize: 12, color: "#dc2626" }}>오류: {log.error}</div>}
+          {log.rawPayload && (
+            <details style={{ marginTop: 4 }}>
+              <summary style={{ fontSize: 11, color: "#94a3b8", cursor: "pointer" }}>raw payload 보기</summary>
+              <pre style={{ fontSize: 10, background: "#f8fafc", padding: "6px 8px", borderRadius: 6, overflow: "auto", marginTop: 4, maxHeight: 200 }}>
+                {log.rawPayload}
+              </pre>
+            </details>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

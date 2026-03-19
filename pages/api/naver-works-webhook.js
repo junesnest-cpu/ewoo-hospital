@@ -1,18 +1,23 @@
 import admin from 'firebase-admin';
 
 // ── Firebase Admin SDK 초기화 (싱글턴) ───────────────────────────────────────
-if (!admin.apps.length) {
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId:   process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey,
-    }),
-    databaseURL: 'https://ewoo-hospital-ward-default-rtdb.firebaseio.com',
-  });
+function getAdminDb() {
+  if (!admin.apps.length) {
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+    if (!privateKey || !process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL) {
+      throw new Error('Firebase 환경변수 미설정: FIREBASE_PRIVATE_KEY / FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL');
+    }
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId:   process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey,
+      }),
+      databaseURL: 'https://ewoo-hospital-ward-default-rtdb.firebaseio.com',
+    });
+  }
+  return admin.database();
 }
-const adminDb = admin.database();
 
 const WARD_ROOMS = {
   '201': 4, '202': 1, '203': 4, '204': 2, '205': 6, '206': 6,
@@ -102,6 +107,23 @@ function findEmptyBed(slots, roomId) {
   return `${roomId}-1`;
 }
 
+// payload에서 텍스트 메시지를 유연하게 추출
+function extractTextMessage(payload) {
+  // 표준 Naver Works 형식
+  if (payload?.content?.type === 'text' && payload?.content?.text) {
+    return { text: payload.content.text.trim(), type: payload.type, source: payload.source };
+  }
+  // 일부 구버전 형식
+  if (payload?.message?.type === 'text' && payload?.message?.text) {
+    return { text: payload.message.text.trim(), type: 'message', source: payload.source };
+  }
+  // content 없이 text 바로 있는 경우
+  if (payload?.text) {
+    return { text: payload.text.trim(), type: payload.type || 'message', source: payload.source };
+  }
+  return null;
+}
+
 export default async function handler(req, res) {
   // Naver Works 웹훅 검증 (GET)
   if (req.method === 'GET') {
@@ -111,33 +133,55 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  const changeId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const ts = new Date().toISOString();
+
+  // raw body를 최대한 파싱
+  let payload;
   try {
-    const body = req.body;
+    payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  } catch {
+    payload = null;
+  }
 
-    // Naver Works 메시지 타입 확인 (문자열 body 대비 파싱)
-    const payload = typeof body === 'string' ? JSON.parse(body) : body;
+  // ── Firebase 초기화 ─────────────────────────────────────────────────────
+  let db;
+  try {
+    db = getAdminDb();
+  } catch (initErr) {
+    console.error('[webhook] Firebase 초기화 실패:', initErr.message);
+    // Firebase 없이도 200 반환 (Naver Works 재시도 방지)
+    return res.status(200).json({ status: 'error', error: initErr.message });
+  }
 
-    if (payload?.type !== 'message' || payload?.content?.type !== 'text') {
-      return res.status(200).json({ status: 'ignored', reason: 'text message가 아닙니다.' });
+  // ── 진단용 raw 로그 먼저 저장 (어떤 payload가 오는지 확인) ──────────────
+  try {
+    await db.ref(`webhookLogs/${changeId}`).set({
+      ts,
+      method:      req.method,
+      contentType: req.headers['content-type'] || null,
+      rawPayload:  payload ? JSON.stringify(payload).slice(0, 2000) : null,
+      payloadType: payload?.type || null,
+      contentSubType: payload?.content?.type || null,
+    });
+  } catch (logErr) {
+    // 로그 실패는 무시하고 계속
+    console.error('[webhook] raw 로그 저장 실패:', logErr.message);
+  }
+
+  try {
+    // 텍스트 메시지 추출 (유연한 파싱)
+    const extracted = payload ? extractTextMessage(payload) : null;
+
+    if (!extracted || !extracted.text) {
+      await db.ref(`webhookLogs/${changeId}`).update({ status: 'ignored', reason: '텍스트 메시지 아님' });
+      return res.status(200).json({ status: 'ignored', reason: '텍스트 메시지 아님' });
     }
 
-    const messageText = payload.content.text?.trim();
-    if (!messageText) return res.status(200).json({ status: 'ignored', reason: '빈 메시지' });
+    const messageText = extracted.text;
 
-    const changeId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const baseEntry = {
-      id:        changeId,
-      ts:        new Date().toISOString(),
-      status:    'pending',
-      source:    'naver-works',
-      userId:    payload.source?.userId    || null,
-      channelId: payload.source?.channelId || null,
-      message:   messageText,
-    };
-
-    // Claude로 파싱 (실패 시 raw 메시지만이라도 저장)
-    let parsed = null;
-    let suggestedSlotKey = null;
+    // Claude로 파싱
+    let parsed     = null;
     let parseError = null;
 
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -145,40 +189,53 @@ export default async function handler(req, res) {
     } else {
       try {
         parsed = await parseMessageWithClaude(messageText);
-
-        if (parsed.action !== 'ignore' && parsed.name) {
-          const snap  = await adminDb.ref('slots').once('value');
-          const slots = snap.val() || {};
-          if (parsed.slotKey) {
-            suggestedSlotKey = parsed.slotKey;
-          } else if (parsed.room) {
-            suggestedSlotKey = parsed.bedNumber
-              ? `${parsed.room}-${parsed.bedNumber}`
-              : findPatientInRoom(slots, parsed.room, parsed.name) ||
-                findEmptyBed(slots, parsed.room);
-          }
-        }
       } catch (e) {
         parseError = e.message;
       }
     }
 
-    // action=ignore 이면 저장하지 않음
+    // ignore 처리
     if (parsed?.action === 'ignore') {
+      await db.ref(`webhookLogs/${changeId}`).update({ status: 'ignored', reason: '관련 없는 메시지' });
       return res.status(200).json({ status: 'ignored', reason: '관련 없는 메시지', parsed });
     }
 
-    // Firebase Admin SDK 로 pendingChanges 저장
-    await adminDb.ref(`pendingChanges/${changeId}`).set({
-      ...baseEntry,
-      parsed:           parsed            || null,
-      suggestedSlotKey: suggestedSlotKey  || null,
-      parseError:       parseError        || null,
+    // suggestedSlotKey 계산
+    let suggestedSlotKey = null;
+    if (parsed?.name && !parseError) {
+      try {
+        const snap  = await db.ref('slots').once('value');
+        const slots = snap.val() || {};
+        if (parsed.slotKey) {
+          suggestedSlotKey = parsed.slotKey;
+        } else if (parsed.room) {
+          suggestedSlotKey = parsed.bedNumber
+            ? `${parsed.room}-${parsed.bedNumber}`
+            : findPatientInRoom(slots, parsed.room, parsed.name) ||
+              findEmptyBed(slots, parsed.room);
+        }
+      } catch { /* slots 조회 실패 시 무시 */ }
+    }
+
+    // pendingChanges 저장
+    await db.ref(`pendingChanges/${changeId}`).set({
+      id:               changeId,
+      ts,
+      status:           'pending',
+      source:           'naver-works',
+      userId:           extracted.source?.userId    || null,
+      channelId:        extracted.source?.channelId || null,
+      message:          messageText,
+      parsed:           parsed           || null,
+      suggestedSlotKey: suggestedSlotKey || null,
+      parseError:       parseError       || null,
     });
 
+    // raw 로그도 업데이트
+    await db.ref(`webhookLogs/${changeId}`).update({ status: 'saved', pendingId: changeId });
+
     return res.status(200).json({
-      status: parseError ? 'pending_no_parse' : 'pending',
-      message: '변경 승인 대기 중입니다.',
+      status:           parseError ? 'pending_no_parse' : 'pending',
       changeId,
       suggestedSlotKey,
       parsed,
@@ -187,6 +244,9 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('[naver-works-webhook] 오류:', err);
-    return res.status(500).json({ error: `처리 중 오류: ${err.message}` });
+    try {
+      await db.ref(`webhookLogs/${changeId}`).update({ status: 'error', error: err.message });
+    } catch { /* ignore */ }
+    return res.status(200).json({ status: 'error', error: err.message });
   }
 }
