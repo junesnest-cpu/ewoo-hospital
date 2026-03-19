@@ -311,6 +311,22 @@ export default function TherapyPage() {
     setModal(null);
   };
 
+  // ── db_ 환자 → 현재 입원 병실 역매핑 (patientId → slotKey) ────────────────
+  const patientToSlot=Object.entries(slots).reduce((acc,[sk,sd])=>{
+    if(sd?.current?.patientId) acc[sd.current.patientId]=sk;
+    return acc;
+  },{});
+
+  // db_ 슬롯키에서 현재 병실 정보를 동적으로 가져오는 헬퍼
+  const getRoomFromCell=(cell)=>{
+    if(!cell?.slotKey?.startsWith("db_")) return {roomId:cell?.roomId||"",bedNum:cell?.bedNum||""};
+    const internalId=cell.slotKey.slice(3);
+    const currentSlot=patientToSlot[internalId];
+    if(!currentSlot) return {roomId:"",bedNum:""};
+    const [r,b]=currentSlot.split("-");
+    return {roomId:r||"",bedNum:b||""};
+  };
+
   // ── 환자 목록 ─────────────────────────────────────────────────────────────
   const allPatients=Object.entries(slots)
     .filter(([sk,sd])=>{ if(!sd?.current?.name) return false; return VALID_ROOMS.has(sk.split("-")[0]); })
@@ -611,12 +627,12 @@ export default function TherapyPage() {
                                       background:ca?"#bae6fd":"#f0f9ff",
                                       border:icA?"1.5px solid #dc2626":"1px solid #7dd3fc",
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
-                                      {ca?(
+                                      {ca?(()=>{const {roomId:caR,bedNum:caB}=getRoomFromCell(ca);return(
                                         <>
                                           <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
                                             {ca.patientName}
                                           </div>
-                                          {ca.roomId&&<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{ca.roomId}-{ca.bedNum}</div>}
+                                          {caR&&<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{caR}-{caB}</div>}
                                           <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1}}>
                                             {ca.isOuter&&<span style={{fontSize:8,color:"#d97706",fontWeight:700,background:"#fef3c7",borderRadius:3,padding:"0 3px"}}>외래</span>}
                                             {ca.isPending&&<span style={{fontSize:8,color:"#f59e0b",fontWeight:700,background:"#fff7ed",borderRadius:3,padding:"0 3px"}}>예정</span>}
@@ -624,19 +640,19 @@ export default function TherapyPage() {
                                           <button onClick={e=>{e.stopPropagation();if(!confirm("삭제?"))return;saveHyper("hyperbaric",dayIdx,time,null,"a");}}
                                             style={{position:"absolute",top:0,right:0,background:"rgba(220,38,38,0.2)",border:"none",color:"#dc2626",borderRadius:2,width:12,height:12,cursor:"pointer",fontSize:8,lineHeight:"12px",textAlign:"center",padding:0}}>✕</button>
                                         </>
-                                      ):<div style={{color:"#7dd3fc",fontSize:11,textAlign:"center",fontWeight:700}}>A+</div>}
+                                      );})():<div style={{color:"#7dd3fc",fontSize:11,textAlign:"center",fontWeight:700}}>A+</div>}
                                     </div>
                                     {/* B슬롯 +30분 */}
                                     <div style={{flex:1,borderRadius:3,padding:"2px 3px",
                                       background:cb?"#e0f2fe":"#f0f9ff",
                                       border:icB?"1.5px solid #dc2626":"1px solid #7dd3fc",
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
-                                      {cb?(
+                                      {cb?(()=>{const {roomId:cbR,bedNum:cbB}=getRoomFromCell(cb);return(
                                         <>
                                           <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
                                             {cb.patientName}
                                           </div>
-                                          {cb.roomId&&<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{cb.roomId}-{cb.bedNum}</div>}
+                                          {cbR&&<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{cbR}-{cbB}</div>}
                                           <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1}}>
                                             {cb.isOuter&&<span style={{fontSize:8,color:"#d97706",fontWeight:700,background:"#fef3c7",borderRadius:3,padding:"0 3px"}}>외래</span>}
                                             {cb.isPending&&<span style={{fontSize:8,color:"#f59e0b",fontWeight:700,background:"#fff7ed",borderRadius:3,padding:"0 3px"}}>예정</span>}
@@ -644,7 +660,7 @@ export default function TherapyPage() {
                                           <button onClick={e=>{e.stopPropagation();if(!confirm("삭제?"))return;saveHyper("hyperbaric",dayIdx,time,null,"b");}}
                                             style={{position:"absolute",top:0,right:0,background:"rgba(220,38,38,0.2)",border:"none",color:"#dc2626",borderRadius:2,width:12,height:12,cursor:"pointer",fontSize:8,lineHeight:"12px",textAlign:"center",padding:0}}>✕</button>
                                         </>
-                                      ):<div style={{color:"#7dd3fc",fontSize:11,textAlign:"center",fontWeight:700}}>B+</div>}
+                                      );})():<div style={{color:"#7dd3fc",fontSize:11,textAlign:"center",fontWeight:700}}>B+</div>}
                                     </div>
                                   </div>
                                 );
@@ -678,13 +694,15 @@ export default function TherapyPage() {
                                       isConflict?"2px solid #dc2626":`1px solid ${col}44`,
                                     display:"flex",flexDirection:"column",justifyContent:"center",
                                     position:"relative",overflow:"hidden",boxSizing:"border-box"}}>
-                                  {cell?(
+                                  {cell?(()=>{
+                                    const {roomId:cRoomId,bedNum:cBedNum}=getRoomFromCell(cell);
+                                    return (
                                     <>
                                       <div style={{fontSize:isMobile?14:13,fontWeight:800,color:col,lineHeight:1.4,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
                                         {cell.patientName}
                                         {cell.isOuter&&<span style={{color:"#d97706",fontSize:9,fontWeight:700}}> 외</span>}
                                       </div>
-                                      {cell.roomId&&<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600}}>{cell.roomId}-{cell.bedNum}</div>}
+                                      {cRoomId&&<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600}}>{cRoomId}-{cBedNum}</div>}
                                       {tr2&&<div style={{fontSize:isMobile?12:11,color:tr2.color,fontWeight:800,lineHeight:1.3}}>{tr2.short}</div>}
                                       {cell.memo&&<div style={{fontSize:isMobile?10:9,color:"#475569",lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",maxWidth:"100%",marginTop:1}}>💬 {cell.memo}</div>}
                                       {cell.isPending&&<div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>예정</div>}
@@ -692,7 +710,8 @@ export default function TherapyPage() {
                                       <button onClick={e=>{e.stopPropagation();doPhysRemove(r.id,dayIdx,time);}}
                                         style={{position:"absolute",bottom:1,right:1,background:"rgba(220,38,38,0.15)",border:"none",color:"#dc2626",borderRadius:2,width:13,height:13,cursor:"pointer",fontSize:8,lineHeight:"13px",textAlign:"center",padding:0}}>✕</button>
                                     </>
-                                  ):(
+                                    );
+                                  })():(
                                     <div style={{color:"#d1d5db",fontSize:20,textAlign:"center",userSelect:"none",lineHeight:1}}>+</div>
                                   )}
                                 </div>
