@@ -683,10 +683,13 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
   const weeks = [];
   for (let i = 0; i < calCells.length; i += 7) weeks.push(calCells.slice(i, i+7));
 
-  // 주 수에 따라 셀 높이 동적 계산 (A4 세로 297mm - 여백 - 헤더 - 푸터)
+  // 주 수에 따라 셀 높이 및 폰트 동적 계산 (A4 세로 297mm - 여백 - 헤더 - 푸터)
   const numWeeks = weeks.length;
-  // A4(297mm) - 여백12mm - 헤더22mm - 요일행8mm - 푸터12mm = 약243mm
-  const rowHeightMm = Math.floor(240 / numWeeks);
+  // A4(297mm) - 상하여백16mm - 헤더18mm - 요일행9mm - 푸터12mm = 약242mm
+  const rowHeightMm = Math.floor(242 / numWeeks);
+  // 날짜 숫자 / 치료 항목 폰트 — 주 수에 따라 최대한 크게
+  const dayNumFontPx = numWeeks <= 4 ? 28 : numWeeks === 5 ? 22 : 18;
+  const treatFontPx  = numWeeks <= 4 ? 22 : numWeeks === 5 ? 17 : 14;
 
   return (
     <div className="ewoo-print-area" style={{ display:"none" }}>
@@ -737,7 +740,7 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
             <tr>
               {DAY_KO.map((d, i) => (
                 <th key={d} style={{ border:"1px solid #bbb", padding:"4px 0",
-                  fontSize:11, fontWeight:800, textAlign:"center", background:"#f0f0f0",
+                  fontSize:14, fontWeight:800, textAlign:"center", background:"#f0f0f0",
                   color: i===0?"#cc0000":i===6?"#0033cc":"#222", width:"14.28%" }}>
                   {d}
                 </th>
@@ -755,9 +758,9 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                   const items = monthData[String(day)] || [];
                   return (
                     <td key={di} style={{ border:"1px solid #ddd", verticalAlign:"top",
-                      padding:"2px 3px", background:"#fff" }}>
+                      padding:"3px 5px", background:"#fff" }}>
                       {/* 날짜 */}
-                      <div style={{ fontSize:11, fontWeight:900, marginBottom:1,
+                      <div style={{ fontSize:dayNumFontPx, fontWeight:900, marginBottom:2,
                         color: dow===0?"#cc0000":dow===6?"#0033cc":"#222" }}>
                         {day}
                       </div>
@@ -770,9 +773,9 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                                     : item.custom==="qty"  ? `${item.name} ${e.qty}개`
                                     : item.name;
                         return (
-                          <div key={e.id} style={{ fontSize:9, lineHeight:1.4, color:"#111",
-                            borderLeft:`2px solid ${grp?.color||"#555"}`,
-                            paddingLeft:3, marginBottom:1 }}>
+                          <div key={e.id} style={{ fontSize:treatFontPx, lineHeight:1.3, color:"#111",
+                            borderLeft:`3px solid ${grp?.color||"#555"}`,
+                            paddingLeft:4, marginBottom:2 }}>
                             {label}
                           </div>
                         );
