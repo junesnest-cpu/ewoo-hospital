@@ -387,6 +387,7 @@ function PendingCard({ change, onApprove, onReject }) {
     admitDate: p.admitDate || "",
     transferToRoom: p.transferToRoom || "",
     treatments: p.treatments || [],
+    weeklySchedule: p.weeklySchedule || "",
     dischargeNote: p.dischargeNote || "",
     roomFeeType: p.roomFeeType || "",
     note: p.note || "",
@@ -427,7 +428,7 @@ function PendingCard({ change, onApprove, onReject }) {
     <div style={H.card}>
       {/* 카드 헤더 */}
       <div style={H.cardHead}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={H.sourceTag}>📱 네이버 웍스</span>
           <span style={{
             ...H.actionTag,
@@ -436,6 +437,11 @@ function PendingCard({ change, onApprove, onReject }) {
           }}>
             {ACTION_LABELS[form.action] || form.action}
           </span>
+          {change.totalItems > 1 && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", background: "#f5f3ff", borderRadius: 8, padding: "2px 7px" }}>
+              {change.totalItems}건 중 {(change.itemIndex ?? 0) + 1}번째
+            </span>
+          )}
         </div>
         <span style={H.timeAgo}>{relativeTime(change.ts)}</span>
       </div>
@@ -562,6 +568,19 @@ function PendingCard({ change, onApprove, onReject }) {
               <option value="O">O (일반)</option>
             </select>
           </div>
+
+          {/* 요일별 치료 스케줄 */}
+          {(form.weeklySchedule || form.treatments?.length > 0) && (
+            <div style={{ ...H.field, gridColumn: "1 / -1" }}>
+              <label style={H.label}>요일별 치료 스케줄</label>
+              <input
+                value={form.weeklySchedule || ""}
+                onChange={(e) => setF("weeklySchedule", e.target.value)}
+                style={H.input}
+                placeholder="예: 고주파 월수금, 자닥신 월목, 이스카도 월수금"
+              />
+            </div>
+          )}
 
           {/* 특이사항 */}
           <div style={{ ...H.field, gridColumn: "1 / -1" }}>

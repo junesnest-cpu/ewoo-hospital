@@ -26,43 +26,52 @@ const WARD_ROOMS = {
   '601': 6, '602': 1, '603': 6,
 };
 
+// 배열 형태로 여러 액션 반환
 async function parseMessageWithClaude(text) {
   const today = new Date();
   const month = today.getMonth() + 1;
   const year  = today.getFullYear();
 
   const prompt = `오늘은 ${year}년 ${month}월입니다.
-병원 병동 채팅 메시지에서 환자 정보를 추출하여 JSON만 반환하세요 (설명 없이).
+병원 병동 채팅 메시지에서 환자/액션별로 분리하여 JSON 배열만 반환하세요 (설명 없이).
+
+규칙:
+- 환자가 여러 명이면 각각 별도 항목
+- 한 환자에게 액션이 여러 개면(예: 퇴원+재입원) 항목을 분리
+- 치료계획 변경 시 treatments 배열에 치료명 기재, weeklySchedule에 요일 기재
+- 병원 업무와 무관한 메시지는 빈 배열 [] 반환
 
 메시지: "${text}"
 
-반환 형식:
-{
-  "action": "discharge_update" | "transfer" | "admit_plan" | "update" | "ignore",
-  "room": "병실번호 또는 null",
-  "bedNumber": 병상번호 또는 null,
-  "slotKey": "305-2 같은 직접 병상키 또는 null",
-  "name": "환자명 또는 null",
-  "dischargeDate": "M/D 형식 퇴원예정일 또는 null",
-  "admitDate": "M/D 형식 입원예정일 또는 null",
-  "transferToRoom": "전실할 병실번호 또는 null",
-  "treatments": [],
-  "dischargeNote": "퇴원약 정보 또는 null",
-  "roomFeeType": "F" 또는 "O" 또는 null,
-  "note": "기타 특이사항 또는 null",
-  "scheduleAlert": false
-}
+반환 형식 (배열):
+[
+  {
+    "action": "discharge_update" | "transfer" | "admit_plan" | "update" | "ignore",
+    "room": "병실번호 또는 null",
+    "bedNumber": 병상번호 또는 null,
+    "slotKey": "305-2 형식 또는 null",
+    "name": "환자명 또는 null",
+    "dischargeDate": "M/D 형식 퇴원예정일 또는 null",
+    "admitDate": "M/D 형식 입원예정일 또는 null",
+    "transferToRoom": "전실할 병실번호 또는 null",
+    "treatments": [],
+    "weeklySchedule": "예: 고주파 월수금, 자닥신 월목 (요일 정보 있을 때)",
+    "dischargeNote": "퇴원약 정보 또는 null",
+    "roomFeeType": "F" 또는 "O" 또는 null,
+    "note": "기타 특이사항 또는 null",
+    "scheduleAlert": false
+  }
+]
 
-파싱 규칙:
-- "15일 퇴원예정" → dischargeDate: "${month}/15"
-- "4/3퇴원" → dischargeDate: "4/3"
-- "병실료F" → roomFeeType: "F", "병실료O" → roomFeeType: "O"
+파싱 예시:
 - "305-2 류미경님" → slotKey: "305-2", room: "305", bedNumber: 2
-- "306호 안규자님" → room: "306", bedNumber: null, slotKey: null
-- "퇴원후 501호 전실예정" → action: "transfer", transferToRoom: "501"
-- 치료 항목(이뮤알파/메시마/고주파/자닥신/이스카도/림프도수/페인/셀레나제/페리주/싸이원 등) → treatments 배열
-- 스케줄/일정 확인 필요 언급 → scheduleAlert: true
-- action: 퇴원일 업데이트="discharge_update", 전실="transfer", 입원예약="admit_plan", 기타="update", 관계없는 메시지="ignore"`;
+- "306호 안규자님" → room: "306"
+- "15일 퇴원예정" → dischargeDate: "${month}/15"
+- "퇴원 후 재입원" → 퇴원(discharge_update) + 재입원(admit_plan) 2개 항목
+- "병실료F" → roomFeeType: "F"
+- 치료 항목(이뮤알파/메시마/고주파/자닥신/이스카도/림프도수/페인/셀레나제/페리주/싸이원) → treatments 배열
+- "고주파 주3회 자닥신 월목 이스카도 월수금" → treatments: ["고주파","자닥신","이스카도"], weeklySchedule: "고주파 주3회, 자닥신 월목, 이스카도 월수금"
+- 스케줄/일정 확인 필요 → scheduleAlert: true`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -73,7 +82,7 @@ async function parseMessageWithClaude(text) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -83,10 +92,15 @@ async function parseMessageWithClaude(text) {
 
   const raw = data.content?.map((c) => c.text || '').join('') || '';
 
-  // { ... } 블록을 정규식으로 직접 추출 (앞뒤 설명 텍스트 무시)
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error(`JSON 블록 없음. 응답: ${raw.slice(0, 200)}`);
-  return JSON.parse(jsonMatch[0]);
+  // 배열 [ ... ] 또는 객체 { ... } 추출
+  const arrMatch = raw.match(/\[[\s\S]*\]/);
+  if (arrMatch) {
+    const result = JSON.parse(arrMatch[0]);
+    return Array.isArray(result) ? result : [result];
+  }
+  const objMatch = raw.match(/\{[\s\S]*\}/);
+  if (objMatch) return [JSON.parse(objMatch[0])];
+  throw new Error(`JSON 블록 없음. 응답: ${raw.slice(0, 200)}`);
 }
 
 function findPatientInRoom(slots, roomId, patientName) {
@@ -197,51 +211,71 @@ export default async function handler(req, res) {
       }
     }
 
-    // ignore 처리
-    if (parsed?.action === 'ignore') {
+    // 파싱 결과 정규화 (배열 보장)
+    const parsedItems = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
+
+    // 전부 ignore면 저장 안 함
+    const actionable = parsedItems.filter(p => p?.action !== 'ignore' && p?.name);
+    if (parsedItems.length > 0 && actionable.length === 0) {
       await db.ref(`webhookLogs/${changeId}`).update({ status: 'ignored', reason: '관련 없는 메시지' });
-      return res.status(200).json({ status: 'ignored', reason: '관련 없는 메시지', parsed });
+      return res.status(200).json({ status: 'ignored', reason: '관련 없는 메시지' });
     }
 
-    // suggestedSlotKey 계산
-    let suggestedSlotKey = null;
-    if (parsed?.name && !parseError) {
-      try {
-        const snap  = await db.ref('slots').once('value');
-        const slots = snap.val() || {};
-        if (parsed.slotKey) {
-          suggestedSlotKey = parsed.slotKey;
-        } else if (parsed.room) {
-          suggestedSlotKey = parsed.bedNumber
-            ? `${parsed.room}-${parsed.bedNumber}`
-            : findPatientInRoom(slots, parsed.room, parsed.name) ||
-              findEmptyBed(slots, parsed.room);
+    // 파싱 실패 시 빈 항목 하나 생성 (직접 입력용)
+    const itemsToSave = (parseError || actionable.length === 0) ? [null] : actionable;
+
+    // slots 한 번만 조회
+    let slots = {};
+    try {
+      const snap = await db.ref('slots').once('value');
+      slots = snap.val() || {};
+    } catch { /* 무시 */ }
+
+    const savedIds = [];
+    for (let i = 0; i < itemsToSave.length; i++) {
+      const item = itemsToSave[i];
+      const itemId = i === 0 ? changeId : `${changeId}-${i}`;
+
+      let suggestedSlotKey = null;
+      if (item?.name) {
+        if (item.slotKey) {
+          suggestedSlotKey = item.slotKey;
+        } else if (item.room) {
+          suggestedSlotKey = item.bedNumber
+            ? `${item.room}-${item.bedNumber}`
+            : findPatientInRoom(slots, item.room, item.name) ||
+              findEmptyBed(slots, item.room);
         }
-      } catch { /* slots 조회 실패 시 무시 */ }
+      }
+
+      await db.ref(`pendingChanges/${itemId}`).set({
+        id:               itemId,
+        messageId:        changeId,       // 같은 메시지에서 온 항목끼리 연결
+        itemIndex:        i,
+        totalItems:       itemsToSave.length,
+        ts,
+        status:           'pending',
+        source:           'naver-works',
+        userId:           extracted.source?.userId    || null,
+        channelId:        extracted.source?.channelId || null,
+        message:          messageText,
+        parsed:           item             || null,
+        suggestedSlotKey: suggestedSlotKey || null,
+        parseError:       item ? null : (parseError || '파싱 결과 없음'),
+      });
+      savedIds.push(itemId);
     }
 
-    // pendingChanges 저장
-    await db.ref(`pendingChanges/${changeId}`).set({
-      id:               changeId,
-      ts,
-      status:           'pending',
-      source:           'naver-works',
-      userId:           extracted.source?.userId    || null,
-      channelId:        extracted.source?.channelId || null,
-      message:          messageText,
-      parsed:           parsed           || null,
-      suggestedSlotKey: suggestedSlotKey || null,
-      parseError:       parseError       || null,
+    await db.ref(`webhookLogs/${changeId}`).update({
+      status:     'saved',
+      savedCount: savedIds.length,
+      savedIds:   savedIds.join(','),
     });
 
-    // raw 로그도 업데이트
-    await db.ref(`webhookLogs/${changeId}`).update({ status: 'saved', pendingId: changeId });
-
     return res.status(200).json({
-      status:           parseError ? 'pending_no_parse' : 'pending',
-      changeId,
-      suggestedSlotKey,
-      parsed,
+      status:     parseError ? 'pending_no_parse' : 'pending',
+      savedCount: savedIds.length,
+      savedIds,
       parseError,
     });
 
