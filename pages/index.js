@@ -327,7 +327,7 @@ export default function HospitalWardManager() {
       const rEnd = rD ? dateOnly(rD) : null;
       if (rEnd && toD) { if (dateOnly(rA) <= toD && rEnd >= fromD) return false; }
       else if (rEnd)   { if (rEnd >= fromD) return false; }
-      else             { if (dateOnly(rA) >= fromD) return false; }
+      else             { if (!toD || dateOnly(rA) <= toD) return false; }
     }
     return true;
   };
@@ -396,7 +396,7 @@ export default function HospitalWardManager() {
           let overlaps = false;
           if (rEnd && dischargeD) overlaps = dateOnly(rA) <= dischargeD && rEnd >= admitD;
           else if (rEnd)          overlaps = rEnd >= admitD;
-          else                    overlaps = dateOnly(rA) >= admitD;
+          else                    overlaps = !dischargeD || dateOnly(rA) <= dischargeD;
           if (!overlaps) return;
 
           const alts = findAltSlots(slotsData, slotKey, room.type, dateOnly(rA), rEnd);
