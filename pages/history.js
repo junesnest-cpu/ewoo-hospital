@@ -447,6 +447,13 @@ function PendingCard({ change, onApprove, onReject }) {
         {change.userId && <div style={H.userId}>보낸 사람: {change.userId}</div>}
       </div>
 
+      {/* AI 파싱 실패 경고 */}
+      {change.parseError && (
+        <div style={{ margin: "0 14px 0", background: "#fef3c7", borderRadius: 7, padding: "8px 12px", fontSize: 12, color: "#92400e", borderBottom: "1px solid #fde68a" }}>
+          ⚠ AI 파싱 실패: {change.parseError} — 아래 입력란을 직접 채워주세요.
+        </div>
+      )}
+
       {/* AI 파싱 결과 — 편집 가능 */}
       <div style={{ padding: "12px 14px" }}>
         <div style={H.sectionTitle}>🤖 AI 파싱 결과 <span style={H.editHint}>직접 수정 가능</span></div>

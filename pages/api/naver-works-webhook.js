@@ -81,9 +81,12 @@ async function parseMessageWithClaude(text) {
   const data = await response.json();
   if (data.error) throw new Error(`Claude API 오류: ${data.error.message}`);
 
-  const raw     = data.content?.map((c) => c.text || '').join('') || '';
-  const cleaned = raw.replace(/```json|```/g, '').trim();
-  return JSON.parse(cleaned);
+  const raw = data.content?.map((c) => c.text || '').join('') || '';
+
+  // { ... } 블록을 정규식으로 직접 추출 (앞뒤 설명 텍스트 무시)
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error(`JSON 블록 없음. 응답: ${raw.slice(0, 200)}`);
+  return JSON.parse(jsonMatch[0]);
 }
 
 function findPatientInRoom(slots, roomId, patientName) {
