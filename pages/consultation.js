@@ -358,14 +358,16 @@ export default function ConsultationPage() {
             </div>
           )}
 
-          {/* 기본 인적사항 */}
+          {/* 기본 정보 + 진단 (합친 섹션) */}
           <div style={S.section}>
-            <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:12}}>
+            <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:10}}>
               <span style={{fontSize:14, fontWeight:800, color:"#0f2744"}}>👤 기본 정보</span>
               {editId && form.createdAt && (
                 <span style={{fontSize:12, color:"#94a3b8", fontWeight:500}}>등록일: {form.createdAt}</span>
               )}
             </div>
+
+            {/* 이름 + 상태 */}
             <div style={S.row2}>
               <div style={S.field}>
                 <label style={S.lbl}>이름 *</label>
@@ -378,62 +380,27 @@ export default function ConsultationPage() {
                 </select>
               </div>
             </div>
-            <div style={S.row2}>
+
+            {/* 출생연도 + 나이 + 진단명 + 병원 (4열) */}
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8, marginBottom:8}}>
               <div style={S.field}>
                 <label style={S.lbl}>출생연도</label>
-                <div style={{display:"flex", alignItems:"center", gap:6}}>
-                  <input style={{...S.inp, flex:1}} value={form.birthYear}
-                    onChange={e=>{
-                      const v=e.target.value; setF("birthYear",v);
-                      const a=calcAge(v); if(a) setF("age",a);
-                    }} placeholder="1955"/>
-                  {form.birthYear && calcAge(form.birthYear) && (
-                    <span style={{fontSize:12, color:"#059669", fontWeight:700, whiteSpace:"nowrap"}}>만 {calcAge(form.birthYear)}세</span>
-                  )}
+                <div style={{display:"flex", alignItems:"center", gap:4}}>
+                  <input style={{...S.inp, flex:1, minWidth:0}} value={form.birthYear}
+                    onChange={e=>{ const v=e.target.value; setF("birthYear",v); const a=calcAge(v); if(a) setF("age",a); }} placeholder="1955"/>
                 </div>
+                {form.birthYear && calcAge(form.birthYear) && (
+                  <span style={{fontSize:11, color:"#059669", fontWeight:700}}>→ {calcAge(form.birthYear)}세</span>
+                )}
               </div>
               <div style={S.field}>
                 <label style={S.lbl}>나이 (만)</label>
-                <div style={{display:"flex", alignItems:"center", gap:6}}>
-                  <input style={{...S.inp, flex:1}} value={form.age}
-                    onChange={e=>{
-                      const v=e.target.value; setF("age",v);
-                      const by=calcBirthYear(v); if(by) setF("birthYear",by);
-                    }} placeholder="70"/>
-                  {form.age && calcBirthYear(form.age) && (
-                    <span style={{fontSize:12, color:"#0369a1", fontWeight:700, whiteSpace:"nowrap"}}>{calcBirthYear(form.age)}년생</span>
-                  )}
-                </div>
+                <input style={S.inp} value={form.age}
+                  onChange={e=>{ const v=e.target.value; setF("age",v); const by=calcBirthYear(v); if(by) setF("birthYear",by); }} placeholder="70"/>
+                {form.age && calcBirthYear(form.age) && (
+                  <span style={{fontSize:11, color:"#0369a1", fontWeight:700}}>→ {calcBirthYear(form.age)}년생</span>
+                )}
               </div>
-            </div>
-            {/* 연락처 1 */}
-            <div style={S.row2}>
-              <div style={S.field}>
-                <label style={S.lbl}>연락처 (본인)</label>
-                <input style={S.inp} value={form.phone} onChange={e=>setF("phone",e.target.value)} placeholder="010-0000-0000"/>
-              </div>
-              <div style={S.field}>
-                <label style={S.lbl}>관계</label>
-                <input style={S.inp} value={form.phoneNote} onChange={e=>setF("phoneNote",e.target.value)} placeholder="본인, 자녀 등"/>
-              </div>
-            </div>
-            {/* 연락처 2 */}
-            <div style={S.row2}>
-              <div style={S.field}>
-                <label style={S.lbl}>연락처 (보호자)</label>
-                <input style={S.inp} value={form.phone2} onChange={e=>setF("phone2",e.target.value)} placeholder="010-0000-0000"/>
-              </div>
-              <div style={S.field}>
-                <label style={S.lbl}>관계</label>
-                <input style={S.inp} value={form.phone2Note} onChange={e=>setF("phone2Note",e.target.value)} placeholder="딸, 아들, 배우자 등"/>
-              </div>
-            </div>
-          </div>
-
-          {/* 진단 정보 */}
-          <div style={S.section}>
-            <div style={S.sectionTitle}>🏥 진단 정보</div>
-            <div style={S.row2}>
               <div style={S.field}>
                 <label style={S.lbl}>진단명</label>
                 <input style={S.inp} value={form.diagnosis} onChange={e=>setF("diagnosis",e.target.value)} placeholder="유방암 2기"/>
@@ -444,61 +411,81 @@ export default function ConsultationPage() {
               </div>
             </div>
 
-            {/* 수술 */}
-            <div style={S.treatRow}>
-              <label style={S.checkLabel}>
-                <input type="checkbox" checked={form.surgery} onChange={e=>setF("surgery",e.target.checked)}/>
-                <span>수술</span>
-              </label>
-              {form.surgery && (
-                <input style={{...S.inp, flex:1}} type="date" value={form.surgeryDate} onChange={e=>setF("surgeryDate",e.target.value)}/>
-              )}
+            {/* 연락처 2행 */}
+            <div style={{display:"grid", gridTemplateColumns:"2fr 1fr 2fr 1fr", gap:8, marginBottom:8}}>
+              <div style={S.field}>
+                <label style={S.lbl}>연락처 (본인)</label>
+                <input style={S.inp} value={form.phone} onChange={e=>setF("phone",e.target.value)} placeholder="010-0000-0000"/>
+              </div>
+              <div style={S.field}>
+                <label style={S.lbl}>관계</label>
+                <input style={S.inp} value={form.phoneNote} onChange={e=>setF("phoneNote",e.target.value)} placeholder="본인"/>
+              </div>
+              <div style={S.field}>
+                <label style={S.lbl}>연락처 (보호자)</label>
+                <input style={S.inp} value={form.phone2} onChange={e=>setF("phone2",e.target.value)} placeholder="010-0000-0000"/>
+              </div>
+              <div style={S.field}>
+                <label style={S.lbl}>관계</label>
+                <input style={S.inp} value={form.phone2Note} onChange={e=>setF("phone2Note",e.target.value)} placeholder="딸"/>
+              </div>
             </div>
-            {/* 항암 */}
-            <div style={S.treatRow}>
-              <label style={S.checkLabel}>
-                <input type="checkbox" checked={form.chemo} onChange={e=>setF("chemo",e.target.checked)}/>
-                <span>항암</span>
-              </label>
-              {form.chemo && (
-                <input style={{...S.inp, flex:1}} type="date" value={form.chemoDate} onChange={e=>setF("chemoDate",e.target.value)}/>
-              )}
-            </div>
-            {/* 방사선 */}
-            <div style={S.treatRow}>
-              <label style={S.checkLabel}>
-                <input type="checkbox" checked={form.radiation} onChange={e=>setF("radiation",e.target.checked)}/>
-                <span>방사선</span>
-              </label>
-              {form.radiation && (
-                <input style={{...S.inp, flex:1}} type="date" value={form.radiationDate} onChange={e=>setF("radiationDate",e.target.value)}/>
-              )}
+
+            {/* 치료 이력: 수술 | 항암 | 방사선 한 줄 */}
+            <div style={{display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-start"}}>
+              <div style={{display:"flex", alignItems:"center", gap:6}}>
+                <label style={{...S.checkLabel, minWidth:"auto"}}>
+                  <input type="checkbox" checked={form.surgery} onChange={e=>setF("surgery",e.target.checked)}/>
+                  <span>수술</span>
+                </label>
+                {form.surgery && <input style={{...S.inp, width:140}} type="date" value={form.surgeryDate} onChange={e=>setF("surgeryDate",e.target.value)}/>}
+              </div>
+              <div style={{display:"flex", alignItems:"center", gap:6}}>
+                <label style={{...S.checkLabel, minWidth:"auto"}}>
+                  <input type="checkbox" checked={form.chemo} onChange={e=>setF("chemo",e.target.checked)}/>
+                  <span>항암</span>
+                </label>
+                {form.chemo && <input style={{...S.inp, width:140}} type="date" value={form.chemoDate} onChange={e=>setF("chemoDate",e.target.value)}/>}
+              </div>
+              <div style={{display:"flex", alignItems:"center", gap:6}}>
+                <label style={{...S.checkLabel, minWidth:"auto"}}>
+                  <input type="checkbox" checked={form.radiation} onChange={e=>setF("radiation",e.target.checked)}/>
+                  <span>방사선</span>
+                </label>
+                {form.radiation && <input style={{...S.inp, width:140}} type="date" value={form.radiationDate} onChange={e=>setF("radiationDate",e.target.value)}/>}
+              </div>
             </div>
           </div>
 
-          {/* 입원 희망 */}
+          {/* 입원 희망 + 기타 요청사항 */}
           <div style={S.section}>
             <div style={S.sectionTitle}>📅 입원 희망</div>
-            <div style={S.field}>
-              <label style={S.lbl}>입원 예약일</label>
-              <input style={S.inp} type="date" value={form.admitDate} onChange={e=>setF("admitDate",e.target.value)}/>
-            </div>
-            <div style={S.field}>
-              <label style={S.lbl}>희망 병실 (복수 선택)</label>
-              <div style={{display:"flex", gap:8, flexWrap:"wrap", marginTop:4}}>
-                {ROOM_TYPES.map(rt=>(
-                  <button key={rt} style={{border:`1.5px solid ${TYPE_COLOR[rt]}`, borderRadius:8, padding:"6px 14px",
-                    background: form.roomTypes.includes(rt) ? TYPE_COLOR[rt] : TYPE_BG[rt],
-                    color: form.roomTypes.includes(rt) ? "#fff" : TYPE_COLOR[rt],
-                    fontWeight:700, fontSize:13, cursor:"pointer"}}
-                    onClick={()=>toggleRoomType(rt)}>{rt}</button>
-                ))}
+
+            {/* 입원예약일 + 희망병실 한 줄 */}
+            <div style={{display:"flex", gap:16, alignItems:"flex-start", marginBottom:12, flexWrap:"wrap"}}>
+              <div style={{minWidth:160}}>
+                <label style={S.lbl}>입원 예약일</label>
+                <input style={{...S.inp, width:160}} type="date" value={form.admitDate} onChange={e=>setF("admitDate",e.target.value)}/>
+              </div>
+              <div style={{flex:1}}>
+                <label style={S.lbl}>희망 병실 (복수 선택)</label>
+                <div style={{display:"flex", gap:8, flexWrap:"wrap", marginTop:4}}>
+                  {ROOM_TYPES.map(rt=>(
+                    <button key={rt} style={{border:`1.5px solid ${TYPE_COLOR[rt]}`, borderRadius:8, padding:"6px 14px",
+                      background: form.roomTypes.includes(rt) ? TYPE_COLOR[rt] : TYPE_BG[rt],
+                      color: form.roomTypes.includes(rt) ? "#fff" : TYPE_COLOR[rt],
+                      fontWeight:700, fontSize:13, cursor:"pointer"}}
+                      onClick={()=>toggleRoomType(rt)}>{rt}</button>
+                  ))}
+                </div>
               </div>
             </div>
+
+            {/* 기타 요청사항 — 크게 */}
             <div style={S.field}>
               <label style={S.lbl}>기타 요청사항</label>
-              <textarea style={{...S.inp, height:80, resize:"vertical"}} value={form.memo}
-                onChange={e=>setF("memo",e.target.value)} placeholder="요청사항 입력"/>
+              <textarea style={{...S.inp, minHeight:260, resize:"vertical"}} value={form.memo}
+                onChange={e=>setF("memo",e.target.value)} placeholder="요청사항, 특이사항, 상담 내용 등 자유롭게 입력"/>
             </div>
           </div>
 
