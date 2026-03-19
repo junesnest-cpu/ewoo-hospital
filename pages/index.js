@@ -663,6 +663,7 @@ export default function HospitalWardManager() {
                         { label:"📅 월간 예정표", action:() => router.push("/monthly") },
                         { label:"🏥 치료실", action:() => router.push("/therapy") },
                         { label:"📋 상담일지", action:() => router.push("/consultation") },
+                        { label:"📋 일일 현황판", action:() => router.push("/daily-board") },
                         { label:"📋 일일 치료", action:() => router.push("/daily") },
                         { label:"📜 변경 이력", action:() => setView("log") },
                         { label:"👤 환자조회", action:() => router.push("/patients") },
@@ -731,6 +732,7 @@ export default function HospitalWardManager() {
                   borderRadius:8, boxShadow:"0 8px 24px rgba(0,0,0,0.4)", minWidth:160, overflow:"hidden", zIndex:50 }}
                   onMouseLeave={() => setMoreOpen(false)}>
                   {[
+                    { label:"📋 일일 현황판", action:() => router.push("/daily-board"), color:"#fde68a" },
                     { label:"📋 일일 치료", action:() => router.push("/daily"), color:"#6ee7b7" },
                     { label:"📜 변경 이력", action:() => { setView("log"); setMoreOpen(false); }, color:"#cbd5e1" },
                     { label:"👤 환자조회", action:() => router.push("/patients"), color:"#93c5fd" },
