@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 
@@ -51,12 +51,34 @@ export default function MonthlySchedule() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [slots, setSlots] = useState({});
   const [consultations, setConsultations] = useState({});
+  const [memo, setMemo] = useState("");
+  const [memoEdit, setMemoEdit] = useState("");
+  const [memoEditing, setMemoEditing] = useState(false);
+  const [memoSaving, setMemoSaving] = useState(false);
 
   useEffect(() => {
     const u1 = onValue(ref(db,"slots"), snap => setSlots(snap.val() || {}));
     const u2 = onValue(ref(db,"consultations"), snap => setConsultations(snap.val() || {}));
     return () => { u1(); u2(); };
   }, []);
+
+  const memoKey = `${year}-${String(month).padStart(2,"0")}`;
+  useEffect(() => {
+    const u = onValue(ref(db, `monthlyMemos/${memoKey}`), snap => {
+      const val = snap.val() || "";
+      setMemo(val);
+      setMemoEdit(val);
+      setMemoEditing(false);
+    });
+    return () => u();
+  }, [memoKey]);
+
+  async function saveMemo() {
+    setMemoSaving(true);
+    await set(ref(db, `monthlyMemos/${memoKey}`), memoEdit);
+    setMemoSaving(false);
+    setMemoEditing(false);
+  }
 
   // 해당 월의 날짜별 입원/퇴원 명단 계산
   const calendarData = useMemo(() => {
@@ -150,6 +172,8 @@ export default function MonthlySchedule() {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .no-print { display: none !important; }
       .print-grid { font-size: 9px !important; }
+      .print-title { display: block !important; }
+      .print-memo { display: block !important; }
     }
   `;
 
@@ -183,9 +207,51 @@ export default function MonthlySchedule() {
         </div>
       </div>
 
+      {/* 공지/메모 */}
+      <div style={{ background:"#fffbeb", borderBottom:"1px solid #fde68a", padding:"8px 20px", display:"flex", alignItems:"flex-start", gap:10 }}>
+        <span style={{ fontSize:14, flexShrink:0, marginTop:2 }}>📌</span>
+        {memoEditing ? (
+          <div style={{ flex:1, display:"flex", gap:8, alignItems:"flex-start" }}>
+            <textarea
+              value={memoEdit}
+              onChange={e => setMemoEdit(e.target.value)}
+              placeholder={`${year}년 ${month}월 공지 및 메모를 입력하세요...`}
+              rows={3}
+              style={{ flex:1, border:"1px solid #fcd34d", borderRadius:6, padding:"6px 10px",
+                fontSize:13, resize:"vertical", fontFamily:"inherit", background:"#fff" }}
+            />
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              <button onClick={saveMemo} disabled={memoSaving}
+                style={{ background:"#d97706", color:"#fff", border:"none", borderRadius:6,
+                  padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight:700 }}>
+                {memoSaving ? "저장 중..." : "저장"}
+              </button>
+              <button onClick={() => { setMemoEditing(false); setMemoEdit(memo); }}
+                style={{ background:"#e5e7eb", color:"#374151", border:"none", borderRadius:6,
+                  padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight:600 }}>
+                취소
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ flex:1, display:"flex", alignItems:"flex-start", gap:8 }}>
+            <span style={{ flex:1, fontSize:13, color: memo ? "#78350f" : "#a16207", whiteSpace:"pre-wrap", lineHeight:1.6,
+              minHeight:20 }}>
+              {memo || <span style={{ color:"#d97706", fontStyle:"italic" }}>이번 달 공지/메모 없음 — 편집 버튼을 눌러 추가</span>}
+            </span>
+            <button className="no-print" onClick={() => setMemoEditing(true)}
+              style={{ flexShrink:0, background:"#fef3c7", color:"#92400e", border:"1px solid #fcd34d",
+                borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:12, fontWeight:700 }}>
+              ✏️ 편집
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* 인쇄용 제목 */}
       <div style={{ display:"none" }} className="print-title">
         <h2 style={{ textAlign:"center", margin:"4mm 0 2mm", fontSize:14 }}>{year}년 {month}월 입퇴원 예정표</h2>
+        {memo && <p style={{ textAlign:"center", fontSize:10, color:"#78350f", margin:"0 0 2mm" }}>📌 {memo}</p>}
       </div>
 
       {/* 달력 */}
