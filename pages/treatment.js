@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, set } from "firebase/database";
+import { ref, onValue, set, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 
@@ -155,13 +155,23 @@ export default function TreatmentPage() {
   const [roomFree,  setRoomFree]  = useState(false); // 병실료 프리 옵션
   const [weeklyPlan,setWeeklyPlan]= useState({}); // {itemId: {count:N, price:P}} 주N회 계획
   const [showWkPlan,setShowWkPlan]= useState(false); // 주간 계획 패널 토글
+  const [resolvedPatientId, setResolvedPatientId] = useState(""); // URL에 없으면 슬롯에서 조회
 
   useEffect(() => {
     if (!slotKey) return;
     const unsub1 = onValue(ref(db, `treatmentPlans/${slotKey}`), snap => setPlan(snap.val() || {}));
     const unsub2 = onValue(ref(db, `weeklyPlans/${slotKey}`), snap => setWeeklyPlan(snap.val() || {}));
+    // patientId가 URL에 없으면 슬롯 데이터에서 조회
+    if (patientId) {
+      setResolvedPatientId(patientId);
+    } else {
+      get(ref(db, `slots/${slotKey}`)).then(snap => {
+        const pid = snap.val()?.current?.patientId;
+        if (pid) setResolvedPatientId(pid);
+      });
+    }
     return () => { unsub1(); unsub2(); };
-  }, [slotKey]);
+  }, [slotKey, patientId]);
 
   const saveWeeklyPlan = useCallback(async (newPlan) => {
     setWeeklyPlan(newPlan);
@@ -310,8 +320,8 @@ export default function TreatmentPage() {
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize: isMobile ? 16 : 20, fontWeight:800, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
               <span
-                onClick={patientId ? () => router.push(`/patients?id=${encodeURIComponent(patientId)}`) : undefined}
-                style={patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}}>
+                onClick={resolvedPatientId ? () => router.push(`/patients?id=${encodeURIComponent(resolvedPatientId)}`) : undefined}
+                style={resolvedPatientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}}>
                 {name || slotKey}
               </span>님
             </div>
@@ -387,11 +397,16 @@ export default function TreatmentPage() {
       {/* 주N회 계획 패널 */}
       {showWkPlan && (
         <div style={{ background:"#f0f9ff", borderBottom:"1px solid #bae6fd", padding:"12px 20px" }}>
-          <div style={{ fontSize:14, fontWeight:800, color:"#0369a1", marginBottom:10 }}>
-            📋 주간 치료 계획 (주N회)
-            <span style={{ fontSize:12, fontWeight:400, color:"#64748b", marginLeft:8 }}>
-              — 치료실에서 실제 입력 시 날짜에 반영되고 계획에서 제거됩니다
-            </span>
+          <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:10 }}>
+            <span style={{ fontSize:14, fontWeight:800, color:"#0369a1" }}>📋 주간 치료 계획 (주N회)</span>
+            <span style={{ fontSize:12, color:"#64748b" }}>— 실제 입력 시 날짜에 반영되고 계획에서 제거됩니다</span>
+            {resolvedPatientId && (
+              <button onClick={() => router.push(`/patients?id=${encodeURIComponent(resolvedPatientId)}`)}
+                style={{ marginLeft:"auto", background:"#0f2744", color:"#fff", border:"none", borderRadius:7,
+                  padding:"4px 14px", cursor:"pointer", fontSize:13, fontWeight:700, flexShrink:0 }}>
+                👤 환자 정보
+              </button>
+            )}
           </div>
           <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 }}>
             {TREATMENT_GROUPS.flatMap(g=>g.items).filter(item=>
