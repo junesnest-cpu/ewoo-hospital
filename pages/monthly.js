@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
@@ -450,6 +450,8 @@ export default function MonthlySchedule() {
           onSave={saveEdit}
           onClose={() => setEditModal(null)}
           saving={editSaving}
+          slots={slots}
+          consultations={consultations}
         />
       )}
     </div>
@@ -457,9 +459,56 @@ export default function MonthlySchedule() {
 }
 
 /* ── 날짜 편집 모달 ── */
-function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDis, onSave, onClose, saving }) {
+function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDis, onSave, onClose, saving, slots, consultations }) {
   const d = new Date(dateKey);
   const label = `${d.getMonth()+1}월 ${d.getDate()}일 (${DOW[d.getDay()]})`;
+
+  // slots + consultations → 자동완성용 환자 목록
+  const allPatients = useMemo(() => {
+    const list = [];
+    const seen = new Set();
+    const add = (p) => {
+      const key = `${p.source}::${p.name}::${p.room}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      list.push(p);
+    };
+
+    // 현재 입원 환자
+    Object.entries(slots || {}).forEach(([slotKey, slot]) => {
+      const [roomId, bedNum] = slotKey.split("-");
+      const room = `${roomId}-${bedNum}`;
+      if (slot?.current?.name) {
+        add({ name: slot.current.name, room, note: slot.current.note || "",
+          isNew: false, isReserved: false, source:"current", sourceBadge:"입원중",
+          doctor: slot.current.doctor || "" });
+      }
+      (slot?.reservations || []).forEach(r => {
+        if (r?.name) add({ name: r.name, room, note: r.note || "",
+          isNew: false, isReserved: true, source:"reservation", sourceBadge:"예약",
+          doctor: "" });
+      });
+    });
+
+    // 상담일지 환자
+    Object.values(consultations || {}).forEach(c => {
+      if (!c?.name) return;
+      const noteFields = [];
+      if (c.birthYear) noteFields.push(`${new Date().getFullYear()-parseInt(c.birthYear)}세`);
+      if (c.diagnosis) noteFields.push(c.diagnosis);
+      if (c.hospital)  noteFields.push(c.hospital);
+      if (c.surgery)   noteFields.push(c.surgeryDate ? `수술후(${c.surgeryDate})` : "수술후");
+      if (c.chemo)     noteFields.push(c.chemoDate   ? `항암(${c.chemoDate})`     : "항암중");
+      if (c.radiation) noteFields.push("방사선");
+      add({ name: c.name, room: c.roomTypes?.join("/") || "",
+        note: noteFields.join(" · "),
+        isNew: true, isReserved: c.status === "예약완료",
+        source:"consultation", sourceBadge:"상담",
+        doctor: "" });
+    });
+
+    return list;
+  }, [slots, consultations]);
 
   function updateAdm(id, field, val) {
     onChangeAdm(rows => rows.map(r => r.id===id ? {...r, [field]:val} : r));
@@ -467,13 +516,30 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
   function updateDis(id, field, val) {
     onChangeDis(rows => rows.map(r => r.id===id ? {...r, [field]:val} : r));
   }
+  function selectAdm(id, p) {
+    onChangeAdm(rows => rows.map(r => r.id!==id ? r : {
+      ...r,
+      name: p.name,
+      room: r.room || p.room,
+      note: r.note || p.note,
+      isNew: p.isNew,
+      isReserved: p.isReserved,
+    }));
+  }
+  function selectDis(id, p) {
+    onChangeDis(rows => rows.map(r => r.id!==id ? r : {
+      ...r,
+      name: p.name,
+      room: r.room || p.room,
+    }));
+  }
 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:200,
       display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
       onClick={onClose}>
-      <div style={{ background:"#fff", borderRadius:12, width:"100%", maxWidth:600,
-        maxHeight:"90vh", overflow:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}
+      <div style={{ background:"#fff", borderRadius:12, width:"100%", maxWidth:660,
+        maxHeight:"92vh", overflow:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}
         onClick={e => e.stopPropagation()}>
 
         {/* 모달 헤더 */}
@@ -497,38 +563,46 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
               <div style={{ color:"#94a3b8", fontSize:13, padding:"8px 0" }}>입원 항목 없음</div>
             )}
             {admissions.map(row => (
-              <div key={row.id} style={{ display:"flex", gap:6, alignItems:"center",
+              <div key={row.id} style={{ display:"flex", gap:6, alignItems:"flex-start",
                 marginBottom:8, background:"#f0fdf4", borderRadius:8, padding:"8px 10px" }}>
-                <div style={{ flex:1, display:"flex", gap:6, flexWrap:"wrap" }}>
-                  <input value={row.name} onChange={e => updateAdm(row.id,"name",e.target.value)}
-                    placeholder="이름" style={{ ...MS.input, width:90 }} />
-                  <input value={row.room} onChange={e => updateAdm(row.id,"room",e.target.value)}
-                    placeholder="호실" style={{ ...MS.input, width:80 }} />
-                  <input value={row.note} onChange={e => updateAdm(row.id,"note",e.target.value)}
-                    placeholder="비고 (나이, 진단, 병원 등)" style={{ ...MS.input, flex:1, minWidth:120 }} />
-                  <div style={{ display:"flex", gap:4, alignItems:"center" }}>
-                    <label style={{ display:"flex", alignItems:"center", gap:3, fontSize:12, cursor:"pointer",
-                      background: row.isNew ? "#fef08a":"#f1f5f9", borderRadius:5, padding:"2px 8px",
+                <div style={{ flex:1, display:"flex", flexDirection:"column", gap:6 }}>
+                  {/* 이름 자동완성 + 호실 */}
+                  <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                    <PatientAutocomplete
+                      value={row.name}
+                      patients={allPatients}
+                      onChange={v => updateAdm(row.id, "name", v)}
+                      onSelect={p => selectAdm(row.id, p)}
+                      placeholder="이름 검색 또는 직접 입력"
+                      inputStyle={{ ...MS.input, width:180 }}
+                    />
+                    <input value={row.room} onChange={e => updateAdm(row.id,"room",e.target.value)}
+                      placeholder="호실" style={{ ...MS.input, width:90 }} />
+                  </div>
+                  {/* 비고 + 뱃지 */}
+                  <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+                    <input value={row.note} onChange={e => updateAdm(row.id,"note",e.target.value)}
+                      placeholder="비고 (나이, 진단, 병원 등)" style={{ ...MS.input, flex:1, minWidth:140 }} />
+                    <label style={{ display:"flex", alignItems:"center", gap:3, fontSize:13, cursor:"pointer",
+                      background: row.isNew ? "#fef08a":"#f1f5f9", borderRadius:5, padding:"3px 9px",
                       border:"1px solid", borderColor: row.isNew?"#fcd34d":"#e2e8f0",
-                      color: row.isNew?"#713f12":"#64748b", fontWeight: row.isNew?700:500 }}>
+                      color: row.isNew?"#713f12":"#64748b", fontWeight: row.isNew?700:500, whiteSpace:"nowrap" }}>
                       <input type="checkbox" checked={!!row.isNew}
-                        onChange={e => updateAdm(row.id,"isNew",e.target.checked)}
-                        style={{ margin:0 }} />
+                        onChange={e => updateAdm(row.id,"isNew",e.target.checked)} style={{ margin:0 }} />
                       ★신환
                     </label>
-                    <label style={{ display:"flex", alignItems:"center", gap:3, fontSize:12, cursor:"pointer",
-                      background: row.isReserved ? "#ede9fe":"#f1f5f9", borderRadius:5, padding:"2px 8px",
+                    <label style={{ display:"flex", alignItems:"center", gap:3, fontSize:13, cursor:"pointer",
+                      background: row.isReserved ? "#ede9fe":"#f1f5f9", borderRadius:5, padding:"3px 9px",
                       border:"1px solid", borderColor: row.isReserved?"#c4b5fd":"#e2e8f0",
-                      color: row.isReserved?"#5b21b6":"#64748b", fontWeight: row.isReserved?700:500 }}>
+                      color: row.isReserved?"#5b21b6":"#64748b", fontWeight: row.isReserved?700:500, whiteSpace:"nowrap" }}>
                       <input type="checkbox" checked={!!row.isReserved}
-                        onChange={e => updateAdm(row.id,"isReserved",e.target.checked)}
-                        style={{ margin:0 }} />
+                        onChange={e => updateAdm(row.id,"isReserved",e.target.checked)} style={{ margin:0 }} />
                       ◎예약
                     </label>
                   </div>
                 </div>
                 <button onClick={() => onChangeAdm(r => r.filter(x => x.id !== row.id))}
-                  style={MS.delBtn}>✕</button>
+                  style={{ ...MS.delBtn, marginTop:6 }}>✕</button>
               </div>
             ))}
           </div>
@@ -544,18 +618,26 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
               <div style={{ color:"#94a3b8", fontSize:13, padding:"8px 0" }}>퇴원 항목 없음</div>
             )}
             {discharges.map(row => (
-              <div key={row.id} style={{ display:"flex", gap:6, alignItems:"center",
+              <div key={row.id} style={{ display:"flex", gap:6, alignItems:"flex-start",
                 marginBottom:8, background:"#fff5f5", borderRadius:8, padding:"8px 10px" }}>
-                <div style={{ flex:1, display:"flex", gap:6, flexWrap:"wrap" }}>
-                  <input value={row.name} onChange={e => updateDis(row.id,"name",e.target.value)}
-                    placeholder="이름" style={{ ...MS.input, width:100 }} />
-                  <input value={row.room} onChange={e => updateDis(row.id,"room",e.target.value)}
-                    placeholder="호실" style={{ ...MS.input, width:80 }} />
+                <div style={{ flex:1, display:"flex", flexDirection:"column", gap:6 }}>
+                  <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                    <PatientAutocomplete
+                      value={row.name}
+                      patients={allPatients}
+                      onChange={v => updateDis(row.id, "name", v)}
+                      onSelect={p => selectDis(row.id, p)}
+                      placeholder="이름 검색 또는 직접 입력"
+                      inputStyle={{ ...MS.input, width:180 }}
+                    />
+                    <input value={row.room} onChange={e => updateDis(row.id,"room",e.target.value)}
+                      placeholder="호실" style={{ ...MS.input, width:90 }} />
+                  </div>
                   <input value={row.note} onChange={e => updateDis(row.id,"note",e.target.value)}
-                    placeholder="비고 (재입원: 3/28 재입원 등)" style={{ ...MS.input, flex:1, minWidth:120 }} />
+                    placeholder="비고 (재입원: 3/28 재입원 등)" style={{ ...MS.input, width:"100%" }} />
                 </div>
                 <button onClick={() => onChangeDis(r => r.filter(x => x.id !== row.id))}
-                  style={MS.delBtn}>✕</button>
+                  style={{ ...MS.delBtn, marginTop:6 }}>✕</button>
               </div>
             ))}
           </div>
@@ -586,6 +668,93 @@ function PatientChip({ p, type }) {
       {p.isReserved && !p.isNew && <span style={{ fontSize:12, background:"#ede9fe", color:"#5b21b6", borderRadius:3, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>◎</span>}
       <span style={{ fontSize:16, fontWeight:700, color: type==="admission" ? "#065f46" : "#991b1b" }}>{p.name}</span>
       {p.room && <span style={{ fontSize:13, color:"#64748b" }}>({p.room})</span>}
+    </div>
+  );
+}
+
+/* ── 환자 이름 자동완성 ── */
+function PatientAutocomplete({ value, onChange, onSelect, patients, placeholder, inputStyle }) {
+  const [open, setOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const wrapRef = useRef(null);
+
+  const filtered = useMemo(() => {
+    if (!value.trim()) return [];
+    const q = value.toLowerCase();
+    return patients.filter(p => p.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [value, patients]);
+
+  // 필터 결과 바뀔 때 드롭다운 열기
+  useEffect(() => {
+    setOpen(filtered.length > 0);
+    setActiveIdx(0);
+  }, [filtered.length]);
+
+  function select(p) {
+    onChange(p.name);
+    onSelect(p);
+    setOpen(false);
+  }
+
+  function handleKey(e) {
+    if (!open) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i+1, filtered.length-1)); }
+    else if (e.key === "ArrowUp")   { e.preventDefault(); setActiveIdx(i => Math.max(i-1, 0)); }
+    else if (e.key === "Enter")     { e.preventDefault(); if (filtered[activeIdx]) select(filtered[activeIdx]); }
+    else if (e.key === "Escape")    { setOpen(false); }
+  }
+
+  const SOURCE_STYLE = {
+    current:      { bg:"#d1fae5", color:"#065f46" },
+    reservation:  { bg:"#ede9fe", color:"#5b21b6" },
+    consultation: { bg:"#fef9c3", color:"#854d0e" },
+  };
+
+  return (
+    <div ref={wrapRef} style={{ position:"relative" }}>
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={handleKey}
+        onBlur={() => setTimeout(() => setOpen(false), 160)}
+        onFocus={() => { if (filtered.length > 0) setOpen(true); }}
+        placeholder={placeholder}
+        style={inputStyle}
+        autoComplete="off"
+      />
+      {open && (
+        <div style={{ position:"absolute", top:"calc(100% + 3px)", left:0, zIndex:400,
+          background:"#fff", border:"1px solid #e2e8f0", borderRadius:10,
+          boxShadow:"0 8px 28px rgba(0,0,0,0.14)", minWidth:260, maxWidth:360, overflow:"hidden" }}>
+          {filtered.map((p, i) => {
+            const ss = SOURCE_STYLE[p.source] || SOURCE_STYLE.consultation;
+            return (
+              <div key={i} onMouseDown={() => select(p)}
+                style={{ padding:"9px 14px", cursor:"pointer",
+                  borderBottom:"1px solid #f1f5f9",
+                  background: i === activeIdx ? "#eff6ff" : "#fff",
+                  display:"flex", alignItems:"center", gap:10 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <span style={{ fontWeight:700, fontSize:16, color:"#1e293b" }}>{p.name}</span>
+                    {p.room && <span style={{ fontSize:13, color:"#64748b" }}>({p.room})</span>}
+                  </div>
+                  {p.note && (
+                    <div style={{ fontSize:12, color:"#94a3b8", marginTop:2,
+                      whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:220 }}>
+                      {p.note}
+                    </div>
+                  )}
+                </div>
+                <span style={{ fontSize:11, borderRadius:4, padding:"2px 7px", fontWeight:700,
+                  flexShrink:0, background:ss.bg, color:ss.color }}>
+                  {p.sourceBadge}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
