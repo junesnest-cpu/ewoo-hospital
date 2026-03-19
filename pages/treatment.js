@@ -15,6 +15,11 @@ const TREATMENT_GROUPS = [
       { id: "zadaxin",  name: "자닥신",   price: 350000 },
       { id: "imualpha", name: "이뮤알파", price: 300000 },
       { id: "scion",    name: "싸이원주", price: 250000 },
+    ],
+  },
+  {
+    group: "미슬토", color: "#166534", bg: "#f0fdf4",
+    items: [
       { id: "iscador_m", name: "이스카도M", price: 75000 },
       { id: "iscador_q", name: "이스카도Q", price: 80000 },
     ],
@@ -30,9 +35,11 @@ const TREATMENT_GROUPS = [
       { id: "gt",          name: "G+T",                 price: 100000 },
       { id: "myers1",      name: "마이어스1",           price: 70000 },
       { id: "myers2",      name: "마이어스2",           price: 120000 },
-      { id: "selenium_iv", name: "셀레늄",              price: 70000 },
-      { id: "vitd",        name: "비타민D",             price: 50000 },
-      { id: "vitc",        name: "고용량 비타민C",      price: null, custom: "vitc" },
+      { id: "selenium_iv",   name: "셀레늄",              price: 70000 },
+      { id: "vitd",          name: "비타민D",             price: 50000 },
+      { id: "vitc",          name: "고용량 비타민C",      price: null, custom: "vitc" },
+      { id: "periview_360",  name: "페리주 360ml",        price: 100000 },
+      { id: "periview_560",  name: "페리주 560ml",        price: 150000 },
     ],
   },
   {

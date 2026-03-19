@@ -69,7 +69,8 @@ async function parseMessageWithClaude(text) {
 - "15일 퇴원예정" → dischargeDate: "${month}/15"
 - "퇴원 후 재입원" → 퇴원(discharge_update) + 재입원(admit_plan) 2개 항목
 - "병실료F" → roomFeeType: "F"
-- 치료 항목(이뮤알파/메시마/고주파/자닥신/이스카도/림프도수/페인/셀레나제/페리주/싸이원) → treatments 배열
+- 치료 항목(이뮤알파/메시마/고주파/자닥신/이스카도/미슬토/림프도수/페인/셀레나제/세파셀렌정/페리주/페리주560/싸이원/고용량비타민C/고함량비타민C) → treatments 배열
+- 세파셀렌정=셀레나제정, 고함량비타민C=고용량비타민C, 이스카도=미슬토(이스카도M 기본), 페리주 단독=페리주360ml
 - "고주파 주3회 자닥신 월목 이스카도 월수금" → treatments: ["고주파","자닥신","이스카도"], weeklySchedule: "고주파 주3회, 자닥신 월목, 이스카도 월수금"
 - 스케줄/일정 확인 필요 → scheduleAlert: true`;
 

@@ -18,16 +18,21 @@ const TREATMENT_NAME_TO_ID = {
   "이뮤알파": "imualpha",
   "싸이원": "scion", "싸이원주": "scion",
   "이스카도": "iscador_m", "이스카도m": "iscador_m", "이스카도q": "iscador_q",
+  "미슬토": "iscador_m",
   "메시마": "meshima", "메시마f": "meshima",
   "셀레나제": "selenase_l", "셀레나제액상": "selenase_l",
   "셀레나제정": "selenase_t", "셀레나제필름": "selenase_f",
+  "세파셀렌정": "selenase_t",
   "페인": "pain", "페인스크렘블러": "pain",
   "림프도수": "manip1",
   "도수치료": "manip2", "도수": "manip2",
   "고압산소치료": "hyperbaric",
   "글루타치온": "glutathione",
   "비타민c": "vitc", "비타민d": "vitd",
+  "고용량비타민c": "vitc", "고함량비타민c": "vitc",
   "셀레늄": "selenium_iv",
+  "페리주": "periview_360", "페리주360": "periview_360", "페리주560": "periview_560",
+  "페리주360ml": "periview_360", "페리주560ml": "periview_560",
 };
 
 const ACTION_LABELS = {
@@ -199,7 +204,9 @@ async function applySlotChange(form) {
       targetMode = "current";
     }
 
-    if (form.dischargeDate) patient.discharge = form.dischargeDate;
+    // 퇴원일: "미정" 또는 명시적 날짜 모두 반영 (빈 문자열이면 변경 없음)
+    if (form.dischargeDate === "미정") patient.discharge = "미정";
+    else if (form.dischargeDate) patient.discharge = form.dischargeDate;
     if (form.admitDate) patient.admitDate = form.admitDate;
     if (form.roomFeeType) patient.roomFeeType = form.roomFeeType;
     if (form.scheduleAlert) patient.scheduleAlert = true;
@@ -215,7 +222,8 @@ async function applySlotChange(form) {
     else slot.reservations[targetResIndex] = patient;
 
     const updates = [];
-    if (form.dischargeDate) updates.push(`퇴원: ${form.dischargeDate}`);
+    if (form.dischargeDate === "미정") updates.push("퇴원: 미정(연장)");
+    else if (form.dischargeDate) updates.push(`퇴원: ${form.dischargeDate}`);
     if (form.admitDate) updates.push(`입원예정: ${form.admitDate}`);
     if (form.roomFeeType) updates.push(`병실료: ${form.roomFeeType}`);
     changeDescription = `[업데이트] ${form.name} (${targetSlotKey}): ${updates.join(", ") || "정보 갱신"}`;
@@ -249,6 +257,93 @@ async function addTreatmentPlan(slotKey, treatmentIds, dateStr) {
   });
 }
 
+// ── 요일별 치료일정 헬퍼 ─────────────────────────────────────────────────────
+const KO_DAY_MAP = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5, 토: 6, 일: 0 };
+const WEEKLY_N_DAYS = { 1: [1], 2: [1, 4], 3: [1, 3, 5], 4: [1, 2, 4, 5], 5: [1, 2, 3, 4, 5] };
+
+// "M/D" → "YYYY-MM-DD" (현재 연도 기준)
+function parseMMDD(str) {
+  if (!str || str === "미정") return null;
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return null;
+  const year = new Date().getFullYear();
+  return `${year}-${String(parseInt(m[1])).padStart(2, "0")}-${String(parseInt(m[2])).padStart(2, "0")}`;
+}
+
+// "고주파 주3회, 자닥신 월목, 이스카도 월수금" → [{treatmentId, days}]
+function parseWeeklySchedule(str) {
+  if (!str) return [];
+  const result = [];
+  const segs = str.split(/[,，]+/).map((s) => s.trim()).filter(Boolean);
+  for (const seg of segs) {
+    let treatId = null;
+    let dayStr = seg;
+
+    // 치료명 매핑 (긴 이름 우선)
+    const sortedNames = Object.keys(TREATMENT_NAME_TO_ID).sort((a, b) => b.length - a.length);
+    for (const name of sortedNames) {
+      const norm = name.toLowerCase().replace(/\s/g, "");
+      const segNorm = seg.toLowerCase().replace(/\s/g, "");
+      if (segNorm.includes(norm)) {
+        treatId = TREATMENT_NAME_TO_ID[norm] || TREATMENT_NAME_TO_ID[name.toLowerCase()];
+        const re = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+        dayStr = seg.replace(re, "").trim();
+        break;
+      }
+    }
+    if (!treatId) continue;
+
+    // 요일 파싱
+    let days = [];
+    const nMatch = dayStr.match(/주\s*(\d+)\s*회/);
+    if (nMatch) {
+      days = WEEKLY_N_DAYS[parseInt(nMatch[1])] || [1, 3, 5];
+    } else {
+      for (const [ko, num] of Object.entries(KO_DAY_MAP)) {
+        if (dayStr.includes(ko)) days.push(num);
+      }
+      days.sort((a, b) => a - b);
+    }
+    if (days.length > 0) result.push({ treatmentId: treatId, days });
+  }
+  return result;
+}
+
+// parsedSchedule: [{treatmentId, days}], startDateStr/endDateStr: "YYYY-MM-DD"
+async function addWeeklyTreatmentPlan(slotKey, parsedSchedule, startDateStr, endDateStr) {
+  if (!slotKey || !parsedSchedule?.length || !startDateStr || !endDateStr) return 0;
+  const start = new Date(startDateStr + "T00:00:00");
+  const end   = new Date(endDateStr   + "T00:00:00");
+  if (isNaN(start) || isNaN(end) || start > end) return 0;
+
+  const snap = await get(ref(db, `treatmentPlans/${slotKey}`));
+  const newPlan = JSON.parse(JSON.stringify(snap.val() || {}));
+
+  let totalAdded = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    const dateStr = cur.toISOString().slice(0, 10);
+    for (const { treatmentId, days } of parsedSchedule) {
+      if (days.includes(dow)) {
+        const d = new Date(dateStr + "T00:00:00");
+        const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const dk = String(d.getDate());
+        if (!newPlan[mk]) newPlan[mk] = {};
+        const existing = newPlan[mk][dk] || [];
+        if (!existing.find((e) => e.id === treatmentId)) {
+          existing.push({ id: treatmentId, qty: "1" });
+          totalAdded++;
+        }
+        newPlan[mk][dk] = existing;
+      }
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  await set(ref(db, `treatmentPlans/${slotKey}`), newPlan);
+  return totalAdded;
+}
+
 // ── 메인 페이지 ──────────────────────────────────────────────────────────────
 export default function HistoryPage() {
   const router = useRouter();
@@ -266,13 +361,21 @@ export default function HistoryPage() {
     return () => { unsub1(); unsub2(); };
   }, []);
 
-  const handleApprove = useCallback(async (changeId, form, addTreat, treatDate) => {
+  const handleApprove = useCallback(async (changeId, form, addTreat, treatDate, weeklyOpts) => {
     const { changeDescription, finalSlotKey } = await applySlotChange(form);
 
-    // 치료일정 등록
+    // 치료일정 등록 (단일 날짜)
     if (addTreat && form.treatments?.length) {
       const mapped = mapTreatmentsToIds(form.treatments);
       if (mapped.length) await addTreatmentPlan(finalSlotKey, mapped, treatDate);
+    }
+
+    // 요일별 치료일정 등록
+    if (weeklyOpts?.enabled && form.weeklySchedule) {
+      const parsed = parseWeeklySchedule(form.weeklySchedule);
+      if (parsed.length) {
+        await addWeeklyTreatmentPlan(finalSlotKey, parsed, weeklyOpts.startDate, weeklyOpts.endDate);
+      }
     }
 
     // 승인 처리
@@ -351,8 +454,8 @@ export default function HistoryPage() {
                 <PendingCard
                   key={change.id}
                   change={change}
-                  onApprove={(form, addTreat, treatDate) =>
-                    handleApprove(change.id, form, addTreat, treatDate)
+                  onApprove={(form, addTreat, treatDate, weeklyOpts) =>
+                    handleApprove(change.id, form, addTreat, treatDate, weeklyOpts)
                   }
                   onReject={() => handleReject(change.id)}
                 />
@@ -396,10 +499,20 @@ function PendingCard({ change, onApprove, onReject }) {
   const [newTreat, setNewTreat] = useState("");
   const [addTreat, setAddTreat] = useState((p.treatments || []).length > 0);
   const [treatDate, setTreatDate] = useState(todayStr());
+  const [addWeekly, setAddWeekly] = useState(!!p.weeklySchedule);
+  const [weeklyStartDate, setWeeklyStartDate] = useState(todayStr());
+  const [weeklyEndDate, setWeeklyEndDate] = useState(parseMMDD(p.dischargeDate) || "");
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
 
-  const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const setF = (k, v) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    // dischargeDate 변경 시 weeklyEndDate 자동 동기화
+    if (k === "dischargeDate") {
+      const parsed = parseMMDD(v);
+      if (parsed) setWeeklyEndDate(parsed);
+    }
+  };
 
   const mappedTreatments = mapTreatmentsToIds(form.treatments);
 
@@ -409,7 +522,12 @@ function PendingCard({ change, onApprove, onReject }) {
     setError("");
     setProcessing(true);
     try {
-      await onApprove(form, addTreat && mappedTreatments.length > 0, treatDate);
+      const weeklyOpts = {
+        enabled: addWeekly && !!form.weeklySchedule && !!weeklyStartDate && !!weeklyEndDate,
+        startDate: weeklyStartDate,
+        endDate: weeklyEndDate,
+      };
+      await onApprove(form, addTreat && mappedTreatments.length > 0, treatDate, weeklyOpts);
     } catch (err) {
       setError(err.message);
       setProcessing(false);
@@ -636,7 +754,7 @@ function PendingCard({ change, onApprove, onReject }) {
           </div>
         </div>
 
-        {/* 치료일정 등록 옵션 */}
+        {/* 치료일정 등록 옵션 (단일 날짜) */}
         {mappedTreatments.length > 0 && (
           <div style={H.treatBox}>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
@@ -645,7 +763,7 @@ function PendingCard({ change, onApprove, onReject }) {
                 checked={addTreat}
                 onChange={(e) => setAddTreat(e.target.checked)}
               />
-              💊 치료일정표에도 등록
+              💊 치료일정표에도 등록 (단일 날짜)
             </label>
             {addTreat && (
               <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -672,6 +790,63 @@ function PendingCard({ change, onApprove, onReject }) {
             )}
           </div>
         )}
+
+        {/* 요일별 치료일정 등록 */}
+        {form.weeklySchedule && (() => {
+          const parsed = parseWeeklySchedule(form.weeklySchedule);
+          const dayNames = ["일", "월", "화", "수", "목", "금", "토"];
+          return (
+            <div style={{ ...H.treatBox, marginTop: 8, borderColor: "#bfdbfe", background: "#eff6ff" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
+                <input
+                  type="checkbox"
+                  checked={addWeekly}
+                  onChange={(e) => setAddWeekly(e.target.checked)}
+                />
+                📅 요일별 치료일정 등록
+              </label>
+              {addWeekly && (
+                <div style={{ marginTop: 8 }}>
+                  {/* 파싱 결과 프리뷰 */}
+                  {parsed.length > 0 ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                      {parsed.map((item, i) => (
+                        <span key={i} style={{ background: "#dbeafe", color: "#1e40af", borderRadius: 8, padding: "2px 8px", fontSize: 12 }}>
+                          {item.treatmentId} — {item.days.map((d) => dayNames[d]).join("·")}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: "#f59e0b", marginBottom: 8 }}>⚠ 스케줄 파싱 실패 — 치료명과 요일을 확인하세요</div>
+                  )}
+                  {/* 날짜 범위 */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, color: "#64748b" }}>시작:</span>
+                    <input
+                      type="date"
+                      value={weeklyStartDate}
+                      onChange={(e) => setWeeklyStartDate(e.target.value)}
+                      style={{ ...H.input, width: "auto" }}
+                    />
+                    <span style={{ fontSize: 12, color: "#64748b" }}>종료(퇴원일):</span>
+                    <input
+                      type="date"
+                      value={weeklyEndDate}
+                      onChange={(e) => setWeeklyEndDate(e.target.value)}
+                      style={{ ...H.input, width: "auto" }}
+                      placeholder="YYYY-MM-DD"
+                    />
+                  </div>
+                  {parsed.length > 0 && weeklyStartDate && weeklyEndDate && (
+                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
+                      {weeklyStartDate} ~ {weeklyEndDate} 기간 동안 등록
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* 에러 */}
