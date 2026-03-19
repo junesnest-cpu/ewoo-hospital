@@ -839,7 +839,7 @@ export default function HospitalWardManager() {
                 </div>
               </div>
               <div style={{display:"flex",alignItems:"flex-end",paddingBottom:1}}>
-                <button onClick={doAvailCheck} disabled={!availAdmit}
+                <button onClick={() => doAvailCheck()} disabled={!availAdmit}
                   style={{background:availAdmit?"#0f2744":"#94a3b8",color:"#fff",border:"none",borderRadius:8,
                     padding:"8px 18px",cursor:availAdmit?"pointer":"not-allowed",fontSize:13,fontWeight:700}}>
                   조회
