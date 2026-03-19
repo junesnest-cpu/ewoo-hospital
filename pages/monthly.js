@@ -32,6 +32,10 @@ function dateKey(d) {
   if (!d) return null;
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
+// 이름 정규화: "신)박은정" → "박은정", "이난영2" → "이난영" 등 비교용
+function normName(name) {
+  return (name || "").replace(/^신\)/, "").replace(/\d+$/, "").trim().toLowerCase();
+}
 function uid() { return Math.random().toString(36).slice(2,9); }
 
 const EMPTY_ADM = () => ({ id:uid(), name:"", room:"", isNew:false, isReserved:false, note:"" });
@@ -119,6 +123,7 @@ export default function MonthlySchedule() {
       });
     });
 
+    // consultations: 정규화된 이름으로 dedup, 슬롯 항목과 겹치면 신환 정보 병합
     Object.values(consultations).forEach(c => {
       if (!c?.name || !c.admitDate) return;
       if (c.status === "취소" || c.status === "입원완료") return;
@@ -127,14 +132,33 @@ export default function MonthlySchedule() {
       const aKey = dateKey(admitD);
       if (!aKey) return;
       ensure(aKey);
-      if (!data[aKey].admissions.some(a => a.name === c.name)) {
+
+      const noteFields = [c.diagnosis, c.hospital].filter(Boolean);
+      if (c.surgery) noteFields.push(c.surgeryDate ? `수술후(${c.surgeryDate})` : "수술후");
+      if (c.chemo)   noteFields.push(c.chemoDate   ? `항암(${c.chemoDate})`     : "항암중");
+      if (c.radiation) noteFields.push("방사선");
+      const cNote = noteFields.join(" · ");
+
+      // 정규화된 이름으로 기존 항목 탐색
+      const nc = normName(c.name);
+      const existIdx = data[aKey].admissions.findIndex(a => normName(a.name) === nc);
+
+      if (existIdx >= 0) {
+        // 슬롯 항목에 신환 정보 병합 (실제 병실은 슬롯 값 유지, ★신환 플래그 추가)
+        const ex = data[aKey].admissions[existIdx];
+        data[aKey].admissions[existIdx] = {
+          ...ex,
+          isNew: true,
+          note: cNote || ex.note,
+        };
+      } else {
         data[aKey].admissions.push({
           id: uid(),
           name: c.name,
           room: c.roomTypes?.join("/") || "",
-          note: [c.diagnosis, c.hospital, c.memo].filter(Boolean).join(" "),
+          note: cNote,
           isNew: true,
-          isReserved: true,
+          isReserved: false,
         });
       }
     });
@@ -465,11 +489,11 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
   // slots + consultations → 자동완성용 환자 목록
   const allPatients = useMemo(() => {
     const list = [];
-    const seen = new Set();
+    const seenNorm = new Set(); // 정규화 이름 기준 dedup
     const add = (p) => {
-      const key = `${p.source}::${p.name}::${p.room}`;
-      if (seen.has(key)) return;
-      seen.add(key);
+      const nk = normName(p.name);
+      if (seenNorm.has(nk)) return;
+      seenNorm.add(nk);
       list.push(p);
     };
 
