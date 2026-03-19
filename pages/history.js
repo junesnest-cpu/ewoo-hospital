@@ -344,6 +344,46 @@ async function addWeeklyTreatmentPlan(slotKey, parsedSchedule, startDateStr, end
   return totalAdded;
 }
 
+// specificDates: [{treatments:["자닥신","이뮤알파"], qty:"1", dates:["3/11","3/24"]}]
+async function addSpecificDateTreatments(slotKey, specificDates) {
+  if (!slotKey || !specificDates?.length) return 0;
+
+  const snap = await get(ref(db, `treatmentPlans/${slotKey}`));
+  const newPlan = JSON.parse(JSON.stringify(snap.val() || {}));
+  let totalAdded = 0;
+
+  for (const { treatments, qty, dates } of specificDates) {
+    if (!treatments?.length || !dates?.length) continue;
+    const treatIds = treatments
+      .map((t) => {
+        const key = t.toLowerCase().replace(/\s/g, "");
+        return TREATMENT_NAME_TO_ID[key] || TREATMENT_NAME_TO_ID[t.toLowerCase()] || null;
+      })
+      .filter(Boolean);
+    if (!treatIds.length) continue;
+
+    for (const dateStr of dates) {
+      const fullDate = parseMMDD(dateStr);
+      if (!fullDate) continue;
+      const d = new Date(fullDate + "T00:00:00");
+      const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const dk = String(d.getDate());
+      if (!newPlan[mk]) newPlan[mk] = {};
+      const existing = newPlan[mk][dk] || [];
+      for (const treatId of treatIds) {
+        if (!existing.find((e) => e.id === treatId)) {
+          existing.push({ id: treatId, qty: qty || "1" });
+          totalAdded++;
+        }
+      }
+      newPlan[mk][dk] = existing;
+    }
+  }
+
+  if (totalAdded > 0) await set(ref(db, `treatmentPlans/${slotKey}`), newPlan);
+  return totalAdded;
+}
+
 // ── 메인 페이지 ──────────────────────────────────────────────────────────────
 export default function HistoryPage() {
   const router = useRouter();
@@ -361,7 +401,7 @@ export default function HistoryPage() {
     return () => { unsub1(); unsub2(); };
   }, []);
 
-  const handleApprove = useCallback(async (changeId, form, addTreat, treatDate, weeklyOpts) => {
+  const handleApprove = useCallback(async (changeId, form, addTreat, treatDate, weeklyOpts, specificOpts) => {
     const { changeDescription, finalSlotKey } = await applySlotChange(form);
 
     // 치료일정 등록 (단일 날짜)
@@ -376,6 +416,11 @@ export default function HistoryPage() {
       if (parsed.length) {
         await addWeeklyTreatmentPlan(finalSlotKey, parsed, weeklyOpts.startDate, weeklyOpts.endDate);
       }
+    }
+
+    // 특정 날짜 치료일정 등록
+    if (specificOpts?.enabled && form.specificDates?.length) {
+      await addSpecificDateTreatments(finalSlotKey, form.specificDates);
     }
 
     // 승인 처리
@@ -454,8 +499,8 @@ export default function HistoryPage() {
                 <PendingCard
                   key={change.id}
                   change={change}
-                  onApprove={(form, addTreat, treatDate, weeklyOpts) =>
-                    handleApprove(change.id, form, addTreat, treatDate, weeklyOpts)
+                  onApprove={(form, addTreat, treatDate, weeklyOpts, specificOpts) =>
+                    handleApprove(change.id, form, addTreat, treatDate, weeklyOpts, specificOpts)
                   }
                   onReject={() => handleReject(change.id)}
                 />
@@ -491,6 +536,7 @@ function PendingCard({ change, onApprove, onReject }) {
     transferToRoom: p.transferToRoom || "",
     treatments: p.treatments || [],
     weeklySchedule: p.weeklySchedule || "",
+    specificDates: p.specificDates || [],
     dischargeNote: p.dischargeNote || "",
     roomFeeType: p.roomFeeType || "",
     note: p.note || "",
@@ -502,6 +548,7 @@ function PendingCard({ change, onApprove, onReject }) {
   const [addWeekly, setAddWeekly] = useState(!!p.weeklySchedule);
   const [weeklyStartDate, setWeeklyStartDate] = useState(todayStr());
   const [weeklyEndDate, setWeeklyEndDate] = useState(parseMMDD(p.dischargeDate) || "");
+  const [addSpecific, setAddSpecific] = useState((p.specificDates || []).length > 0);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
 
@@ -527,7 +574,8 @@ function PendingCard({ change, onApprove, onReject }) {
         startDate: weeklyStartDate,
         endDate: weeklyEndDate,
       };
-      await onApprove(form, addTreat && mappedTreatments.length > 0, treatDate, weeklyOpts);
+      const specificOpts = { enabled: addSpecific && form.specificDates?.length > 0 };
+      await onApprove(form, addTreat && mappedTreatments.length > 0, treatDate, weeklyOpts, specificOpts);
     } catch (err) {
       setError(err.message);
       setProcessing(false);
@@ -847,6 +895,49 @@ function PendingCard({ change, onApprove, onReject }) {
             </div>
           );
         })()}
+
+        {/* 특정 날짜 치료일정 등록 */}
+        {form.specificDates?.length > 0 && (
+          <div style={{ ...H.treatBox, marginTop: 8, borderColor: "#fde68a", background: "#fffbeb" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
+              <input
+                type="checkbox"
+                checked={addSpecific}
+                onChange={(e) => setAddSpecific(e.target.checked)}
+              />
+              📋 특정 날짜 치료 등록
+            </label>
+            {addSpecific && (
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                {form.specificDates.map((sd, i) => {
+                  const ids = (sd.treatments || []).map((t) => {
+                    const k = t.toLowerCase().replace(/\s/g, "");
+                    return TREATMENT_NAME_TO_ID[k] || t;
+                  });
+                  const unmapped = (sd.treatments || []).filter((t) => {
+                    const k = t.toLowerCase().replace(/\s/g, "");
+                    return !TREATMENT_NAME_TO_ID[k];
+                  });
+                  return (
+                    <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                      <span style={{ background: "#fef3c7", color: "#92400e", borderRadius: 8, padding: "2px 8px", fontSize: 12, fontWeight: 600 }}>
+                        {sd.treatments?.join(", ")}
+                        {sd.qty && sd.qty !== "1" ? ` ×${sd.qty}` : ""}
+                      </span>
+                      <span style={{ fontSize: 12, color: "#64748b" }}>→</span>
+                      {(sd.dates || []).map((d, j) => (
+                        <span key={j} style={{ background: "#fef9c3", color: "#78350f", borderRadius: 6, padding: "1px 7px", fontSize: 12 }}>{d}</span>
+                      ))}
+                      {unmapped.length > 0 && (
+                        <span style={{ fontSize: 11, color: "#ef4444" }}>⚠ 미매핑: {unmapped.join(", ")}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 에러 */}

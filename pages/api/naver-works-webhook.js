@@ -55,13 +55,17 @@ async function parseMessageWithClaude(text) {
     "admitDate": "M/D 형식 입원예정일 또는 null",
     "transferToRoom": "전실할 병실번호 또는 null",
     "treatments": [],
-    "weeklySchedule": "예: 고주파 월수금, 자닥신 월목 (요일 정보 있을 때)",
+    "weeklySchedule": "반복 요일 치료: 요일은 쉼표 없이 붙여쓰기 (예: 고주파 주3회, 자닥신 월목, 이스카도 목토월)",
+    "specificDates": [],
     "dischargeNote": "퇴원약 정보 또는 null",
     "roomFeeType": "F" 또는 "O" 또는 null,
     "note": "기타 특이사항 또는 null",
     "scheduleAlert": false
   }
 ]
+
+specificDates 형식:
+[{ "treatments": ["치료명1","치료명2"], "qty": "1", "dates": ["M/D","M/D"] }]
 
 파싱 예시:
 - "305-2 류미경님" → slotKey: "305-2", room: "305", bedNumber: 2
@@ -71,7 +75,12 @@ async function parseMessageWithClaude(text) {
 - "병실료F" → roomFeeType: "F"
 - 치료 항목(이뮤알파/메시마/고주파/자닥신/이스카도/미슬토/림프도수/페인/셀레나제/세파셀렌정/페리주/페리주560/싸이원/고용량비타민C/고함량비타민C) → treatments 배열
 - 세파셀렌정=셀레나제정, 고함량비타민C=고용량비타민C, 이스카도=미슬토(이스카도M 기본), 페리주 단독=페리주360ml
-- "고주파 주3회 자닥신 월목 이스카도 월수금" → treatments: ["고주파","자닥신","이스카도"], weeklySchedule: "고주파 주3회, 자닥신 월목, 이스카도 월수금"
+- "자닥신 - 11일 24일 27일" → specificDates: [{ treatments:["자닥신"], qty:"1", dates:["${month}/11","${month}/24","${month}/27"] }]
+- "메시마30개 - 16일 23일" → specificDates: [{ treatments:["메시마"], qty:"30", dates:["${month}/16","${month}/23"] }]
+- "이뮤알파, 이스카도 - 11일" → specificDates: [{ treatments:["이뮤알파","이스카도"], qty:"1", dates:["${month}/11"] }]
+- "이뮤알파, 이스카도 - 목,토,월" → weeklySchedule: "이뮤알파 목토월, 이스카도 목토월" (요일 공유 시 각각 펼쳐서 기재)
+- "고주파 주3회 자닥신 월목 이스카도 월수금" → weeklySchedule: "고주파 주3회, 자닥신 월목, 이스카도 월수금"
+- 특정 날짜 지정이면 specificDates, 반복 요일이면 weeklySchedule
 - 스케줄/일정 확인 필요 → scheduleAlert: true`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
