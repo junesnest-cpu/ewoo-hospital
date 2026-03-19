@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
-import { findPatientByPhone, searchPatientsByName, normalizePhone } from "../lib/patientSearch";
+import { findPatientByPhone, findPatientByChartNo, searchPatientsByName, normalizePhone } from "../lib/patientSearch";
 import useIsMobile from "../lib/useismobile";
 
 const S = {
@@ -52,22 +52,34 @@ export default function PatientsPage() {
     if (id) loadPatientById(id);
   }, [router.query]);
 
-  // 숫자 포함 → 전화번호 검색, 아니면 이름 검색
+  // 입력 유형 자동 감지 후 검색
+  // - 순수 숫자 9자리 미만 → 차트번호
+  // - 숫자 포함(9자리 이상 또는 하이픈 포함) → 전화번호
+  // - 그 외 → 이름
   const doSearch = useCallback(async (q) => {
     const trimmed = (q || query).trim();
     if (!trimmed || trimmed.length < 2) return;
     setSearching(true); setResults(null); setSelected(null);
     try {
       let found;
-      if (/\d/.test(trimmed)) {
+      const digitsOnly = trimmed.replace(/\D/g, "");
+      if (/^\d+$/.test(trimmed) && trimmed.length < 9) {
+        // 순수 숫자 단자리 → 차트번호 검색
+        const p = await findPatientByChartNo(trimmed);
+        found = p ? [p] : [];
+      } else if (/\d/.test(trimmed)) {
+        // 숫자 포함 → 전화번호 검색
         const p = await findPatientByPhone(trimmed);
         found = p ? [p] : [];
       } else {
         found = await searchPatientsByName(trimmed);
       }
-      if (found.length === 1) selectPatient(found[0]);
+      if (found.length === 1) await selectPatient(found[0]);
       else setResults(found);
-    } catch(e) { setResults([]); }
+    } catch(e) {
+      console.error("[환자검색] 오류:", e);
+      setResults([]);
+    }
     setSearching(false);
   }, [query]);
 
@@ -80,35 +92,43 @@ export default function PatientsPage() {
   }, [query]);
 
   const loadPatientById = async (internalId) => {
-    const snap = await get(ref(db, "patients"));
-    const all  = snap.val() || {};
-    const p    = Object.values(all).find(x => x.internalId === internalId);
-    if (p) selectPatient(p);
+    try {
+      const snap = await get(ref(db, "patients"));
+      const all  = snap.val() || {};
+      const p    = Object.values(all).find(x => x.internalId === internalId);
+      if (p) await selectPatient(p);
+    } catch(e) {
+      console.error("[환자조회] loadPatientById 오류:", e);
+    }
   };
 
   const selectPatient = async (p) => {
     setSelected(p); setResults(null); setLoadingDetail(true); setActiveTab("info");
-    // 상담이력
-    const cSnap = await get(ref(db, "consultations"));
-    const allC  = Object.values(cSnap.val() || {});
-    const linked = allC
-      .filter(c => c.patientId === p.internalId || (c.name === p.name && !c.patientId))
-      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    setConsultations(linked);
-    // 입원/예약 현황
-    const sSnap = await get(ref(db, "slots"));
-    const allS  = sSnap.val() || {};
-    let curSlot = null, resList = [];
-    Object.entries(allS).forEach(([slotKey, slot]) => {
-      if (slot?.current?.patientId === p.internalId || slot?.current?.name === p.name)
-        curSlot = { slotKey, data: slot.current };
-      (slot?.reservations || []).forEach(r => {
-        if (r.patientId === p.internalId || r.name === p.name)
-          resList.push({ slotKey, data: r });
+    try {
+      // 상담이력
+      const cSnap = await get(ref(db, "consultations"));
+      const allC  = Object.values(cSnap.val() || {});
+      const linked = allC
+        .filter(c => c.patientId === p.internalId || (c.name === p.name && !c.patientId))
+        .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      setConsultations(linked);
+      // 입원/예약 현황
+      const sSnap = await get(ref(db, "slots"));
+      const allS  = sSnap.val() || {};
+      let curSlot = null, resList = [];
+      Object.entries(allS).forEach(([slotKey, slot]) => {
+        if (slot?.current?.patientId === p.internalId || slot?.current?.name === p.name)
+          curSlot = { slotKey, data: slot.current };
+        (slot?.reservations || []).forEach(r => {
+          if (r.patientId === p.internalId || r.name === p.name)
+            resList.push({ slotKey, data: r });
+        });
       });
-    });
-    setCurrentSlot(curSlot);
-    setReservations(resList);
+      setCurrentSlot(curSlot);
+      setReservations(resList);
+    } catch(e) {
+      console.error("[환자조회] selectPatient 오류:", e);
+    }
     setLoadingDetail(false);
   };
 
