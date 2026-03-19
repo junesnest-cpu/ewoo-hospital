@@ -57,7 +57,9 @@ async function parseMessageWithClaude(text) {
     "treatments": [],
     "weeklySchedule": "반복 요일 치료: 요일은 쉼표 없이 붙여쓰기 (예: 고주파 주3회, 자닥신 월목, 이스카도 목토월)",
     "specificDates": [],
-    "dischargeNote": "퇴원약 정보 또는 null",
+    "dischargeMeds": [],
+    "sessionCount": [],
+    "dischargeNote": "퇴원약 중 수량 불명이거나 개수 없는 메모만",
     "roomFeeType": "F" 또는 "O" 또는 null,
     "note": "기타 특이사항 또는 null",
     "scheduleAlert": false
@@ -81,6 +83,11 @@ specificDates 형식:
 - "이뮤알파, 이스카도 - 목,토,월" → weeklySchedule: "이뮤알파 목토월, 이스카도 목토월" (요일 공유 시 각각 펼쳐서 기재)
 - "고주파 주3회 자닥신 월목 이스카도 월수금" → weeklySchedule: "고주파 주3회, 자닥신 월목, 이스카도 월수금"
 - 특정 날짜 지정이면 specificDates, 반복 요일이면 weeklySchedule
+- "퇴원약 메시마 11개" → dischargeMeds: [{"name":"메시마","qty":"11"}] (수량 있을 때만)
+- "퇴원약 셀레나제160개, 메시마39개" → dischargeMeds: [{"name":"셀레나제","qty":"160"},{"name":"메시마","qty":"39"}]
+- "퇴원시 부족분 셀레나제 있습니다" → dischargeNote (수량 불명)
+- "도수2 2회" (날짜/요일 없이 횟수만) → sessionCount: [{"name":"도수2","count":"2"}]
+- "고주파3회" (날짜/요일 없이 횟수만) → sessionCount: [{"name":"고주파","count":"3"}]
 - 스케줄/일정 확인 필요 → scheduleAlert: true`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {

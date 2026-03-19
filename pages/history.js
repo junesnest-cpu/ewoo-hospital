@@ -363,7 +363,8 @@ async function addSpecificDateTreatments(slotKey, specificDates) {
     if (!treatIds.length) continue;
 
     for (const dateStr of dates) {
-      const fullDate = parseMMDD(dateStr);
+      // "M/D" 또는 "YYYY-MM-DD" 둘 다 허용
+      const fullDate = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : parseMMDD(dateStr);
       if (!fullDate) continue;
       const d = new Date(fullDate + "T00:00:00");
       const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -537,6 +538,8 @@ function PendingCard({ change, onApprove, onReject }) {
     treatments: p.treatments || [],
     weeklySchedule: p.weeklySchedule || "",
     specificDates: p.specificDates || [],
+    dischargeMeds: p.dischargeMeds || [],
+    sessionCount: p.sessionCount || [],
     dischargeNote: p.dischargeNote || "",
     roomFeeType: p.roomFeeType || "",
     note: p.note || "",
@@ -549,6 +552,8 @@ function PendingCard({ change, onApprove, onReject }) {
   const [weeklyStartDate, setWeeklyStartDate] = useState(todayStr());
   const [weeklyEndDate, setWeeklyEndDate] = useState(parseMMDD(p.dischargeDate) || "");
   const [addSpecific, setAddSpecific] = useState((p.specificDates || []).length > 0);
+  const [addDischargeMed, setAddDischargeMed] = useState((p.dischargeMeds || []).length > 0);
+  const [sessionDates, setSessionDates] = useState({}); // {index: "YYYY-MM-DD"}
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState("");
 
@@ -574,8 +579,28 @@ function PendingCard({ change, onApprove, onReject }) {
         startDate: weeklyStartDate,
         endDate: weeklyEndDate,
       };
-      const specificOpts = { enabled: addSpecific && form.specificDates?.length > 0 };
-      await onApprove(form, addTreat && mappedTreatments.length > 0, treatDate, weeklyOpts, specificOpts);
+
+      // specificDates + 퇴원약 + 잔여횟수를 하나로 합산
+      const allSpecificDates = [...(form.specificDates || [])];
+
+      if (addDischargeMed && form.dischargeMeds?.length > 0 && form.dischargeDate) {
+        for (const m of form.dischargeMeds) {
+          if (m.name && m.qty) {
+            allSpecificDates.push({ treatments: [m.name], qty: m.qty, dates: [form.dischargeDate] });
+          }
+        }
+      }
+
+      for (const [idx, dateVal] of Object.entries(sessionDates)) {
+        if (!dateVal) continue;
+        const sc = form.sessionCount?.[parseInt(idx)];
+        if (!sc?.name) continue;
+        allSpecificDates.push({ treatments: [sc.name], qty: "1", dates: [dateVal] });
+      }
+
+      const finalForm = { ...form, specificDates: allSpecificDates };
+      const specificOpts = { enabled: allSpecificDates.length > 0 };
+      await onApprove(finalForm, addTreat && mappedTreatments.length > 0, treatDate, weeklyOpts, specificOpts);
     } catch (err) {
       setError(err.message);
       setProcessing(false);
@@ -895,6 +920,59 @@ function PendingCard({ change, onApprove, onReject }) {
             </div>
           );
         })()}
+
+        {/* 퇴원약 치료계획표 등록 */}
+        {form.dischargeMeds?.length > 0 && (
+          <div style={{ ...H.treatBox, marginTop: 8, borderColor: "#fca5a5", background: "#fff1f2" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
+              <input type="checkbox" checked={addDischargeMed} onChange={(e) => setAddDischargeMed(e.target.checked)} />
+              🏥 퇴원약 치료계획표 등록
+              {form.dischargeDate
+                ? <span style={{ fontSize: 11, fontWeight: 400, color: "#64748b" }}>({form.dischargeDate} 퇴원일)</span>
+                : <span style={{ fontSize: 11, color: "#ef4444" }}> — 퇴원예정일 필요</span>}
+            </label>
+            {addDischargeMed && (
+              <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {form.dischargeMeds.map((m, i) => {
+                  const k = (m.name || "").toLowerCase().replace(/\s/g, "");
+                  const mapped = TREATMENT_NAME_TO_ID[k];
+                  return (
+                    <span key={i} style={{ background: mapped ? "#fee2e2" : "#f3f4f6", color: mapped ? "#991b1b" : "#6b7280", borderRadius: 8, padding: "2px 8px", fontSize: 12, fontWeight: 600 }}>
+                      {m.name} ×{m.qty}
+                      {!mapped && <span style={{ color: "#ef4444" }}> ⚠미매핑</span>}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 잔여 횟수 치료 — 날짜 직접 지정 */}
+        {form.sessionCount?.length > 0 && (
+          <div style={{ ...H.treatBox, marginTop: 8, borderColor: "#c4b5fd", background: "#faf5ff" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>⏱ 잔여 횟수 치료 (날짜 직접 지정)</div>
+            {form.sessionCount.map((sc, i) => {
+              const k = (sc.name || "").toLowerCase().replace(/\s/g, "");
+              const mapped = TREATMENT_NAME_TO_ID[k];
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                  <span style={{ background: "#ede9fe", color: "#5b21b6", borderRadius: 8, padding: "2px 8px", fontSize: 12, fontWeight: 600 }}>
+                    {sc.name} {sc.count}회
+                    {!mapped && <span style={{ color: "#ef4444" }}> ⚠미매핑</span>}
+                  </span>
+                  <input
+                    type="date"
+                    value={sessionDates[i] || ""}
+                    onChange={(e) => setSessionDates((prev) => ({ ...prev, [i]: e.target.value }))}
+                    style={{ ...H.input, width: "auto", fontSize: 12 }}
+                  />
+                  {sessionDates[i] && <span style={{ fontSize: 11, color: "#059669" }}>✓ 등록 예정</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* 특정 날짜 치료일정 등록 */}
         {form.specificDates?.length > 0 && (
