@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set, push, remove, query, orderByChild, startAt, endAt } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
-import PatientSearchModal from "../components/PatientSearchModal";
 
 const ROOM_TYPES = ["1인실","2인실","4인실","6인실"];
 const WARD_STRUCTURE = {
@@ -48,7 +47,9 @@ function korMonth(ym) {
 }
 
 const EMPTY_FORM = {
-  name:"", birthYear:"", age:"", phone:"", phoneNote:"",
+  name:"", birthYear:"", age:"",
+  phone:"", phoneNote:"",
+  phone2:"", phone2Note:"",
   diagnosis:"", hospital:"",
   admitDate:"", roomTypes:[],
   surgery:false, surgeryDate:"",
@@ -59,13 +60,26 @@ const EMPTY_FORM = {
   recontact:false, recontactDate:"", recontactMemo:"",
 };
 
+const CUR_YEAR = new Date().getFullYear();
+function calcAge(birthYear) {
+  const n = parseInt(birthYear);
+  if (isNaN(n) || n < 1900 || n > CUR_YEAR) return "";
+  return String(CUR_YEAR - n);
+}
+function calcBirthYear(age) {
+  const n = parseInt(age);
+  if (isNaN(n) || n < 0 || n > 130) return "";
+  return String(CUR_YEAR - n);
+}
+
 export default function ConsultationPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
 
   const [consultations, setConsultations] = useState({});
   const [slots, setSlots] = useState({});
-  const [view, setView] = useState("list"); // list | form | detail
+  const [patients, setPatients] = useState({});
+  const [view, setView] = useState("list"); // list | form
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({...EMPTY_FORM});
   const [search, setSearch] = useState("");
@@ -76,12 +90,13 @@ export default function ConsultationPage() {
   const [filterStatus, setFilterStatus] = useState("전체");
   const [filterAdmitDate, setFilterAdmitDate] = useState(""); // 예약날짜 검색
 
+  // 폼 내 기존 환자 검색
+  const [ptSearchQ, setPtSearchQ] = useState("");
+  const [ptSearchOpen, setPtSearchOpen] = useState(false);
+
   // 병실 모달 (예약 등록)
   const [reserveModal, setReserveModal] = useState(null); // { consultation }
   const [reserveSlot, setReserveSlot] = useState("");
-
-  // 환자 검색 모달 (신규 상담 등록 전)
-  const [patientPickOpen, setPatientPickOpen] = useState(false);
 
   // 월별 상담일지 로드 (월 변경 시 해당 월만 로드)
   useEffect(() => {
@@ -107,7 +122,40 @@ export default function ConsultationPage() {
     return unsub2;
   }, []);
 
+  useEffect(() => {
+    const unsub3 = onValue(ref(db,"patients"), snap => {
+      setPatients(snap.val() || {});
+    });
+    return unsub3;
+  }, []);
+
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  // 기존 환자 검색 결과
+  const ptResults = useMemo(() => {
+    const q = ptSearchQ.trim().toLowerCase();
+    if (!q) return [];
+    return Object.entries(patients)
+      .map(([id, p]) => ({id, ...p}))
+      .filter(p => (p.name||"").toLowerCase().includes(q) || (p.phone||"").includes(q))
+      .slice(0, 8);
+  }, [ptSearchQ, patients]);
+
+  function fillFromPatient(p) {
+    const by = p.birthDate ? p.birthDate.slice(0,4) : (p.birthYear||"");
+    setForm(f => ({
+      ...f,
+      name:       p.name       || f.name,
+      phone:      p.phone ? p.phone.replace(/(\d{3})(\d{4})(\d{4})/,"$1-$2-$3") : f.phone,
+      birthYear:  by || f.birthYear,
+      age:        by ? calcAge(by) : f.age,
+      diagnosis:  p.diagnosis  || f.diagnosis,
+      patientId:  p.internalId || p.id || f.patientId,
+    }));
+    setPtSearchOpen(false);
+    setPtSearchQ("");
+  }
+
   const toggleRoomType = (rt) => {
     setForm(f=>({...f, roomTypes: f.roomTypes.includes(rt) ? f.roomTypes.filter(x=>x!==rt) : [...f.roomTypes, rt]}));
   };
@@ -272,12 +320,45 @@ export default function ConsultationPage() {
     return (
       <div style={S.page}>
         <header style={S.header}>
-          <button style={S.btnBack} onClick={()=>{setView("list");setEditId(null);setForm({...EMPTY_FORM});}}>← 목록</button>
+          <button style={S.btnBack} onClick={()=>{setView("list");setEditId(null);setForm({...EMPTY_FORM});setPtSearchOpen(false);setPtSearchQ("");}}>← 목록</button>
           <span style={S.htitle}>{editId ? "상담 기록 수정" : "신규 상담 등록"}</span>
+          {editId && <span style={{marginLeft:8, fontSize:12, color:"#94a3b8", fontWeight:500}}>등록일: {form.createdAt}</span>}
           {editId && <button style={{...S.btnBack, background:"#fef2f2", color:"#dc2626", marginLeft:"auto"}}
             onClick={()=>deleteConsultation(editId)}>삭제</button>}
         </header>
         <div style={S.formBody}>
+
+          {/* 기존 환자 불러오기 (신규 등록 시에만) */}
+          {!editId && (
+            <div style={{...S.section, marginBottom:10}}>
+              <button onClick={()=>setPtSearchOpen(v=>!v)}
+                style={{ background:"none", border:"none", cursor:"pointer", padding:0,
+                  fontWeight:800, fontSize:14, color:"#0f2744", display:"flex", alignItems:"center", gap:6, width:"100%" }}>
+                🔍 기존 환자 불러오기 <span style={{fontSize:12, color:"#94a3b8"}}>{ptSearchOpen?"▲":"▼"}</span>
+              </button>
+              {ptSearchOpen && (
+                <div style={{marginTop:10}}>
+                  <input value={ptSearchQ} onChange={e=>setPtSearchQ(e.target.value)}
+                    placeholder="이름 또는 연락처로 검색" autoFocus style={{...S.inp, marginBottom:8}}/>
+                  {ptSearchQ && ptResults.length === 0 && (
+                    <div style={{fontSize:13, color:"#94a3b8", padding:"6px 0"}}>검색 결과 없음 — 아래에 직접 입력하세요.</div>
+                  )}
+                  {ptResults.map(p => (
+                    <div key={p.id} onClick={()=>fillFromPatient(p)}
+                      style={{padding:"9px 12px", borderRadius:8, cursor:"pointer", marginBottom:4,
+                        background:"#f8fafc", border:"1.5px solid #e2e8f0",
+                        display:"flex", alignItems:"center", gap:10}}>
+                      <span style={{fontWeight:700, fontSize:15}}>{p.name}</span>
+                      {(p.birthDate||p.birthYear) && <span style={{fontSize:12, color:"#64748b"}}>{(p.birthDate?p.birthDate.slice(0,4):p.birthYear)}년생</span>}
+                      {p.phone && <span style={{fontSize:12, color:"#475569"}}>📞 {p.phone}</span>}
+                      {p.diagnosis && <span style={{fontSize:12, color:"#64748b"}}>{p.diagnosis}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 기본 인적사항 */}
           <div style={S.section}>
             <div style={S.sectionTitle}>👤 기본 정보</div>
@@ -296,21 +377,51 @@ export default function ConsultationPage() {
             <div style={S.row2}>
               <div style={S.field}>
                 <label style={S.lbl}>출생연도</label>
-                <input style={S.inp} value={form.birthYear} onChange={e=>setF("birthYear",e.target.value)} placeholder="1955"/>
+                <div style={{display:"flex", alignItems:"center", gap:6}}>
+                  <input style={{...S.inp, flex:1}} value={form.birthYear}
+                    onChange={e=>{
+                      const v=e.target.value; setF("birthYear",v);
+                      const a=calcAge(v); if(a) setF("age",a);
+                    }} placeholder="1955"/>
+                  {form.birthYear && calcAge(form.birthYear) && (
+                    <span style={{fontSize:12, color:"#059669", fontWeight:700, whiteSpace:"nowrap"}}>만 {calcAge(form.birthYear)}세</span>
+                  )}
+                </div>
               </div>
               <div style={S.field}>
-                <label style={S.lbl}>나이</label>
-                <input style={S.inp} value={form.age} onChange={e=>setF("age",e.target.value)} placeholder="70세"/>
+                <label style={S.lbl}>나이 (만)</label>
+                <div style={{display:"flex", alignItems:"center", gap:6}}>
+                  <input style={{...S.inp, flex:1}} value={form.age}
+                    onChange={e=>{
+                      const v=e.target.value; setF("age",v);
+                      const by=calcBirthYear(v); if(by) setF("birthYear",by);
+                    }} placeholder="70"/>
+                  {form.age && calcBirthYear(form.age) && (
+                    <span style={{fontSize:12, color:"#0369a1", fontWeight:700, whiteSpace:"nowrap"}}>{calcBirthYear(form.age)}년생</span>
+                  )}
+                </div>
               </div>
             </div>
+            {/* 연락처 1 */}
             <div style={S.row2}>
               <div style={S.field}>
-                <label style={S.lbl}>연락처</label>
+                <label style={S.lbl}>연락처 (본인)</label>
                 <input style={S.inp} value={form.phone} onChange={e=>setF("phone",e.target.value)} placeholder="010-0000-0000"/>
               </div>
               <div style={S.field}>
-                <label style={S.lbl}>연락처 비고</label>
-                <input style={S.inp} value={form.phoneNote} onChange={e=>setF("phoneNote",e.target.value)} placeholder="보호자(딸)"/>
+                <label style={S.lbl}>관계</label>
+                <input style={S.inp} value={form.phoneNote} onChange={e=>setF("phoneNote",e.target.value)} placeholder="본인, 자녀 등"/>
+              </div>
+            </div>
+            {/* 연락처 2 */}
+            <div style={S.row2}>
+              <div style={S.field}>
+                <label style={S.lbl}>연락처 (보호자)</label>
+                <input style={S.inp} value={form.phone2} onChange={e=>setF("phone2",e.target.value)} placeholder="010-0000-0000"/>
+              </div>
+              <div style={S.field}>
+                <label style={S.lbl}>관계</label>
+                <input style={S.inp} value={form.phone2Note} onChange={e=>setF("phone2Note",e.target.value)} placeholder="딸, 아들, 배우자 등"/>
               </div>
             </div>
           </div>
@@ -426,7 +537,7 @@ export default function ConsultationPage() {
         <button style={S.btnBack} onClick={()=>router.push("/")}>← 병동</button>
         <span style={S.htitle}>📋 입원 상담 일지</span>
         <button style={{...S.btnBack, background:"#0f4c35", color:"#fff", marginLeft:"auto"}}
-          onClick={()=>{ setPatientPickOpen(true); }}>
+          onClick={()=>{ setForm({...EMPTY_FORM, createdAt:today()}); setEditId(null); setPtSearchOpen(true); setView("form"); }}>
           + 신규 등록
         </button>
       </header>
@@ -474,7 +585,7 @@ export default function ConsultationPage() {
               return (
                 <div key={c.id} style={{background:"#fff", border:`1.5px solid ${isOverdue?"#fca5a5":isToday?"#fcd34d":"#e2e8f0"}`,
                   borderRadius:8, padding:"8px 12px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap"}}
-                  onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setView("form"); }}>
+                  onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setPtSearchOpen(false); setPtSearchQ(""); setView("form"); }}>
                   <span
                     style={{fontWeight:800, fontSize:14,
                       ...(c.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
@@ -550,7 +661,7 @@ export default function ConsultationPage() {
           }
 
           return (
-            <div key={c.id} style={cardStyle} onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setView("form"); }}>
+            <div key={c.id} style={cardStyle} onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setPtSearchOpen(false); setPtSearchQ(""); setView("form"); }}>
               {/* 이름 + 순번 + 상태 */}
               <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:5}}>
                 {c._monthSeq && (
@@ -565,8 +676,13 @@ export default function ConsultationPage() {
                   onClick={c.patientId ? (e) => { e.stopPropagation(); router.push(`/patients?id=${encodeURIComponent(c.patientId)}`); } : undefined}>
                   {c.name}
                 </span>
-                {c.birthYear && <span style={{fontSize:12, color:"#64748b"}}>{c.birthYear}년생</span>}
-                {c.age && <span style={{fontSize:12, color:"#64748b"}}>({c.age})</span>}
+                {(c.birthYear || c.age) && (
+                  <span style={{fontSize:12, color:"#64748b"}}>
+                    {c.birthYear ? `${c.birthYear}년생` : ""}
+                    {c.birthYear && c.age ? " / " : ""}
+                    {c.age ? `만 ${c.age}세` : (c.birthYear && calcAge(c.birthYear) ? `만 ${calcAge(c.birthYear)}세` : "")}
+                  </span>
+                )}
                 {c.recontact && c.status !== "입원완료" && c.status !== "취소" && (
                   <span style={{fontSize:10, fontWeight:700, borderRadius:5, padding:"2px 7px",
                     background: c.recontactDate && c.recontactDate < today() ? "#fef2f2" : "#fff7ed",
@@ -582,6 +698,7 @@ export default function ConsultationPage() {
               {/* 연락처 + 진단 + 병원 */}
               <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:5}}>
                 {c.phone && <span style={S.tag}>📞 {c.phone}{c.phoneNote ? ` (${c.phoneNote})`:""}</span>}
+                {c.phone2 && <span style={S.tag}>📞 {c.phone2}{c.phone2Note ? ` (${c.phone2Note})`:""}</span>}
                 {c.diagnosis && <span style={{...S.tag, fontWeight:600}}>{c.diagnosis}</span>}
                 {c.hospital && <span style={S.tag}>🏨 {c.hospital}</span>}
               </div>
@@ -667,32 +784,6 @@ export default function ConsultationPage() {
         </div>
       )}
 
-      {/* 환자 검색 모달 — 신규 상담 등록 전 */}
-      {patientPickOpen && (
-        <PatientSearchModal
-          onSelect={p => {
-            setPatientPickOpen(false);
-            setForm({
-              ...EMPTY_FORM,
-              createdAt:  today(),
-              name:       p.name       || "",
-              phone:      p.phone ? p.phone.replace(/(\d{3})(\d{4})(\d{4})/,"$1-$2-$3") : "",
-              birthYear:  p.birthDate  ? p.birthDate.slice(0,4) : (p.birthYear||""),
-              diagnosis:  p.diagnosis  || "",
-              patientId:  p.internalId || "",
-            });
-            setEditId(null);
-            setView("form");
-          }}
-          onClose={() => {
-            setPatientPickOpen(false);
-            // 검색 없이 직접 신규 등록
-            setForm({...EMPTY_FORM, createdAt:today()});
-            setEditId(null);
-            setView("form");
-          }}
-        />
-      )}
     </div>
   );
 }

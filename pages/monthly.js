@@ -67,11 +67,56 @@ export default function MonthlySchedule() {
   const [editSaving, setEditSaving] = useState(false);
   const [autoFilling, setAutoFilling] = useState(false);
 
+  // 인라인 추가 팝오버
+  const [popover, setPopover] = useState(null); // { dateKey, type, rect }
+
   useEffect(() => {
     const u1 = onValue(ref(db,"slots"), snap => setSlots(snap.val() || {}));
     const u2 = onValue(ref(db,"consultations"), snap => setConsultations(snap.val() || {}));
     return () => { u1(); u2(); };
   }, []);
+
+  // 자동완성용 전체 환자 목록 (MonthlySchedule 레벨에서 계산)
+  const allPatients = useMemo(() => {
+    const list = [];
+    const seenNorm = new Set();
+    const add = (p) => {
+      const nk = normName(p.name);
+      if (seenNorm.has(nk)) return;
+      seenNorm.add(nk);
+      list.push(p);
+    };
+    Object.entries(slots || {}).forEach(([slotKey, slot]) => {
+      const [roomId, bedNum] = slotKey.split("-");
+      const room = `${roomId}-${bedNum}`;
+      if (slot?.current?.name) {
+        add({ name: slot.current.name, room, note: slot.current.note || "",
+          isNew: false, isReserved: false, source:"current", sourceBadge:"입원중",
+          doctor: slot.current.doctor || "" });
+      }
+      (slot?.reservations || []).forEach(r => {
+        if (r?.name) add({ name: r.name, room, note: r.note || "",
+          isNew: false, isReserved: true, source:"reservation", sourceBadge:"예약",
+          doctor: "" });
+      });
+    });
+    Object.values(consultations || {}).forEach(c => {
+      if (!c?.name) return;
+      const noteFields = [];
+      if (c.birthYear) noteFields.push(`${new Date().getFullYear()-parseInt(c.birthYear)}세`);
+      if (c.diagnosis) noteFields.push(c.diagnosis);
+      if (c.hospital)  noteFields.push(c.hospital);
+      if (c.surgery)   noteFields.push(c.surgeryDate ? `수술후(${c.surgeryDate})` : "수술후");
+      if (c.chemo)     noteFields.push(c.chemoDate   ? `항암(${c.chemoDate})`     : "항암중");
+      if (c.radiation) noteFields.push("방사선");
+      add({ name: c.name, room: c.roomTypes?.join("/") || "",
+        note: noteFields.join(" · "),
+        isNew: true, isReserved: c.status === "예약완료",
+        source:"consultation", sourceBadge:"상담",
+        doctor: "" });
+    });
+    return list;
+  }, [slots, consultations]);
 
   // 월간 보드 데이터 로드
   useEffect(() => {
@@ -165,10 +210,26 @@ export default function MonthlySchedule() {
     return data;
   }, [slots, consultations, year, month]);
 
-  // 표시 데이터: boardData 우선, 없으면 calendarData
+  // 이름 기준 중복 제거 (boardData에 이미 저장된 중복도 처리)
+  function dedupList(list) {
+    const seen = new Set();
+    return (list || []).filter(a => {
+      const n = normName(a.name);
+      if (!n || seen.has(n)) return false;
+      seen.add(n);
+      return true;
+    });
+  }
+
+  // 표시 데이터: boardData 우선, 없으면 calendarData (양쪽 모두 dedup 적용)
   function getDisplayData(key) {
-    if (boardData[key]) return { ...boardData[key], isManual: true };
-    return { ...(calendarData[key] || { admissions:[], discharges:[] }), isManual: false };
+    if (boardData[key]) return {
+      admissions: dedupList(boardData[key].admissions),
+      discharges: dedupList(boardData[key].discharges),
+      isManual: true,
+    };
+    const cd = calendarData[key] || { admissions:[], discharges:[] };
+    return { admissions: dedupList(cd.admissions), discharges: dedupList(cd.discharges), isManual: false };
   }
 
   // 편집 모달 열기
@@ -209,6 +270,33 @@ export default function MonthlySchedule() {
     });
     await set(ref(db, `monthlyBoards/${toYM(year, month)}`), Object.keys(obj).length ? obj : null);
     setAutoFilling(false);
+  }
+
+  // 인라인 삭제
+  async function deleteEntry(dKey, type, entryId) {
+    const base = boardData[dKey] || calendarData[dKey] || { admissions:[], discharges:[] };
+    const adm = (base.admissions || []).map(a => ({...a, id: a.id || uid()}));
+    const dis = (base.discharges || []).map(d => ({...d, id: d.id || uid()}));
+    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), {
+      admissions: type === "admission" ? adm.filter(a => a.id !== entryId) : adm,
+      discharges: type === "discharge" ? dis.filter(d => d.id !== entryId) : dis,
+    });
+  }
+
+  // 인라인 추가
+  async function addEntry(dKey, type, entry) {
+    const base = boardData[dKey] || calendarData[dKey] || { admissions:[], discharges:[] };
+    const adm = (base.admissions || []).map(a => ({...a, id: a.id || uid()}));
+    const dis = (base.discharges || []).map(d => ({...d, id: d.id || uid()}));
+    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), {
+      admissions: type === "admission" ? [...adm, {...entry, id: uid()}] : adm,
+      discharges: type === "discharge" ? [...dis, {...entry, id: uid()}] : dis,
+    });
+  }
+
+  function openPopover(dKey, type, e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPopover({ dateKey: dKey, type, rect });
   }
 
   // 달력 격자
@@ -372,7 +460,6 @@ export default function MonthlySchedule() {
                   const isManual = dayData.isManual;
                   const isToday = key === todayKey;
                   const isSun = di === 0, isSat = di === 6;
-                  const hasData = (dayData.admissions||[]).length > 0 || (dayData.discharges||[]).length > 0;
 
                   return (
                     <td key={di} style={{
@@ -411,40 +498,40 @@ export default function MonthlySchedule() {
                       </div>
 
                       {/* 입원 섹션 */}
-                      {(dayData.admissions||[]).length > 0 && (
-                        <div style={{ borderBottom:(dayData.discharges||[]).length > 0 ? "1px dashed #bbf7d0":"none",
-                          padding:"4px 5px", background:"#f0fdf4" }}>
-                          <div style={{ fontSize:13, fontWeight:800, color:"#166534", marginBottom:3 }}>
-                            ↑ 입원 {(dayData.admissions||[]).length}
-                          </div>
-                          {(dayData.admissions||[]).map((p, pi) => (
-                            <PatientChip key={p.id||pi} p={p} type="admission" />
-                          ))}
-                        </div>
-                      )}
+                      <div style={{ borderBottom:"1px dashed #bbf7d0", padding:"4px 5px", background:"#f0fdf4" }}>
+                        {(dayData.admissions||[]).length > 0 && (
+                          <>
+                            <div style={{ fontSize:13, fontWeight:800, color:"#166534", marginBottom:3 }}>
+                              ↑ 입원 {(dayData.admissions||[]).length}
+                            </div>
+                            {(dayData.admissions||[]).map((p, pi) => (
+                              <PatientChip key={p.id||pi} p={p} type="admission"
+                                onDelete={() => deleteEntry(key, "admission", p.id)} />
+                            ))}
+                          </>
+                        )}
+                        <button className="no-print" onClick={e => openPopover(key, "admission", e)}
+                          style={{ background:"none", border:"none", color:"#16a34a", cursor:"pointer",
+                            fontSize:12, padding:"1px 3px", fontWeight:700, lineHeight:1.4 }}>+ 입원</button>
+                      </div>
 
                       {/* 퇴원 섹션 */}
-                      {(dayData.discharges||[]).length > 0 && (
-                        <div style={{ padding:"4px 5px", background:"#fff5f5" }}>
-                          <div style={{ fontSize:13, fontWeight:800, color:"#991b1b", marginBottom:3 }}>
-                            ↓ 퇴원 {(dayData.discharges||[]).length}
-                          </div>
-                          {(dayData.discharges||[]).map((p, pi) => (
-                            <PatientChip key={p.id||pi} p={p} type="discharge" />
-                          ))}
-                        </div>
-                      )}
-
-                      {/* 빈 공간 + 빠른 추가 버튼 */}
-                      {!hasData && (
-                        <div style={{ minHeight:70, display:"flex", alignItems:"flex-end", justifyContent:"center", paddingBottom:5 }}>
-                          <button className="no-print" onClick={() => openEdit(key)}
-                            style={{ background:"none", border:"1px dashed #cbd5e1", borderRadius:4,
-                              color:"#cbd5e1", cursor:"pointer", fontSize:13, padding:"2px 10px" }}>
-                            + 추가
-                          </button>
-                        </div>
-                      )}
+                      <div style={{ padding:"4px 5px", background:"#fff5f5" }}>
+                        {(dayData.discharges||[]).length > 0 && (
+                          <>
+                            <div style={{ fontSize:13, fontWeight:800, color:"#991b1b", marginBottom:3 }}>
+                              ↓ 퇴원 {(dayData.discharges||[]).length}
+                            </div>
+                            {(dayData.discharges||[]).map((p, pi) => (
+                              <PatientChip key={p.id||pi} p={p} type="discharge"
+                                onDelete={() => deleteEntry(key, "discharge", p.id)} />
+                            ))}
+                          </>
+                        )}
+                        <button className="no-print" onClick={e => openPopover(key, "discharge", e)}
+                          style={{ background:"none", border:"none", color:"#dc2626", cursor:"pointer",
+                            fontSize:12, padding:"1px 3px", fontWeight:700, lineHeight:1.4 }}>+ 퇴원</button>
+                      </div>
                     </td>
                   );
                 })}
@@ -473,65 +560,115 @@ export default function MonthlySchedule() {
           onSave={saveEdit}
           onClose={() => setEditModal(null)}
           saving={editSaving}
-          slots={slots}
-          consultations={consultations}
+          allPatients={allPatients}
+        />
+      )}
+
+      {/* 인라인 추가 팝오버 */}
+      {popover && (
+        <CellPopover
+          popover={popover}
+          onClose={() => setPopover(null)}
+          onSave={addEntry}
+          allPatients={allPatients}
         />
       )}
     </div>
   );
 }
 
+/* ── 인라인 추가 팝오버 ── */
+function CellPopover({ popover, onClose, onSave, allPatients }) {
+  const [form, setForm] = useState({ name:"", room:"", note:"", isNew:false });
+  const [saving, setSaving] = useState(false);
+  const wrapRef = useRef(null);
+  const isAdm = popover.type === "admission";
+
+  useEffect(() => {
+    function handler(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) onClose();
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  useEffect(() => {
+    function handler(e) { if (e.key === "Escape") onClose(); }
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const r = popover.rect;
+  const estH = 260;
+  const top = (r.bottom + 4 + estH > window.innerHeight) ? Math.max(8, r.top - estH - 4) : r.bottom + 4;
+  const left = Math.min(r.left, window.innerWidth - 320);
+
+  async function handleSave() {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await onSave(popover.dateKey, popover.type, {
+      name: form.name.trim(),
+      room: form.room.trim(),
+      note: form.note.trim(),
+      isNew: form.isNew,
+      isReserved: false,
+    });
+    setSaving(false);
+    onClose();
+  }
+
+  const inputSt = { border:"1px solid #e2e8f0", borderRadius:6, padding:"6px 9px",
+    fontSize:14, fontFamily:"inherit", outline:"none", width:"100%", boxSizing:"border-box" };
+
+  return (
+    <div ref={wrapRef} style={{ position:"fixed", top, left, zIndex:500, width:310,
+      background:"#fff", borderRadius:10, boxShadow:"0 8px 32px rgba(0,0,0,0.18)",
+      border:"1px solid #e2e8f0", padding:14 }}>
+      <div style={{ fontWeight:800, fontSize:14, color: isAdm ? "#166534" : "#991b1b", marginBottom:10 }}>
+        {isAdm ? "↑ 입원 추가" : "↓ 퇴원 추가"}
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:7 }}>
+        <PatientAutocomplete
+          value={form.name}
+          patients={allPatients}
+          onChange={v => setForm(f => ({...f, name:v}))}
+          onSelect={p => setForm(f => ({...f, name:p.name, room:f.room||p.room, note:f.note||p.note, isNew:isAdm?(p.isNew||f.isNew):f.isNew}))}
+          placeholder="이름 검색 또는 직접 입력"
+          inputStyle={inputSt}
+        />
+        <input value={form.room} onChange={e => setForm(f => ({...f, room:e.target.value}))}
+          placeholder="호실 (예: 501-1)" style={inputSt} />
+        <input value={form.note} onChange={e => setForm(f => ({...f, note:e.target.value}))}
+          placeholder="비고" style={inputSt} />
+        {isAdm && (
+          <label style={{ display:"flex", alignItems:"center", gap:5, fontSize:13, cursor:"pointer",
+            background: form.isNew?"#fef9c3":"#f8fafc", borderRadius:6, padding:"5px 10px",
+            border:"1px solid", borderColor: form.isNew?"#fcd34d":"#e2e8f0",
+            color: form.isNew?"#713f12":"#64748b", fontWeight: form.isNew?700:500 }}>
+            <input type="checkbox" checked={form.isNew} onChange={e => setForm(f => ({...f, isNew:e.target.checked}))} style={{ margin:0 }} />
+            ★ 신환
+          </label>
+        )}
+        <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:2 }}>
+          <button onClick={onClose}
+            style={{ background:"#f1f5f9", color:"#374151", border:"none", borderRadius:6,
+              padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight:600 }}>취소</button>
+          <button onClick={handleSave} disabled={saving || !form.name.trim()}
+            style={{ background: isAdm ? "#059669" : "#dc2626", color:"#fff", border:"none", borderRadius:6,
+              padding:"6px 16px", cursor:"pointer", fontSize:13, fontWeight:700,
+              opacity: !form.name.trim() ? 0.5 : 1 }}>
+            {saving ? "저장..." : "추가"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── 날짜 편집 모달 ── */
-function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDis, onSave, onClose, saving, slots, consultations }) {
+function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDis, onSave, onClose, saving, allPatients }) {
   const d = new Date(dateKey);
   const label = `${d.getMonth()+1}월 ${d.getDate()}일 (${DOW[d.getDay()]})`;
-
-  // slots + consultations → 자동완성용 환자 목록
-  const allPatients = useMemo(() => {
-    const list = [];
-    const seenNorm = new Set(); // 정규화 이름 기준 dedup
-    const add = (p) => {
-      const nk = normName(p.name);
-      if (seenNorm.has(nk)) return;
-      seenNorm.add(nk);
-      list.push(p);
-    };
-
-    // 현재 입원 환자
-    Object.entries(slots || {}).forEach(([slotKey, slot]) => {
-      const [roomId, bedNum] = slotKey.split("-");
-      const room = `${roomId}-${bedNum}`;
-      if (slot?.current?.name) {
-        add({ name: slot.current.name, room, note: slot.current.note || "",
-          isNew: false, isReserved: false, source:"current", sourceBadge:"입원중",
-          doctor: slot.current.doctor || "" });
-      }
-      (slot?.reservations || []).forEach(r => {
-        if (r?.name) add({ name: r.name, room, note: r.note || "",
-          isNew: false, isReserved: true, source:"reservation", sourceBadge:"예약",
-          doctor: "" });
-      });
-    });
-
-    // 상담일지 환자
-    Object.values(consultations || {}).forEach(c => {
-      if (!c?.name) return;
-      const noteFields = [];
-      if (c.birthYear) noteFields.push(`${new Date().getFullYear()-parseInt(c.birthYear)}세`);
-      if (c.diagnosis) noteFields.push(c.diagnosis);
-      if (c.hospital)  noteFields.push(c.hospital);
-      if (c.surgery)   noteFields.push(c.surgeryDate ? `수술후(${c.surgeryDate})` : "수술후");
-      if (c.chemo)     noteFields.push(c.chemoDate   ? `항암(${c.chemoDate})`     : "항암중");
-      if (c.radiation) noteFields.push("방사선");
-      add({ name: c.name, room: c.roomTypes?.join("/") || "",
-        note: noteFields.join(" · "),
-        isNew: true, isReserved: c.status === "예약완료",
-        source:"consultation", sourceBadge:"상담",
-        doctor: "" });
-    });
-
-    return list;
-  }, [slots, consultations]);
 
   function updateAdm(id, field, val) {
     onChangeAdm(rows => rows.map(r => r.id===id ? {...r, [field]:val} : r));
@@ -676,12 +813,17 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
   );
 }
 
-function PatientChip({ p, type }) {
+function PatientChip({ p, type, onDelete }) {
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:3, flexWrap:"wrap", marginBottom:3, lineHeight:1.4 }}>
+    <div style={{ display:"flex", alignItems:"center", gap:3, marginBottom:3, lineHeight:1.4 }}>
       {p.isNew && <span style={{ fontSize:12, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>★신</span>}
-      <span style={{ fontSize:16, fontWeight:700, color: type==="admission" ? "#065f46" : "#991b1b" }}>{p.name}</span>
-      {p.room && <span style={{ fontSize:13, color:"#64748b" }}>({p.room})</span>}
+      <span style={{ fontSize:16, fontWeight:700, color: type==="admission" ? "#065f46" : "#991b1b", flexShrink:0 }}>{p.name}</span>
+      {p.room && <span style={{ fontSize:13, color:"#64748b", flexShrink:0 }}>({p.room})</span>}
+      {onDelete && (
+        <button className="no-print" onClick={onDelete}
+          style={{ background:"none", border:"none", cursor:"pointer", color:"#ef4444",
+            fontSize:13, padding:"0 2px", lineHeight:1, marginLeft:"auto", flexShrink:0 }}>✕</button>
+      )}
     </div>
   );
 }
