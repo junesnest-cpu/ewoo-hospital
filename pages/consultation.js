@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { ref, onValue, set, push, remove } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
+import PatientSearchModal from "../components/PatientSearchModal";
 
 const ROOM_TYPES = ["1인실","2인실","4인실","6인실"];
 const WARD_STRUCTURE = {
@@ -75,6 +76,9 @@ export default function ConsultationPage() {
   // 병실 모달 (예약 등록)
   const [reserveModal, setReserveModal] = useState(null); // { consultation }
   const [reserveSlot, setReserveSlot] = useState("");
+
+  // 환자 검색 모달 (신규 상담 등록 전)
+  const [patientPickOpen, setPatientPickOpen] = useState(false);
 
   useEffect(() => {
     const unsub1 = onValue(ref(db,"consultations"), snap => {
@@ -392,7 +396,7 @@ export default function ConsultationPage() {
         <button style={S.btnBack} onClick={()=>router.push("/")}>← 병동</button>
         <span style={S.htitle}>📋 입원 상담 일지</span>
         <button style={{...S.btnBack, background:"#0f4c35", color:"#fff", marginLeft:"auto"}}
-          onClick={()=>{ setForm({...EMPTY_FORM, createdAt:today()}); setEditId(null); setView("form"); }}>
+          onClick={()=>{ setPatientPickOpen(true); }}>
           + 신규 등록
         </button>
       </header>
@@ -621,6 +625,33 @@ export default function ConsultationPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 환자 검색 모달 — 신규 상담 등록 전 */}
+      {patientPickOpen && (
+        <PatientSearchModal
+          onSelect={p => {
+            setPatientPickOpen(false);
+            setForm({
+              ...EMPTY_FORM,
+              createdAt:  today(),
+              name:       p.name       || "",
+              phone:      p.phone ? p.phone.replace(/(\d{3})(\d{4})(\d{4})/,"$1-$2-$3") : "",
+              birthYear:  p.birthDate  ? p.birthDate.slice(0,4) : (p.birthYear||""),
+              diagnosis:  p.diagnosis  || "",
+              patientId:  p.internalId || "",
+            });
+            setEditId(null);
+            setView("form");
+          }}
+          onClose={() => {
+            setPatientPickOpen(false);
+            // 검색 없이 직접 신규 등록
+            setForm({...EMPTY_FORM, createdAt:today()});
+            setEditId(null);
+            setView("form");
+          }}
+        />
       )}
     </div>
   );

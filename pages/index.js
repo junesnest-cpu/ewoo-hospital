@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { ref, onValue, set, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
+import PatientSearchModal from "../components/PatientSearchModal";
 
 const WARD_STRUCTURE = {
   2: { name: "2병동", rooms: [
@@ -141,6 +142,7 @@ export default function HospitalWardManager() {
   const [selectedRoom,   setSelectedRoom]   = useState(null);
   const [editingSlot,    setEditingSlot]    = useState(null);
   const [addingTo,       setAddingTo]       = useState(null);
+  const [patientPickFor, setPatientPickFor] = useState(null); // { slotKey, mode } — 환자 검색 선행
   const [movingPatient,  setMovingPatient]  = useState(null); // { slotKey, mode, data, resIndex }
   const [uploading,      setUploading]      = useState(false);
   const [uploadResult,   setUploadResult]   = useState(null);
@@ -571,6 +573,7 @@ export default function HospitalWardManager() {
                         { label:"📋 일일 치료", action:() => router.push("/daily") },
                         { label:"🏥 치료실", action:() => router.push("/therapy") },
                         { label:"📋 상담일지", action:() => router.push("/consultation") },
+                        { label:"👤 환자조회", action:() => router.push("/patients") },
                         { label:"⚙️ 설정", action:() => router.push("/settings") },
                       ].map(item => (
                         <button key={item.label}
@@ -633,6 +636,7 @@ export default function HospitalWardManager() {
             <button style={{ ...S.navBtn, background:"#065f46", color:"#6ee7b7" }} onClick={() => router.push("/daily")}>📋 일일 치료</button>
             <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/therapy")}>🏥 치료실</button>
             <button style={{ ...S.navBtn, background:"#713f12", color:"#fef08a" }} onClick={() => router.push("/consultation")}>📋 상담일지</button>
+            <button style={{ ...S.navBtn, background:"#1e3a5f", color:"#93c5fd" }} onClick={() => router.push("/patients")}>👤 환자조회</button>
             <button style={{ ...S.navBtn, background:"#334155", color:"#cbd5e1" }} onClick={() => router.push("/settings")}>⚙️ 설정</button>
           </div>
         )}
@@ -809,8 +813,8 @@ export default function HospitalWardManager() {
             movingPatient={movingPatient} onStartMove={startMove} onMoveTarget={executeMove}
             onEditCurrent={(sk, data) => setEditingSlot({ slotKey: sk, mode: "current", data })}
             onEditReservation={(sk, data, idx) => setEditingSlot({ slotKey: sk, mode: "reservation", data, resIndex: idx })}
-            onAddCurrent={sk => setAddingTo({ slotKey: sk, mode: "current" })}
-            onAddReservation={sk => setAddingTo({ slotKey: sk, mode: "reservation" })}
+            onAddCurrent={sk => setPatientPickFor({ slotKey: sk, mode: "current" })}
+            onAddReservation={sk => setPatientPickFor({ slotKey: sk, mode: "reservation" })}
             onConvertReservation={convertReservation}
             onBack={() => setView("ward")} />
         )}
@@ -830,12 +834,26 @@ export default function HospitalWardManager() {
           onDelete={() => cancelReservation(editingSlot.slotKey, editingSlot.resIndex)}
           onClose={() => setEditingSlot(null)} />
       )}
+      {/* 입원/예약 등록 — 환자 검색 선행 */}
+      {patientPickFor && (
+        <PatientSearchModal
+          onSelect={p => {
+            setPatientPickFor(null);
+            setAddingTo({ ...patientPickFor, prefill: { name: p.name, patientId: p.internalId } });
+          }}
+          onClose={() => setPatientPickFor(null)}
+        />
+      )}
       {addingTo?.mode === "current" && (
-        <PatientModal title={`${addingTo.slotKey} 입원 등록`} data={{ name:"", bedPosition:"", admitDate:"", discharge:"미정", note:"", scheduleAlert:false }} mode="current" isNew
+        <PatientModal title={`${addingTo.slotKey} 입원 등록`}
+          data={{ name: addingTo.prefill?.name||"", patientId: addingTo.prefill?.patientId||"", bedPosition:"", admitDate:"", discharge:"미정", note:"", scheduleAlert:false }}
+          mode="current" isNew
           onSave={data => saveCurrentPatient(addingTo.slotKey, data)} onClose={() => setAddingTo(null)} />
       )}
       {addingTo?.mode === "reservation" && (
-        <PatientModal title={`${addingTo.slotKey} 예약 입원 등록`} data={{ name:"", bedPosition:"", admitDate:"", discharge:"미정", note:"", scheduleAlert:false }} mode="reservation" isNew
+        <PatientModal title={`${addingTo.slotKey} 예약 입원 등록`}
+          data={{ name: addingTo.prefill?.name||"", patientId: addingTo.prefill?.patientId||"", bedPosition:"", admitDate:"", discharge:"미정", note:"", scheduleAlert:false }}
+          mode="reservation" isNew
           onSave={data => saveReservation(addingTo.slotKey, data, undefined)} onClose={() => setAddingTo(null)} />
       )}
 
