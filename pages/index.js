@@ -537,7 +537,20 @@ export default function HospitalWardManager() {
 
   // ── CRUD ─────────────────────────────────────────────────────────────────
   const saveCurrentPatient = async (slotKey, data) => {
-    const newSlots = { ...slots, [slotKey]: { ...(slots[slotKey] || { reservations: [] }), current: data } };
+    const oldSlot = slots[slotKey] || { current: null, reservations: [] };
+    const newSlot = JSON.parse(JSON.stringify(oldSlot));
+    // admitDate가 미래면 current → reservation으로 이동 (입원 연기 처리)
+    const admitD = data.admitDate ? parseDateStr(data.admitDate) : null;
+    if (admitD && dateOnly(admitD) > todayDate()) {
+      newSlot.current = null;
+      if (!newSlot.reservations) newSlot.reservations = [];
+      const dupIdx = newSlot.reservations.findIndex(r => r.name === data.name);
+      if (dupIdx >= 0) newSlot.reservations[dupIdx] = data;
+      else newSlot.reservations.push(data);
+    } else {
+      newSlot.current = data;
+    }
+    const newSlots = { ...slots, [slotKey]: newSlot };
     await saveSlots(newSlots);
     await addLog({ type: "edit", msg: `${slotKey} ${data.name} 정보 수정` });
     setEditingSlot(null); setAddingTo(null);
@@ -686,7 +699,6 @@ export default function HospitalWardManager() {
         </div>
         {/* 통계 필 + 토글 버튼 */}
         <div style={{ ...S.headerCenter, justifyContent: isMobile ? "flex-start" : "center" }}>
-          <StatPill label="전체 병상"  value={stats.total}     color="#64748b" />
           <StatPill label="사용 중"    value={stats.occupied}  color={isPreview ? "#34d399":"#0ea5e9"} />
           <StatPill label="빈 병상"    value={stats.available} color={isPreview ? "#6ee7b7":"#10b981"} />
           {!isPreview && (

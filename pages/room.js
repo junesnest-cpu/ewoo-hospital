@@ -482,7 +482,17 @@ export default function RoomPage() {
             if(!newSlots[sk]) newSlots[sk]={current:null,reservations:[]};
             const slot2=newSlots[sk];
             if((editingSlot?.mode||addingTo?.mode)==="current"){
-              slot2.current=form;
+              // admitDate가 미래면 current → reservation으로 이동 (입원 연기 처리)
+              const admitD = form.admitDate ? parseDateStr(form.admitDate) : null;
+              if (admitD && dateOnly(admitD) > todayDate()) {
+                slot2.current = null;
+                if (!slot2.reservations) slot2.reservations = [];
+                const dupIdx = slot2.reservations.findIndex(r => r.name === form.name);
+                if (dupIdx >= 0) slot2.reservations[dupIdx] = form;
+                else slot2.reservations.push(form);
+              } else {
+                slot2.current = form;
+              }
             } else {
               if(!slot2.reservations) slot2.reservations=[];
               if(editingSlot?.resIndex!==undefined) slot2.reservations[editingSlot.resIndex]=form;
