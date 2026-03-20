@@ -96,6 +96,7 @@ specificDates 형식:
 - 특정 날짜 지정이면 specificDates, 반복 요일이면 weeklySchedule
 - "퇴원약 메시마 11개" → dischargeMeds: [{"name":"메시마","qty":"11"}] (수량 있을 때만)
 - "퇴원약 셀레나제160개, 메시마39개" → dischargeMeds: [{"name":"셀레나제","qty":"160"},{"name":"메시마","qty":"39"}]
+- 셀레나제 수량: 1박스=20개 (예: "셀레나제 2박스" → qty:"40", "셀레나제 1박스" → qty:"20")
 - "퇴원시 부족분 셀레나제 있습니다" → dischargeNote (수량 불명)
 - "도수2 2회" (날짜/요일 없이 횟수만) → sessionCount: [{"name":"도수2","count":"2"}]
 - "고주파3회" (날짜/요일 없이 횟수만) → sessionCount: [{"name":"고주파","count":"3"}]
