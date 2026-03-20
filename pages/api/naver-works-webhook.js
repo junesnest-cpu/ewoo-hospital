@@ -54,7 +54,7 @@ async function parseMessageWithClaude(text) {
     "name": "환자명 또는 null",
     "dischargeDate": "M/D 형식 퇴원예정일 또는 null",
     "admitDate": "M/D 형식 입원예정일 또는 null",
-    "transferToRoom": "전실할 병실번호 또는 null",
+    "transferToRoom": "전실할 병실번호 또는 null (예: \"301\" 또는 병상 지정 시 \"301-2\")",
     "treatments": [],
     "weeklySchedule": "반복 요일 치료: 요일은 쉼표 없이 붙여쓰기 (예: 고주파 주3회, 자닥신 월목, 이스카도 목토월)",
     "specificDates": [],
@@ -78,6 +78,12 @@ specificDates 형식:
 - "내일 퇴원" → dischargeDate: 오늘 기준 다음날 M/D 형식
 - "다음주 입원" → admitDate: 오늘(${month}/${day})로부터 7일 후 M/D 형식 계산
 - "퇴원 후 재입원" → 퇴원(discharge_update) + 재입원(admit_plan) 2개 항목
+- "전실/이동/자리이동/병실이동" → action: "transfer"
+- "305-2 류미경 301호로 전실" → action:"transfer", slotKey:"305-2", name:"류미경", transferToRoom:"301", admitDate: null (오늘)
+- "305-2 류미경 301-2로 이동" → action:"transfer", slotKey:"305-2", name:"류미경", transferToRoom:"301-2", admitDate: null
+- "305-2 류미경 25일 301호 전실예정" → action:"transfer", slotKey:"305-2", transferToRoom:"301", admitDate:"${month}/25"
+- "306호 안규자 다음주 화요일 501호로 전실" → action:"transfer", room:"306", transferToRoom:"501", admitDate: 날짜 계산
+- 전실일이 오늘이거나 날짜 없으면 admitDate: null, 미래 날짜면 admitDate에 M/D 형식 기재
 - "병실료F" → roomFeeType: "F"
 - 치료 항목(이뮤알파/메시마/고주파/자닥신/이스카도/미슬토/림프도수/페인/셀레나제/세파셀렌정/페리주/페리주560/싸이원/고용량비타민C/고함량비타민C) → treatments 배열
 - 세파셀렌정=셀레나제정, 고함량비타민C=고용량비타민C, 이스카도=미슬토(이스카도M 기본), 페리주 단독=페리주360ml

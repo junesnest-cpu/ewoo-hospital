@@ -161,10 +161,11 @@ async function applySlotChange(form) {
       targetMode === "current" ? slot.current : (slot.reservations || [])[targetResIndex];
     if (!patient) throw new Error(`${form.name} 환자를 ${targetSlotKey}에서 찾을 수 없습니다.`);
 
-    if (targetMode === "current") slot.current = null;
-    else slot.reservations.splice(targetResIndex, 1);
-
-    const newSlotKey = findEmptyBed(newSlots, form.transferToRoom);
+    // transferToRoom이 "301-2" 형식이면 그대로, "301"이면 빈 자리 탐색
+    const destRoom = form.transferToRoom.includes("-") ? null : form.transferToRoom;
+    const newSlotKey = destRoom
+      ? findEmptyBed(newSlots, destRoom)
+      : form.transferToRoom;
     beforeSnapshot[newSlotKey] = JSON.parse(JSON.stringify(slots[newSlotKey] || null));
     if (!newSlots[newSlotKey]) newSlots[newSlotKey] = { current: null, reservations: [] };
 
@@ -172,8 +173,37 @@ async function applySlotChange(form) {
     const extra = buildNote({ note: form.note });
     if (extra) patient.note = patient.note ? `${patient.note} / ${extra}` : extra;
 
-    newSlots[newSlotKey].current = patient;
-    changeDescription = `[전실] ${form.name}: ${targetSlotKey} → ${newSlotKey}`;
+    // 전실일 판단: admitDate가 오늘 이후면 예약, 오늘이거나 없으면 즉시 이동
+    const transferDateStr = parseMMDD(form.admitDate);
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const isFuture = transferDateStr && transferDateStr > todayStr;
+
+    if (isFuture) {
+      // 미래 전실: 기존 슬롯의 퇴원일을 전실일로 업데이트 + 새 슬롯에 예약 추가
+      if (targetMode === "current" && slot.current) {
+        slot.current.discharge = form.admitDate; // 전실일 = 이전 병실 퇴원일
+      }
+      if (!newSlots[newSlotKey].reservations) newSlots[newSlotKey].reservations = [];
+      // 기존 예약 중복 방지
+      const dupIdx = newSlots[newSlotKey].reservations.findIndex(r => r.name === patient.name);
+      const resEntry = {
+        name: patient.name,
+        admitDate: form.admitDate,
+        discharge: patient.discharge || "미정",
+        roomFeeType: patient.roomFeeType || "",
+        note: patient.note || "",
+        scheduleAlert: patient.scheduleAlert || false,
+      };
+      if (dupIdx >= 0) newSlots[newSlotKey].reservations[dupIdx] = resEntry;
+      else newSlots[newSlotKey].reservations.push(resEntry);
+      changeDescription = `[전실예약] ${form.name}: ${targetSlotKey} → ${newSlotKey} (${form.admitDate})`;
+    } else {
+      // 즉시 이동
+      if (targetMode === "current") slot.current = null;
+      else slot.reservations.splice(targetResIndex, 1);
+      newSlots[newSlotKey].current = patient;
+      changeDescription = `[전실] ${form.name}: ${targetSlotKey} → ${newSlotKey}`;
+    }
     finalSlotKey = newSlotKey;
 
   } else if (form.action === "admit_plan") {
@@ -852,17 +882,28 @@ function PendingCard({ change, onApprove, onReject }) {
             </div>
           )}
 
-          {/* 전실 대상 병실 */}
+          {/* 전실 대상 병실 + 전실일 */}
           {form.action === "transfer" && (
-            <div style={H.field}>
-              <label style={H.label}>전실할 병실</label>
-              <input
-                value={form.transferToRoom}
-                onChange={(e) => setF("transferToRoom", e.target.value)}
-                style={fieldStyle("transferToRoom")}
-                placeholder="예: 501"
-              />
-            </div>
+            <>
+              <div style={H.field}>
+                <label style={H.label}>전실할 병실</label>
+                <input
+                  value={form.transferToRoom}
+                  onChange={(e) => setF("transferToRoom", e.target.value)}
+                  style={fieldStyle("transferToRoom")}
+                  placeholder="예: 501 또는 501-2"
+                />
+              </div>
+              <div style={H.field}>
+                <label style={H.label}>전실일 (오늘이면 즉시이동)</label>
+                <input
+                  value={form.admitDate}
+                  onChange={(e) => setF("admitDate", e.target.value)}
+                  style={fieldStyle("admitDate")}
+                  placeholder="예: 3/25 (비우면 오늘)"
+                />
+              </div>
+            </>
           )}
 
           {/* 병실료 */}
