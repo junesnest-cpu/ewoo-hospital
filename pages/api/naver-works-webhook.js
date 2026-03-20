@@ -30,9 +30,10 @@ const WARD_ROOMS = {
 async function parseMessageWithClaude(text) {
   const today = new Date();
   const month = today.getMonth() + 1;
+  const day   = today.getDate();
   const year  = today.getFullYear();
 
-  const prompt = `오늘은 ${year}년 ${month}월입니다.
+  const prompt = `오늘은 ${year}년 ${month}월 ${day}일입니다.
 병원 병동 채팅 메시지에서 환자/액션별로 분리하여 JSON 배열만 반환하세요 (설명 없이).
 
 규칙:
@@ -73,6 +74,9 @@ specificDates 형식:
 - "305-2 류미경님" → slotKey: "305-2", room: "305", bedNumber: 2
 - "306호 안규자님" → room: "306"
 - "15일 퇴원예정" → dischargeDate: "${month}/15"
+- "오늘 퇴원" → dischargeDate: "${month}/${day}"
+- "내일 퇴원" → dischargeDate: 오늘 기준 다음날 M/D 형식
+- "다음주 입원" → admitDate: 오늘(${month}/${day})로부터 7일 후 M/D 형식 계산
 - "퇴원 후 재입원" → 퇴원(discharge_update) + 재입원(admit_plan) 2개 항목
 - "병실료F" → roomFeeType: "F"
 - 치료 항목(이뮤알파/메시마/고주파/자닥신/이스카도/미슬토/림프도수/페인/셀레나제/세파셀렌정/페리주/페리주560/싸이원/고용량비타민C/고함량비타민C) → treatments 배열

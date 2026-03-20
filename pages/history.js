@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
@@ -177,17 +177,37 @@ async function applySlotChange(form) {
     finalSlotKey = newSlotKey;
 
   } else if (form.action === "admit_plan") {
-    const reservation = {
-      name: form.name,
-      admitDate: form.admitDate || "",
-      discharge: form.dischargeDate || "미정",
-      note: buildNote(form),
-      scheduleAlert: form.scheduleAlert || false,
-    };
-    if (form.roomFeeType) reservation.roomFeeType = form.roomFeeType;
     if (!slot.reservations) slot.reservations = [];
-    slot.reservations.push(reservation);
-    changeDescription = `[입원예약] ${form.name} → ${targetSlotKey} (입원: ${reservation.admitDate || "미정"})`;
+
+    // 이미 같은 환자 예약이 있으면 업데이트, 없으면 새로 추가
+    const existingIdx = targetMode === "reservation" && targetResIndex >= 0
+      ? targetResIndex
+      : slot.reservations.findIndex((r) => r.name === form.name);
+
+    if (existingIdx >= 0) {
+      // 기존 예약 업데이트
+      const existing = slot.reservations[existingIdx];
+      if (form.admitDate) existing.admitDate = form.admitDate;
+      if (form.dischargeDate) existing.discharge = form.dischargeDate;
+      if (form.roomFeeType) existing.roomFeeType = form.roomFeeType;
+      if (form.scheduleAlert) existing.scheduleAlert = true;
+      const noteAdd = buildNote({ treatments: form.treatments, dischargeNote: form.dischargeNote, note: form.note });
+      if (noteAdd) existing.note = existing.note ? `${existing.note} / ${noteAdd}` : noteAdd;
+      slot.reservations[existingIdx] = existing;
+      changeDescription = `[예약 업데이트] ${form.name} (${targetSlotKey}): 입원일 → ${existing.admitDate || "미정"}`;
+    } else {
+      // 새 예약 추가
+      const reservation = {
+        name: form.name,
+        admitDate: form.admitDate || "",
+        discharge: form.dischargeDate || "미정",
+        note: buildNote(form),
+        scheduleAlert: form.scheduleAlert || false,
+      };
+      if (form.roomFeeType) reservation.roomFeeType = form.roomFeeType;
+      slot.reservations.push(reservation);
+      changeDescription = `[입원예약] ${form.name} → ${targetSlotKey} (입원: ${reservation.admitDate || "미정"})`;
+    }
 
   } else {
     // discharge_update / update
@@ -522,9 +542,103 @@ export default function HistoryPage() {
   );
 }
 
+// ── 메시지 하이라이트 ─────────────────────────────────────────────────────────
+function HighlightedMessage({ text, parsed }) {
+  if (!text) return null;
+  const p = parsed || {};
+
+  // 하이라이트할 텀 목록: [{term, color, bg}]
+  const terms = [];
+  if (p.name) terms.push({ term: p.name, color: "#1d4ed8", bg: "#dbeafe" });
+  if (p.room) {
+    terms.push({ term: p.room + "호", color: "#7c3aed", bg: "#ede9fe" });
+    terms.push({ term: p.room, color: "#7c3aed", bg: "#ede9fe" });
+  }
+  if (p.dischargeDate) {
+    ["오늘", "퇴원", "내일"].forEach((w) => terms.push({ term: w, color: "#d97706", bg: "#fef3c7" }));
+  }
+  if (p.admitDate || p.action === "admit_plan") {
+    ["다음주", "재입원", "입원예정", "입원"].forEach((w) => terms.push({ term: w, color: "#059669", bg: "#d1fae5" }));
+  }
+  (p.dischargeMeds || []).forEach((m) => {
+    if (m.name) terms.push({ term: m.name, color: "#dc2626", bg: "#fee2e2" });
+  });
+  (p.treatments || []).forEach((t) => {
+    terms.push({ term: t, color: "#0891b2", bg: "#cffafe" });
+  });
+
+  // 매치 찾기
+  const matches = [];
+  for (const { term, color, bg } of terms) {
+    if (!term) continue;
+    let idx = 0;
+    while (true) {
+      const found = text.indexOf(term, idx);
+      if (found === -1) break;
+      matches.push({ start: found, end: found + term.length, color, bg });
+      idx = found + 1;
+    }
+  }
+  // 정렬 후 겹침 제거
+  matches.sort((a, b) => a.start - b.start);
+  const noOverlap = [];
+  let lastEnd = 0;
+  for (const m of matches) {
+    if (m.start >= lastEnd) { noOverlap.push(m); lastEnd = m.end; }
+  }
+  // 세그먼트 빌드
+  const segments = [];
+  let pos = 0;
+  for (const m of noOverlap) {
+    if (m.start > pos) segments.push({ text: text.slice(pos, m.start), hl: null });
+    segments.push({ text: text.slice(m.start, m.end), hl: m });
+    pos = m.end;
+  }
+  if (pos < text.length) segments.push({ text: text.slice(pos), hl: null });
+
+  return (
+    <>
+      {segments.map((seg, i) =>
+        seg.hl ? (
+          <mark key={i} style={{ background: seg.hl.bg, color: seg.hl.color, borderRadius: 3, padding: "0 2px", fontWeight: 700 }}>
+            {seg.text}
+          </mark>
+        ) : <span key={i}>{seg.text}</span>
+      )}
+    </>
+  );
+}
+
 // ── 대기 카드 ─────────────────────────────────────────────────────────────────
 function PendingCard({ change, onApprove, onReject }) {
   const p = change.parsed || {};
+
+  // AI가 초기에 채운 필드값 (변경 추적용)
+  const aiInitial = useRef({
+    name: p.name || "",
+    room: p.room || "",
+    dischargeDate: p.dischargeDate || "",
+    admitDate: p.admitDate || "",
+    action: p.action || "",
+    transferToRoom: p.transferToRoom || "",
+    weeklySchedule: p.weeklySchedule || "",
+    note: p.note || "",
+    roomFeeType: p.roomFeeType || "",
+    slotKeyOverride: change.suggestedSlotKey || p.slotKey || "",
+  });
+  const [modifiedFields, setModifiedFields] = useState(new Set());
+
+  const fieldStyle = (key) => {
+    if (modifiedFields.has(key)) return { ...H.input, borderColor: "#3b82f6", background: "#eff6ff" };
+    if (aiInitial.current[key]) return { ...H.input, borderColor: "#f59e0b", background: "#fffbeb" };
+    return H.input;
+  };
+  const selectStyle = (key) => {
+    if (modifiedFields.has(key)) return { ...H.select, borderColor: "#3b82f6", background: "#eff6ff" };
+    if (aiInitial.current[key]) return { ...H.select, borderColor: "#f59e0b", background: "#fffbeb" };
+    return H.select;
+  };
+
   const [form, setForm] = useState({
     action: p.action || "update",
     room: p.room || "",
@@ -558,6 +672,7 @@ function PendingCard({ change, onApprove, onReject }) {
   const [error, setError] = useState("");
 
   const setF = (k, v) => {
+    setModifiedFields((prev) => new Set([...prev, k]));
     setForm((f) => ({ ...f, [k]: v }));
     // dischargeDate 변경 시 weeklyEndDate 자동 동기화
     if (k === "dischargeDate") {
@@ -640,7 +755,7 @@ function PendingCard({ change, onApprove, onReject }) {
       {/* 원본 메시지 */}
       <div style={H.msgBox}>
         <div style={H.msgLabel}>원본 메시지</div>
-        <div style={H.msgText}>"{change.message}"</div>
+        <div style={H.msgText}>"<HighlightedMessage text={change.message} parsed={change.parsed} />"</div>
         {change.userId && <div style={H.userId}>보낸 사람: {change.userId}</div>}
       </div>
 
@@ -654,12 +769,16 @@ function PendingCard({ change, onApprove, onReject }) {
       {/* AI 파싱 결과 — 편집 가능 */}
       <div style={{ padding: "12px 14px" }}>
         <div style={H.sectionTitle}>🤖 AI 파싱 결과 <span style={H.editHint}>직접 수정 가능</span></div>
+        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <span><span style={{ background: "#fffbeb", border: "1.5px solid #f59e0b", borderRadius: 3, padding: "0 5px", fontSize: 11 }}>필드</span> AI 파싱값</span>
+          <span><span style={{ background: "#eff6ff", border: "1.5px solid #3b82f6", borderRadius: 3, padding: "0 5px", fontSize: 11 }}>필드</span> 수동 수정됨</span>
+        </div>
 
         <div style={H.grid}>
           {/* 액션 */}
           <div style={H.field}>
             <label style={H.label}>액션</label>
-            <select value={form.action} onChange={(e) => setF("action", e.target.value)} style={H.select}>
+            <select value={form.action} onChange={(e) => setF("action", e.target.value)} style={selectStyle("action")}>
               <option value="discharge_update">퇴원일 업데이트</option>
               <option value="transfer">전실</option>
               <option value="admit_plan">입원 예약</option>
@@ -673,7 +792,7 @@ function PendingCard({ change, onApprove, onReject }) {
             <input
               value={form.name}
               onChange={(e) => setF("name", e.target.value)}
-              style={H.input}
+              style={fieldStyle("name")}
               placeholder="환자명"
             />
           </div>
@@ -684,7 +803,7 @@ function PendingCard({ change, onApprove, onReject }) {
             <input
               value={form.room}
               onChange={(e) => setF("room", e.target.value)}
-              style={H.input}
+              style={fieldStyle("room")}
               placeholder="예: 306"
             />
           </div>
@@ -702,7 +821,7 @@ function PendingCard({ change, onApprove, onReject }) {
             <input
               value={form.slotKeyOverride}
               onChange={(e) => setF("slotKeyOverride", e.target.value)}
-              style={H.input}
+              style={fieldStyle("slotKeyOverride")}
               placeholder="예: 306-2"
             />
           </div>
@@ -714,7 +833,7 @@ function PendingCard({ change, onApprove, onReject }) {
               <input
                 value={form.dischargeDate}
                 onChange={(e) => setF("dischargeDate", e.target.value)}
-                style={H.input}
+                style={fieldStyle("dischargeDate")}
                 placeholder="예: 3/15"
               />
             </div>
@@ -727,7 +846,7 @@ function PendingCard({ change, onApprove, onReject }) {
               <input
                 value={form.admitDate}
                 onChange={(e) => setF("admitDate", e.target.value)}
-                style={H.input}
+                style={fieldStyle("admitDate")}
                 placeholder="예: 3/20"
               />
             </div>
@@ -740,7 +859,7 @@ function PendingCard({ change, onApprove, onReject }) {
               <input
                 value={form.transferToRoom}
                 onChange={(e) => setF("transferToRoom", e.target.value)}
-                style={H.input}
+                style={fieldStyle("transferToRoom")}
                 placeholder="예: 501"
               />
             </div>
@@ -752,7 +871,7 @@ function PendingCard({ change, onApprove, onReject }) {
             <select
               value={form.roomFeeType || ""}
               onChange={(e) => setF("roomFeeType", e.target.value || null)}
-              style={H.select}
+              style={selectStyle("roomFeeType")}
             >
               <option value="">미설정</option>
               <option value="F">F (Free)</option>
@@ -767,7 +886,7 @@ function PendingCard({ change, onApprove, onReject }) {
               <input
                 value={form.weeklySchedule || ""}
                 onChange={(e) => setF("weeklySchedule", e.target.value)}
-                style={H.input}
+                style={fieldStyle("weeklySchedule")}
                 placeholder="예: 고주파 월수금, 자닥신 월목, 이스카도 월수금"
               />
             </div>
@@ -779,7 +898,7 @@ function PendingCard({ change, onApprove, onReject }) {
             <input
               value={form.note || ""}
               onChange={(e) => setF("note", e.target.value)}
-              style={H.input}
+              style={fieldStyle("note")}
               placeholder="특이사항"
             />
           </div>
