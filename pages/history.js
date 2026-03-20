@@ -31,7 +31,7 @@ const TREATMENT_NAME_TO_ID = {
   "고압산소치료": "hyperbaric", "고압산소": "hyperbaric",
   "글루타치온": "glutathione",
   "비타민c": "vitc", "비타민d": "vitd",
-  "고용량비타민c": "vitc", "고함량비타민c": "vitc",
+  "고용량비타민c": "vitc", "고함량비타민c": "vitc", "ivc": "vitc",
   "셀레늄": "selenium_iv",
   "마이어스": "myers1", "마이어스1": "myers1",
   "마이어스2": "myers2",
