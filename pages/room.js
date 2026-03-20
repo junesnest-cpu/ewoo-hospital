@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
@@ -297,6 +297,23 @@ export default function RoomPage() {
     </div>
   );
 
+  const allKnownPatients = useMemo(() => {
+    const seen = new Set();
+    const list = [];
+    Object.entries(slots).forEach(([slotKey, slot]) => {
+      const room2 = slotKey.replace("-", "호 ") + "번";
+      const add = (name, note, badge) => {
+        const key = name.replace(/^신\)/, "").replace(/\d+$/, "").trim().toLowerCase();
+        if (seen.has(key) || !name) return;
+        seen.add(key);
+        list.push({ name, room: room2, note: note || "", badge });
+      };
+      if (slot?.current?.name) add(slot.current.name, slot.current.note, "입원중");
+      (slot?.reservations || []).forEach(r => { if (r?.name) add(r.name, r.note, "예약"); });
+    });
+    return list.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [slots]);
+
   const bedList = Array.from({length:room.capacity},(_,i)=>{
     const slotKey=`${room.id}-${i+1}`;
     const slot=slots[slotKey]||null;
@@ -483,6 +500,7 @@ export default function RoomPage() {
           data={editingSlot?.data || {name:"",discharge:"미정",note:"",scheduleAlert:false,bedPosition:0,...(addingTo?.mode==="reservation"?{admitDate:""}:{})}}
           mode={editingSlot?.mode||addingTo?.mode}
           isNew={!!addingTo}
+          allPatients={addingTo ? allKnownPatients : []}
           onClose={()=>{ setEditingSlot(null); setAddingTo(null); }}
           onSave={async(form)=>{
             const sk=editingSlot?.slotKey||addingTo?.slotKey;
@@ -527,10 +545,23 @@ export default function RoomPage() {
 }
 
 // ── PatientModal ──────────────────────────────────────────────────────────────
-function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose }) {
+function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, allPatients=[] }) {
   const [form,setForm]=useState({...data});
+  const [suggestions,setSuggestions]=useState([]);
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
   const isRes=mode==="reservation";
+
+  const handleNameChange=(v)=>{
+    setF("name",v);
+    const q=v.trim().toLowerCase();
+    if(q.length>=1) setSuggestions(allPatients.filter(p=>p.name.toLowerCase().includes(q)).slice(0,6));
+    else setSuggestions([]);
+  };
+  const selectSuggestion=(p)=>{
+    setForm(f=>({...f,name:p.name,note:f.note||p.note}));
+    setSuggestions([]);
+  };
+
   return (
     <div style={{ position:"fixed",inset:0,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16 }}>
       <div style={{ background:"#fff",borderRadius:14,padding:"20px 16px",width:"100%",maxWidth:420,maxHeight:"92vh",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.18)" }}>
@@ -546,7 +577,27 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose }) {
           <div style={{ fontSize:11,color:"#94a3b8",marginTop:2,marginBottom:8 }}>M/D 형식 (예: 3/10) — 치료 일정표 주차 계산에 사용됩니다</div>
         </>}
         <label style={NS.label}>환자명 ★</label>
-        <input style={NS.input} value={form.name||""} onChange={e=>setF("name",e.target.value)} placeholder="환자명"/>
+        <div style={{ position:"relative" }}>
+          <input style={NS.input} value={form.name||""} onChange={e=>handleNameChange(e.target.value)}
+            onBlur={()=>setTimeout(()=>setSuggestions([]),150)} placeholder="환자명" autoComplete="off"/>
+          {suggestions.length>0&&(
+            <div style={{ position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1.5px solid #a78bfa",
+              borderRadius:8,zIndex:200,boxShadow:"0 4px 20px rgba(0,0,0,0.13)",maxHeight:220,overflowY:"auto" }}>
+              {suggestions.map((p,i)=>(
+                <div key={i} onMouseDown={()=>selectSuggestion(p)}
+                  style={{ padding:"8px 12px",cursor:"pointer",borderBottom:"1px solid #f1f5f9",
+                    background:i%2===0?"#faf5ff":"#fff" }}>
+                  <span style={{ fontWeight:700,fontSize:14 }}>{p.name}</span>
+                  <span style={{ marginLeft:8,fontSize:11,color:"#7c3aed",background:"#ede9fe",
+                    borderRadius:4,padding:"1px 6px",fontWeight:700 }}>{p.badge}</span>
+                  <span style={{ marginLeft:6,fontSize:12,color:"#94a3b8" }}>{p.room}</span>
+                  {p.note&&<div style={{ fontSize:11,color:"#94a3b8",marginTop:2,
+                    overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis" }}>{p.note}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <label style={NS.label}>퇴원 예정일</label>
         <input style={NS.input} value={form.discharge||""} onChange={e=>setF("discharge",e.target.value)} placeholder="미정 또는 M/D"/>
         <label style={NS.label}>메모</label>

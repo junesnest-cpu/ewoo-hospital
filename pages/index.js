@@ -205,6 +205,26 @@ export default function HospitalWardManager() {
     return () => { unsubS(); unsubL(); unsubP(); };
   }, []);
 
+  // ── 자동완성용 전체 환자 목록 (현재 입원 + 예약) ──────────────────────────────
+  const allKnownPatients = useMemo(() => {
+    const seen = new Set();
+    const list = [];
+    const add = (name, room, note, badge) => {
+      const key = name.replace(/^신\)/, "").replace(/\d+$/, "").trim().toLowerCase();
+      if (seen.has(key) || !name) return;
+      seen.add(key);
+      list.push({ name, room, note: note || "", badge });
+    };
+    Object.entries(slots).forEach(([slotKey, slot]) => {
+      const room = slotKey.replace("-", "호 ") + "번";
+      if (slot?.current?.name) add(slot.current.name, room, slot.current.note, "입원중");
+      (slot?.reservations || []).forEach(r => {
+        if (r?.name) add(r.name, room, r.note, "예약");
+      });
+    });
+    return list.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [slots]);
+
   // ── 자동 처리: 입원일 도달 예약 자동 전환 + 지난 예약 자동 삭제 ──────────────
   useEffect(() => {
     if (Object.keys(slots).length === 0) return;
@@ -1046,13 +1066,13 @@ export default function HospitalWardManager() {
       {addingTo?.mode === "current" && (
         <PatientModal title={`${addingTo.slotKey} 입원 등록`}
           data={{ name: addingTo.prefill?.name||"", patientId: addingTo.prefill?.patientId||"", bedPosition:"", admitDate:"", discharge:"미정", note:"", scheduleAlert:false }}
-          mode="current" isNew
+          mode="current" isNew allPatients={allKnownPatients}
           onSave={data => saveCurrentPatient(addingTo.slotKey, data)} onClose={() => setAddingTo(null)} />
       )}
       {addingTo?.mode === "reservation" && (
         <PatientModal title={`${addingTo.slotKey} 예약 입원 등록`}
           data={{ name: addingTo.prefill?.name||"", patientId: addingTo.prefill?.patientId||"", bedPosition:"", admitDate:"", discharge:"미정", note:"", scheduleAlert:false }}
-          mode="reservation" isNew
+          mode="reservation" isNew allPatients={allKnownPatients}
           onSave={data => saveReservation(addingTo.slotKey, data, undefined)} onClose={() => setAddingTo(null)} />
       )}
 
@@ -1398,10 +1418,27 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
 }
 
 // ── PatientModal ──────────────────────────────────────────────────────────────
-function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose }) {
+function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, allPatients = [] }) {
   const [form, setForm] = useState({ ...data });
+  const [suggestions, setSuggestions] = useState([]);
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const isReservation = mode === "reservation";
+
+  const handleNameChange = (v) => {
+    setF("name", v);
+    const q = v.trim().toLowerCase();
+    if (q.length >= 1) {
+      setSuggestions(allPatients.filter(p => p.name.toLowerCase().includes(q)).slice(0, 6));
+    } else {
+      setSuggestions([]);
+    }
+  };
+
+  const selectSuggestion = (p) => {
+    setForm(f => ({ ...f, name: p.name, note: f.note || p.note }));
+    setSuggestions([]);
+  };
+
   const handleSave = () => {
     if (!form.name?.trim()) { alert("환자명을 입력해 주세요."); return; }
     if (isReservation && !form.admitDate?.trim()) { alert("입원 예정일을 입력해 주세요."); return; }
@@ -1426,7 +1463,27 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose }) {
           </>
         )}
         <label style={S.label}>환자명</label>
-        <input style={S.input} value={form.name||""} onChange={e => setF("name", e.target.value)} placeholder="홍길동" />
+        <div style={{ position:"relative" }}>
+          <input style={S.input} value={form.name||""} onChange={e => handleNameChange(e.target.value)}
+            onBlur={() => setTimeout(() => setSuggestions([]), 150)} placeholder="홍길동" autoComplete="off" />
+          {suggestions.length > 0 && (
+            <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#fff", border:"1.5px solid #a78bfa",
+              borderRadius:8, zIndex:200, boxShadow:"0 4px 20px rgba(0,0,0,0.13)", maxHeight:220, overflowY:"auto" }}>
+              {suggestions.map((p, i) => (
+                <div key={i} onMouseDown={() => selectSuggestion(p)}
+                  style={{ padding:"8px 12px", cursor:"pointer", borderBottom:"1px solid #f1f5f9",
+                    background: i % 2 === 0 ? "#faf5ff" : "#fff" }}>
+                  <span style={{ fontWeight:700, fontSize:14 }}>{p.name}</span>
+                  <span style={{ marginLeft:8, fontSize:11, color:"#7c3aed", background:"#ede9fe",
+                    borderRadius:4, padding:"1px 6px", fontWeight:700 }}>{p.badge}</span>
+                  <span style={{ marginLeft:6, fontSize:12, color:"#94a3b8" }}>{p.room}</span>
+                  {p.note && <div style={{ fontSize:11, color:"#94a3b8", marginTop:2, overflow:"hidden",
+                    whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{p.note}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         <label style={S.label}>퇴원 예정일</label>
         <input style={S.input} value={form.discharge||""} onChange={e => setF("discharge", e.target.value)} placeholder="예: 3/28, 미정" />
         <label style={S.label}>메모</label>
