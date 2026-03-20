@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, set } from "firebase/database";
+import { ref, onValue, set, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import { searchPatientsByName } from "../lib/patientSearch";
+
+// 환자 목록 메모리 캐시 (세션 내 재사용)
+let _patientCache = null;
+async function getCachedPatients() {
+  if (_patientCache) return _patientCache;
+  const snap = await get(ref(db, "patients"));
+  _patientCache = Object.values(snap.val() || {});
+  return _patientCache;
+}
 import useIsMobile from "../lib/useismobile";
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
@@ -552,21 +561,22 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
   const isRes=mode==="reservation";
 
+  // 모달 열릴 때 환자 목록 미리 캐시
+  useEffect(()=>{ getCachedPatients().catch(()=>{}); },[]);
+
   useEffect(()=>{
     const q=form.name?.trim()||"";
     if(q.length<1){setSuggestions([]);return;}
-    const timer=setTimeout(async()=>{
-      try{
-        const dbResults=await searchPatientsByName(q);
-        const mapped=dbResults.slice(0,6).map(p=>({
-          name:p.name, room:p.chartNo?`차트 ${p.chartNo}`:"", note:p.note||"", badge:"기록", patientId:p.internalId||"",
-        }));
-        const dbNames=new Set(mapped.map(p=>p.name));
-        const slotExtra=allPatients.filter(p=>!dbNames.has(p.name)&&p.name.toLowerCase().includes(q.toLowerCase())).slice(0,3);
-        setSuggestions([...mapped,...slotExtra].slice(0,6));
-      }catch{setSuggestions([]);}
-    },100);
-    return()=>clearTimeout(timer);
+    // 캐시된 목록으로 즉시 로컬 필터링
+    getCachedPatients().then(all=>{
+      const ql=q.toLowerCase();
+      const matched=all.filter(p=>p.name?.includes(q)).slice(0,6).map(p=>({
+        name:p.name, room:p.chartNo?`차트 ${p.chartNo}`:"", note:p.note||"", badge:"기록", patientId:p.internalId||"",
+      }));
+      const dbNames=new Set(matched.map(p=>p.name));
+      const slotExtra=allPatients.filter(p=>!dbNames.has(p.name)&&p.name.toLowerCase().includes(ql)).slice(0,3);
+      setSuggestions([...matched,...slotExtra].slice(0,6));
+    }).catch(()=>setSuggestions([]));
   },[form.name]);
 
   const selectSuggestion=(p)=>{
