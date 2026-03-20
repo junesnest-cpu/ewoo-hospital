@@ -548,6 +548,9 @@ export default function HistoryPage() {
         <button style={{ ...H.tab, ...(activeTab === "logs"     ? H.tabActive : {}) }} onClick={() => setActiveTab("logs")}>
           🔍 진단
         </button>
+        <button style={{ ...H.tab, ...(activeTab === "unlinked" ? H.tabActive : {}) }} onClick={() => setActiveTab("unlinked")}>
+          🔗 연결 점검
+        </button>
       </div>
 
       <main style={{ padding: "12px", maxWidth: 720, margin: "0 auto" }}>
@@ -574,6 +577,9 @@ export default function HistoryPage() {
         )}
         {activeTab === "logs" && (
           <WebhookLogsTab logs={webhookLogs} />
+        )}
+        {activeTab === "unlinked" && (
+          <UnlinkedTab />
         )}
       </main>
     </div>
@@ -1260,6 +1266,90 @@ function ResolvedCard({ change }) {
               처리 시각: {new Date(change.resolvedAt).toLocaleString("ko-KR")}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 연결 점검 탭 ─────────────────────────────────────────────────────────────
+function UnlinkedTab() {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const runCheck = async () => {
+    setLoading(true);
+    try {
+      const [slotsSnap, patientsSnap] = await Promise.all([
+        get(ref(db, "slots")),
+        get(ref(db, "patients")),
+      ]);
+      const slots    = slotsSnap.val()    || {};
+      const patients = patientsSnap.val() || {};
+      const patientIds = new Set(Object.values(patients).map(p => p.internalId).filter(Boolean));
+
+      const unlinked = [];
+      for (const [slotKey, slot] of Object.entries(slots)) {
+        if (!slot) continue;
+        if (slot.current?.name) {
+          const p = slot.current;
+          if (!p.patientId || !patientIds.has(p.patientId)) {
+            unlinked.push({ slotKey, kind: "입원중", name: p.name, patientId: p.patientId || null });
+          }
+        }
+        for (const r of (slot.reservations || [])) {
+          if (!r?.name) continue;
+          if (!r.patientId || !patientIds.has(r.patientId)) {
+            unlinked.push({ slotKey, kind: "예약", name: r.name, patientId: r.patientId || null });
+          }
+        }
+      }
+      setResult(unlinked);
+    } catch (e) {
+      alert("조회 오류: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={runCheck} disabled={loading}
+          style={{ background: "#0f2744", color: "#fff", border: "none", borderRadius: 8,
+            padding: "9px 18px", cursor: loading ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700 }}>
+          {loading ? "조회 중..." : "🔍 미연결 환자 조회"}
+        </button>
+        {result && (
+          <span style={{ fontSize: 13, color: result.length === 0 ? "#059669" : "#dc2626", fontWeight: 700 }}>
+            {result.length === 0 ? "✅ 모두 연결됨" : `⚠ 미연결 ${result.length}명`}
+          </span>
+        )}
+      </div>
+      {result && result.length > 0 && (
+        <div>
+          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>
+            아래 환자는 환자 DB에 연결되지 않았습니다. 환자조회 페이지에서 등록하거나, 병실 페이지에서 이름 재입력 시 자동 연결됩니다.
+          </div>
+          {result.map((item, i) => (
+            <div key={i} style={{ background: "#fff", border: "1.5px solid #fecaca", borderRadius: 10,
+              padding: "10px 14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontWeight: 800, fontSize: 14 }}>{item.name}</span>
+              <span style={{ fontSize: 12, background: item.kind === "입원중" ? "#dbeafe" : "#f3e8ff",
+                color: item.kind === "입원중" ? "#1d4ed8" : "#7c3aed", borderRadius: 6, padding: "1px 8px", fontWeight: 700 }}>
+                {item.kind}
+              </span>
+              <span style={{ fontSize: 12, color: "#64748b" }}>{item.slotKey.replace("-", "호 ")}번 병상</span>
+              <span style={{ fontSize: 11, color: "#94a3b8", marginLeft: "auto" }}>
+                {item.patientId ? `patientId: ${item.patientId} (DB 없음)` : "patientId 없음"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {result && result.length === 0 && (
+        <div style={{ textAlign: "center", padding: "30px", color: "#059669", fontSize: 15, fontWeight: 700 }}>
+          모든 입원/예약 환자가 환자 DB에 연결되어 있습니다.
         </div>
       )}
     </div>
