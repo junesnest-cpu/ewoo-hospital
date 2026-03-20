@@ -230,7 +230,14 @@ export default function MonthlySchedule() {
       const k = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
       const cd = calendarData[k] || { admissions:[], discharges:[] };
       const bd = boardData[k];
-      if (!bd) return { adm: (cd.admissions||[]).length, dis: (cd.discharges||[]).length };
+      if (!bd) {
+        const allAdm = cd.admissions || [];
+        return {
+          adm: allAdm.length,
+          admActual: allAdm.filter(a => !a.isReserved).length,
+          dis: (cd.discharges||[]).length,
+        };
+      }
       const hiddenAdm = new Set(bd.hiddenAdmissions || []);
       const hiddenDis = new Set(bd.hiddenDischarges || []);
       const baseAdm = (cd.admissions||[]).filter(a => !hiddenAdm.has(normName(a.name)));
@@ -239,7 +246,12 @@ export default function MonthlySchedule() {
       const cdDisNorms = new Set((cd.discharges||[]).map(d2 => normName(d2.name)));
       const manualAdm = (bd.admissions||[]).filter(a => !cdAdmNorms.has(normName(a.name)));
       const manualDis = (bd.discharges||[]).filter(d2 => !cdDisNorms.has(normName(d2.name)));
-      return { adm: baseAdm.length + manualAdm.length, dis: baseDis.length + manualDis.length };
+      const allAdm = [...baseAdm, ...manualAdm];
+      return {
+        adm: allAdm.length,
+        admActual: allAdm.filter(a => !a.isReserved).length,
+        dis: baseDis.length + manualDis.length,
+      };
     };
 
     if (year === nowYear && month === nowMonth) {
@@ -254,11 +266,11 @@ export default function MonthlySchedule() {
         cur = Math.max(0, cur + adm - dis);
         counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
       }
-      // 오늘 이전 → 역방향 누적 (census[d] = census[d+1] - adm[d+1] + dis[d+1])
+      // 오늘 이전 → 역방향 누적 (census[d] = census[d+1] - admActual[d+1] + dis[d+1])
       cur = todayCensus;
       for (let d = nowDay - 1; d >= 1; d--) {
-        const { adm, dis } = getAdmDis(d + 1);
-        cur = Math.max(0, cur - adm + dis);
+        const { admActual, dis } = getAdmDis(d + 1);
+        cur = Math.max(0, cur - admActual + dis);
         counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
       }
     } else {
