@@ -51,7 +51,7 @@ async function parseMessageWithClaude(text) {
     "room": "병실번호 또는 null",
     "bedNumber": 병상번호 또는 null,
     "slotKey": "305-2 형식 또는 null",
-    "name": "환자명 또는 null",
+    "name": "환자명 또는 null (※ '님' 제외한 이름만, 예: '천유영님' → '천유영')",
     "dischargeDate": "M/D 형식 퇴원예정일 또는 null",
     "admitDate": "M/D 형식 입원예정일 또는 null",
     "transferToRoom": "전실할 병실번호 또는 null (예: \"301\" 또는 병상 지정 시 \"301-2\")",
@@ -148,14 +148,34 @@ function findPatientInRoom(slots, roomId, patientName) {
   return null;
 }
 
+// 이름 정규화: "천유영님" → "천유영"
+function normalizeName(name) {
+  if (!name) return '';
+  return name.trim().replace(/님$/, '').trim();
+}
+
 // 전체 slots에서 이름으로 환자 검색 (병실 미기재 시)
+// 1) 정규화 후 완전 일치 → 2) 포함 검색(부분 일치) 순으로 탐색
 function findPatientAnywhere(slots, patientName) {
+  const norm = normalizeName(patientName);
+  if (!norm) return null;
+
+  let partialMatch = null;
   for (const [slotKey, slot] of Object.entries(slots)) {
     if (!slot) continue;
-    if (slot.current?.name === patientName) return slotKey;
-    if ((slot.reservations || []).some((r) => r.name === patientName)) return slotKey;
+    const curName  = normalizeName(slot.current?.name);
+    const resNames = (slot.reservations || []).map(r => normalizeName(r.name));
+
+    // 완전 일치 우선 반환
+    if (curName === norm || resNames.includes(norm)) return slotKey;
+
+    // 부분 일치는 첫 번째 후보 저장
+    if (!partialMatch && (curName.includes(norm) || norm.includes(curName) ||
+        resNames.some(n => n.includes(norm) || norm.includes(n)))) {
+      partialMatch = slotKey;
+    }
   }
-  return null;
+  return partialMatch;
 }
 
 function findEmptyBed(slots, roomId) {
