@@ -6,6 +6,14 @@ import useIsMobile from "../lib/useismobile";
 
 const DOW = ["일","월","화","수","목","금","토"];
 
+// 유효한 병상 목록 (index.js와 동일 범위 — 이 외 슬롯은 유령 데이터로 간주)
+const WARD_ROOMS = [
+  {id:"201",cap:4},{id:"202",cap:1},{id:"203",cap:4},{id:"204",cap:2},{id:"205",cap:6},{id:"206",cap:6},
+  {id:"301",cap:4},{id:"302",cap:1},{id:"303",cap:4},{id:"304",cap:2},{id:"305",cap:2},{id:"306",cap:6},
+  {id:"501",cap:4},{id:"502",cap:1},{id:"503",cap:4},{id:"504",cap:2},{id:"505",cap:6},{id:"506",cap:6},
+  {id:"601",cap:6},{id:"602",cap:1},{id:"603",cap:6},
+];
+
 function parseMD(str, year, month) {
   if (!str || str === "미정") return null;
   const m = str.match(/(\d{1,2})\/(\d{1,2})/);
@@ -225,17 +233,29 @@ export default function MonthlySchedule() {
     const nowMonth = now.getMonth() + 1;
     const nowDay = now.getDate();
 
-    // 날짜별 입/퇴원 건수 계산 (calendarData + boardData 병합 인라인)
+    // 이름 기준 중복 제거 (전실 등으로 동일 환자가 여러 슬롯에 있을 경우 대비)
+    const dedupByName = (list) => {
+      const seen = new Set();
+      return (list || []).filter(a => {
+        const n = normName(a.name);
+        if (!n || seen.has(n)) return false;
+        seen.add(n);
+        return true;
+      });
+    };
+
+    // 날짜별 입/퇴원 건수 계산 (calendarData + boardData 병합, 이름 중복 제거)
     const getAdmDis = (d) => {
       const k = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
       const cd = calendarData[k] || { admissions:[], discharges:[] };
       const bd = boardData[k];
       if (!bd) {
-        const allAdm = cd.admissions || [];
+        const allAdm = dedupByName(cd.admissions || []);
+        const allDis = dedupByName(cd.discharges || []);
         return {
           adm: allAdm.length,
           admActual: allAdm.filter(a => !a.isReserved).length,
-          dis: (cd.discharges||[]).length,
+          dis: allDis.length,
         };
       }
       const hiddenAdm = new Set(bd.hiddenAdmissions || []);
@@ -246,24 +266,35 @@ export default function MonthlySchedule() {
       const cdDisNorms = new Set((cd.discharges||[]).map(d2 => normName(d2.name)));
       const manualAdm = (bd.admissions||[]).filter(a => !cdAdmNorms.has(normName(a.name)));
       const manualDis = (bd.discharges||[]).filter(d2 => !cdDisNorms.has(normName(d2.name)));
-      const allAdm = [...baseAdm, ...manualAdm];
+      const allAdm = dedupByName([...baseAdm, ...manualAdm]);
+      const allDis = dedupByName([...baseDis, ...manualDis]);
       return {
         adm: allAdm.length,
         admActual: allAdm.filter(a => !a.isReserved).length,
-        dis: baseDis.length + manualDis.length,
+        dis: allDis.length,
       };
     };
 
     if (year === nowYear && month === nowMonth) {
-      // 현재 달: 오늘 실제 재원 수를 기준점으로 (퇴원일이 오늘 이전인 환자 제외 - 병동 현황판과 동일 로직)
+      // 현재 달: 오늘 실제 재원 수를 기준점으로 (index.js와 동일 병상 범위 + 이름 중복 제거)
       const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const todayCensus = Object.values(slots).filter(s => {
-        if (!s?.current?.name) return false;
-        const dis = parseDateStr(s.current.discharge, now.getFullYear());
-        if (!dis) return true;
-        const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
-        return disD >= todayDateOnly;
-      }).length;
+      const seenToday = new Set();
+      let todayCensus = 0;
+      WARD_ROOMS.forEach(({ id, cap }) => {
+        for (let i = 1; i <= cap; i++) {
+          const s = slots[`${id}-${i}`];
+          if (!s?.current?.name) continue;
+          const n = normName(s.current.name);
+          if (!n || seenToday.has(n)) continue;
+          const dis = parseDateStr(s.current.discharge, now.getFullYear());
+          if (dis) {
+            const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
+            if (disD < todayDateOnly) continue;
+          }
+          seenToday.add(n);
+          todayCensus++;
+        }
+      });
       const todayKey = `${year}-${String(month).padStart(2,"0")}-${String(nowDay).padStart(2,"0")}`;
       counts[todayKey] = todayCensus;
       // 오늘 이후 → 앞으로 누적
@@ -281,8 +312,36 @@ export default function MonthlySchedule() {
         counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
       }
     } else {
-      // 다른 달: day 1부터 순방향 누적 (시작값 = 0, 상대적 변화량 표시)
-      let cur = 0;
+      // 다른 달: 슬롯에서 해당 월 시작 전에 입원 중인 환자 수(이월 재원)를 계산해 시작값으로 사용
+      const monthFirstDay = new Date(year, month - 1, 1);
+      const seenCarry = new Set();
+      let carryOver = 0;
+      WARD_ROOMS.forEach(({ id, cap }) => {
+        for (let i = 1; i <= cap; i++) {
+          const slot = slots[`${id}-${i}`];
+          if (!slot) continue;
+          const checkPatient = (p) => {
+            if (!p?.name) return;
+            const n = normName(p.name);
+            if (!n || seenCarry.has(n)) return;
+            const admit = parseDateStr(p.admitDate, year);
+            if (!admit) return;
+            const admitDay = new Date(admit.getFullYear(), admit.getMonth(), admit.getDate());
+            if (admitDay >= monthFirstDay) return;
+            const discharge = parseDateStr(p.discharge, year);
+            if (discharge) {
+              const disDay = new Date(discharge.getFullYear(), discharge.getMonth(), discharge.getDate());
+              if (disDay < monthFirstDay) return;
+            }
+            seenCarry.add(n);
+            carryOver++;
+          };
+          checkPatient(slot.current);
+          (slot.reservations || []).forEach(r => checkPatient(r));
+        }
+      });
+      // 이월 재원 수를 시작값으로 순방향 누적
+      let cur = carryOver;
       for (let d = 1; d <= total; d++) {
         const { adm, dis } = getAdmDis(d);
         cur = Math.max(0, cur + adm - dis);
