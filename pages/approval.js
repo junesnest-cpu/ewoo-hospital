@@ -35,6 +35,11 @@ function daysBetween(from, to) {
   if (!from || !to) return 0;
   return Math.max(0, Math.round((new Date(to) - new Date(from)) / 86400000) + 1);
 }
+// 이메일을 Firebase key로 변환 (. → , / @ → _at_)
+function encodeEmail(email) {
+  return (email || "").replace(/\./g, ",").replace(/@/g, "_at_");
+}
+
 async function getNextDocNumber(type) {
   const year = String(new Date().getFullYear());
   const counterRef = ref(db, `approvalCounters/${type}/${year}`);
@@ -507,12 +512,22 @@ export default function ApprovalPage() {
     return unsub || (() => {});
   }, []);
 
-  // 프로필 로드
+  // 프로필 로드 (이메일 기반 키)
   useEffect(() => {
     if (!user) return;
-    const pRef = ref(db, `users/${user.uid}`);
-    return onValue(pRef, snap => {
-      setProfile(snap.val());
+    const emailKey = encodeEmail(user.email);
+    const pRef = ref(db, `users/${emailKey}`);
+    return onValue(pRef, async snap => {
+      const val = snap.val();
+      if (val) {
+        // uid 필드가 없으면 자동 설정 (관리자가 미리 생성한 경우)
+        if (!val.uid) {
+          await update(ref(db, `users/${emailKey}`), { uid: user.uid });
+        }
+        setProfile({ ...val, uid: user.uid });
+      } else {
+        setProfile(null);
+      }
       setLoading(false);
     });
   }, [user]);
@@ -540,17 +555,17 @@ export default function ApprovalPage() {
   const findNextApprover = (type, authorRole, authorDept) => {
     if (type === "weekly") {
       // 직접 보고 → 병원장
-      const dir = Object.entries(allUsers).find(([,u])=>u.role==="director");
-      return dir ? { uid: dir[0], status: "pending_dir" } : null;
+      const dir = Object.values(allUsers).find(u=>u.role==="director");
+      return dir ? { uid: dir.uid, status: "pending_dir" } : null;
     }
     if (authorRole === "staff") {
       // 같은 부서 부서장 찾기
-      const dh = Object.entries(allUsers).find(([,u])=>u.role==="dept_head"&&u.department===authorDept);
-      if (dh) return { uid: dh[0], status: "pending_dept" };
+      const dh = Object.values(allUsers).find(u=>u.role==="dept_head"&&u.department===authorDept);
+      if (dh) return { uid: dh.uid, status: "pending_dept" };
     }
     // 부서장/병원장이 제출하면 바로 병원장 결재
-    const dir = Object.entries(allUsers).find(([,u])=>u.role==="director");
-    return dir ? { uid: dir[0], status: "pending_dir" } : null;
+    const dir = Object.values(allUsers).find(u=>u.role==="director");
+    return dir ? { uid: dir.uid, status: "pending_dir" } : null;
   };
 
   const handleSubmit = async (asDraft = false) => {
@@ -596,9 +611,9 @@ export default function ApprovalPage() {
     if (isFinal || doc.status === "pending_dir") {
       newStatus = isFinal ? "final" : "approved";
     } else if (doc.status === "pending_dept") {
-      const dir = Object.entries(allUsers).find(([,u])=>u.role==="director");
+      const dir = Object.values(allUsers).find(u=>u.role==="director");
       newStatus = "pending_dir";
-      nextApproverUid = dir ? dir[0] : null;
+      nextApproverUid = dir ? dir.uid : null;
     }
     await update(ref(db, `approvals/${docId}`), {
       status: newStatus, currentApproverUid: nextApproverUid, updatedAt: Date.now(),
@@ -641,7 +656,7 @@ export default function ApprovalPage() {
   // 로딩/미로그인
   if (loading) return <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", fontSize:16 }}>로딩 중...</div>;
   if (!user)   return <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", fontSize:16 }}>로그인이 필요합니다.</div>;
-  if (!profile) return <ProfileSetup user={user} onSave={p => set(ref(db,`users/${user.uid}`),p)} />;
+  if (!profile) return <ProfileSetup user={user} onSave={p => set(ref(db,`users/${encodeEmail(user.email)}`), { ...p, uid: user.uid })} />;
 
   const renderDocForm = (type, data, onChange, docId, fileList, onFileChange, readonly) => {
     const props = { data, onChange, readonly };
