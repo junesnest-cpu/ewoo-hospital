@@ -828,6 +828,7 @@ export default function ApprovalPage() {
   const nowYM = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; })();
   const [weeklyNavMonth, setWeeklyNavMonth] = useState(nowYM);
   const [refundNavMonth, setRefundNavMonth] = useState(nowYM);
+  const [taxNavMonth,    setTaxNavMonth]    = useState(nowYM);
 
   // 결재 액션
   const [rejectModal, setRejectModal] = useState(null); // { docId }
@@ -1193,6 +1194,8 @@ export default function ApprovalPage() {
   const weeklyAllMonths    = [...new Set(weeklyDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
   const refundDocForMonth  = refundDocs.find(([,d]) => d.formData?.reportMonth === refundNavMonth);
   const refundAllMonths    = [...new Set(refundDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
+  const taxDocForMonth     = taxDocs.find(([,d]) => d.formData?.reportMonth === taxNavMonth);
+  const taxAllMonths       = [...new Set(taxDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
 
   const displayDocs = activeTab === "mine"     ? sortedDocs(myDocs)
     : activeTab === "pending"   ? sortedDocs(pendingDocs)
@@ -1209,7 +1212,7 @@ export default function ApprovalPage() {
     { key:"supply",   label:`물품청구서 (${supplyDisplay.length})` },
     ...(canAccessRefund  ? [{ key:"refund",  label:`위탁진료 환불금 (${refundDisplay.length})` }] : []),
     ...(canAccessWeekly  ? [{ key:"weekly",  label:`영양팀 월간보고` }] : []),
-    ...(canAccessTax     ? [{ key:"tax",     label:`세금계산서 (${taxDisplay.length})` }] : []),
+    ...(canAccessTax     ? [{ key:"tax",     label:`세금계산서` }] : []),
     ...(isDirector       ? [{ key:"all",     label:`전체 진행중 (${allPendingDocs.length})` }] : []),
   ];
 
@@ -1331,7 +1334,51 @@ export default function ApprovalPage() {
           </div>
         )}
 
-        {activeTab !== "weekly" && activeTab !== "refund" && (
+        {/* 세금계산서 탭: 월 네비게이터 + 인라인 표시 */}
+        {activeTab === "tax" && (
+          <div style={S.card}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+              <button style={{ border:"1.5px solid #fca5a5", background:"#fff1f2", color:"#dc2626", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                onClick={()=>setTaxNavMonth(prevMonth(taxNavMonth))}>
+                ← 이전달
+              </button>
+              <input type="month" style={{ ...S.input, maxWidth:180, textAlign:"center", fontWeight:700, color:"#991b1b", fontSize:15 }}
+                value={taxNavMonth} onChange={e=>setTaxNavMonth(e.target.value)} />
+              <button style={{ border:"1.5px solid #fca5a5", background:"#fff1f2", color:"#dc2626", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                onClick={()=>setTaxNavMonth(nextMonth(taxNavMonth))}
+                disabled={taxNavMonth >= nowYM}>
+                다음달 →
+              </button>
+              {taxDocForMonth && (
+                <button style={{ marginLeft:"auto", ...S.btnRed, fontSize:12, padding:"5px 12px", background:"#fee2e2" }}
+                  onClick={()=>{setSelectedId(taxDocForMonth[0]);setView("detail");}}>
+                  상세 보기
+                </button>
+              )}
+            </div>
+            {taxDocForMonth ? (
+              <div>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                  <span style={{ fontWeight:800, fontSize:15, color:"#991b1b" }}>{taxNavMonth} 세금계산서</span>
+                  <StatusBadge status={taxDocForMonth[1].status} />
+                  <span style={{ fontSize:12, color:"#94a3b8", marginLeft:"auto" }}>{taxDocForMonth[1].authorName}</span>
+                </div>
+                <TaxForm data={taxDocForMonth[1].formData} onChange={()=>{}} readonly={true} />
+              </div>
+            ) : (
+              <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
+                <div style={{ fontSize:15, marginBottom:8 }}>{taxNavMonth} 월 세금계산서가 없습니다.</div>
+                {taxAllMonths.length > 0 && (
+                  <div style={{ fontSize:12, color:"#fca5a5" }}>
+                    자료 있는 월: {taxAllMonths.slice(-6).join(", ")}{taxAllMonths.length>6?" 외 "+String(taxAllMonths.length-6)+"건":""}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab !== "weekly" && activeTab !== "refund" && activeTab !== "tax" && (
         <div style={S.card}>
           {displayDocs.length === 0 && (
             <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8", fontSize:14 }}>
