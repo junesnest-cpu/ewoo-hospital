@@ -250,12 +250,21 @@ export default function TreatmentPage() {
     return sum + unitPrice * (plan.count || 0);
   }, 0);
 
+  // 주차별 하한선 계산
+  // - 7일 이하 단기입원(1주차 단독): 하루당 200,000원
+  // - 완전한 1주(7일): weekBase (130만원, roomFree 시 별도)
+  // - 7일 초과 잔여일(2주차 이상 불완전): 하루당 185,000원
+  const calcWeekMin = (weekNum, hospDays) => {
+    if (hospDays >= 7) return weekBase;
+    if (weekNum === 1) return hospDays * 200000;
+    return hospDays * 185000;
+  };
+
   const weeklyStats = (() => {
     if (!admitDate) return [];
     const admit = parseDateStr(admitDate);
     if (!admit) return [];
 
-    // 이 달에 존재하는 7일 구간(입원일 기준)을 먼저 파악
     const weeks = {};
     const daysInM = getDaysInMonth(year, month);
 
@@ -263,8 +272,11 @@ export default function TreatmentPage() {
       const thisDate = new Date(year, month, d);
       const diff = Math.floor((dateOnly(thisDate) - dateOnly(admit)) / 86400000);
       if (diff < 0) continue; // 입원일 이전
+      // 퇴원일 이상이면 제외
+      if (dischargeDate && dateOnly(thisDate) >= dateOnly(dischargeDate)) continue;
       const wk = Math.floor(diff / 7) + 1;
-      if (!weeks[wk]) weeks[wk] = { total: 0, days: [], startDay: d, planTotal: 0 };
+      if (!weeks[wk]) weeks[wk] = { total: 0, days: [], startDay: d, planTotal: 0, hospDays: 0 };
+      weeks[wk].hospDays++;
       // 치료 있는 날만 합산
       const dayTreat = dayTreatTotal(d);
       if (dayTreat > 0) {
@@ -277,14 +289,14 @@ export default function TreatmentPage() {
     if (weeklyPlanTotal > 0) {
       const todayWk = getWeekNumber(admitDate, new Date());
       if (todayWk !== null) {
-        if (!weeks[todayWk]) weeks[todayWk] = { total: 0, days: [], planTotal: 0 };
+        if (!weeks[todayWk]) weeks[todayWk] = { total: 0, days: [], planTotal: 0, hospDays: 0 };
         weeks[todayWk].planTotal = weeklyPlanTotal;
       }
     }
 
     return Object.entries(weeks)
       .filter(([, v]) => v.total > 0 || v.planTotal > 0)
-      .map(([wk, v]) => ({ week: parseInt(wk), ...v }))
+      .map(([wk, v]) => ({ week: parseInt(wk), ...v, weekMin: calcWeekMin(parseInt(wk), v.hospDays) }))
       .sort((a, b) => a.week - b.week);
   })();
 
@@ -379,10 +391,11 @@ export default function TreatmentPage() {
         {weeklyStats.map(wk => (
           <span key={wk.week} style={{ ...TS.totalItem, borderLeft:"1px solid #e2e8f0", paddingLeft:14 }}>
             {wk.week}주차&nbsp;
-            <strong style={{ color: wk.total>=weekBase?"#16a34a":"#dc2626" }}>{Math.floor(wk.total/10000)}만원</strong>
-            <span style={{ fontSize:11, marginLeft:3, color: wk.total>=weekBase?"#16a34a":"#dc2626" }}>
-              {wk.total>=weekBase ? "✓ 충족" : `(${Math.floor((weekBase-wk.total)/10000)}만 부족)`}
+            <strong style={{ color: wk.total>=wk.weekMin?"#16a34a":"#dc2626" }}>{Math.floor(wk.total/10000)}만원</strong>
+            <span style={{ fontSize:11, marginLeft:3, color: wk.total>=wk.weekMin?"#16a34a":"#dc2626" }}>
+              {wk.total>=wk.weekMin ? "✓ 충족" : `(${Math.floor((wk.weekMin-wk.total)/10000)}만 부족)`}
             </span>
+            {wk.hospDays < 7 && <span style={{ fontSize:10, marginLeft:3, color:"#94a3b8" }}>({wk.hospDays}일×{wk.week===1?"20":"18.5"}만)</span>}
             {wk.planTotal>0 && <span style={{ fontSize:11, marginLeft:4, color:"#0369a1" }}>+계획{Math.floor(wk.planTotal/10000)}만</span>}
           </span>
         ))}
@@ -563,13 +576,14 @@ export default function TreatmentPage() {
                   </tr>
                 )}
                 {weeklyStats.map(wk => (
-                  <tr key={wk.week} style={{ background: wk.total>=weekBase?"#f0fdf4":"#fef2f2" }}>
+                  <tr key={wk.week} style={{ background: wk.total>=wk.weekMin?"#f0fdf4":"#fef2f2" }}>
                     <td colSpan={3} style={{ ...TS.td, fontSize:13 }}>
                       {wk.week}주차
                       <span style={{ fontSize:11, color:"#64748b", marginLeft:8 }}>({wk.days.map(d=>`${month+1}/${d}`).join(", ")})</span>
+                      {wk.hospDays < 7 && <span style={{ fontSize:10, color:"#94a3b8", marginLeft:6 }}>하한 {(wk.weekMin/10000).toFixed(1)}만원 ({wk.hospDays}일)</span>}
                     </td>
-                    <td style={{ ...TS.td, textAlign:"right", fontWeight:700, color:wk.total>=weekBase?"#16a34a":"#dc2626" }}>
-                      {wk.total.toLocaleString()}원 {wk.total>=weekBase?"✓ 충족":"✗ 미충족"}
+                    <td style={{ ...TS.td, textAlign:"right", fontWeight:700, color:wk.total>=wk.weekMin?"#16a34a":"#dc2626" }}>
+                      {wk.total.toLocaleString()}원 {wk.total>=wk.weekMin?"✓ 충족":"✗ 미충족"}
                     </td>
                   </tr>
                 ))}
