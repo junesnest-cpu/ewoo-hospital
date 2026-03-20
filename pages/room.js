@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
+import { searchPatientsByName } from "../lib/patientSearch";
 import useIsMobile from "../lib/useismobile";
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
@@ -551,14 +552,25 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
   const isRes=mode==="reservation";
 
-  const handleNameChange=(v)=>{
-    setF("name",v);
-    const q=v.trim().toLowerCase();
-    if(q.length>=1) setSuggestions(allPatients.filter(p=>p.name.toLowerCase().includes(q)).slice(0,6));
-    else setSuggestions([]);
-  };
+  useEffect(()=>{
+    const q=form.name?.trim()||"";
+    if(q.length<1){setSuggestions([]);return;}
+    const timer=setTimeout(async()=>{
+      try{
+        const dbResults=await searchPatientsByName(q);
+        const mapped=dbResults.slice(0,6).map(p=>({
+          name:p.name, room:p.chartNo?`차트 ${p.chartNo}`:"", note:p.note||"", badge:"기록", patientId:p.internalId||"",
+        }));
+        const dbNames=new Set(mapped.map(p=>p.name));
+        const slotExtra=allPatients.filter(p=>!dbNames.has(p.name)&&p.name.toLowerCase().includes(q.toLowerCase())).slice(0,3);
+        setSuggestions([...mapped,...slotExtra].slice(0,6));
+      }catch{setSuggestions([]);}
+    },250);
+    return()=>clearTimeout(timer);
+  },[form.name]);
+
   const selectSuggestion=(p)=>{
-    setForm(f=>({...f,name:p.name,note:f.note||p.note}));
+    setForm(f=>({...f,name:p.name,note:f.note||p.note,patientId:p.patientId||f.patientId||""}));
     setSuggestions([]);
   };
 

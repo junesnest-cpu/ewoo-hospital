@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 import PatientSearchModal from "../components/PatientSearchModal";
+import { searchPatientsByName } from "../lib/patientSearch";
 
 const WARD_STRUCTURE = {
   2: { name: "2병동", rooms: [
@@ -1423,18 +1424,30 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const isReservation = mode === "reservation";
 
-  const handleNameChange = (v) => {
-    setF("name", v);
-    const q = v.trim().toLowerCase();
-    if (q.length >= 1) {
-      setSuggestions(allPatients.filter(p => p.name.toLowerCase().includes(q)).slice(0, 6));
-    } else {
-      setSuggestions([]);
-    }
-  };
+  useEffect(() => {
+    const q = form.name?.trim() || "";
+    if (q.length < 1) { setSuggestions([]); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const dbResults = await searchPatientsByName(q);
+        const mapped = dbResults.slice(0, 6).map(p => ({
+          name: p.name,
+          room: p.chartNo ? `차트 ${p.chartNo}` : "",
+          note: p.note || "",
+          badge: "기록",
+          patientId: p.internalId || "",
+        }));
+        // slots 결과도 합치되 DB에 없는 이름만 추가
+        const dbNames = new Set(mapped.map(p => p.name));
+        const slotExtra = allPatients.filter(p => !dbNames.has(p.name) && p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 3);
+        setSuggestions([...mapped, ...slotExtra].slice(0, 6));
+      } catch { setSuggestions([]); }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [form.name]);
 
   const selectSuggestion = (p) => {
-    setForm(f => ({ ...f, name: p.name, note: f.note || p.note }));
+    setForm(f => ({ ...f, name: p.name, note: f.note || p.note, patientId: p.patientId || f.patientId || "" }));
     setSuggestions([]);
   };
 
