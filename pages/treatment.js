@@ -272,8 +272,8 @@ export default function TreatmentPage() {
       const thisDate = new Date(year, month, d);
       const diff = Math.floor((dateOnly(thisDate) - dateOnly(admit)) / 86400000);
       if (diff < 0) continue; // 입원일 이전
-      // 퇴원일 이상이면 제외
-      if (dischargeDate && dateOnly(thisDate) >= dateOnly(dischargeDate)) continue;
+      // 퇴원일 다음날부터 제외 (퇴원 당일 치료는 포함)
+      if (dischargeDate && dateOnly(thisDate) > dateOnly(dischargeDate)) continue;
       const wk = Math.floor(diff / 7) + 1;
       if (!weeks[wk]) weeks[wk] = { total: 0, days: [], startDay: d, planTotal: 0, hospDays: 0 };
       weeks[wk].hospDays++;
