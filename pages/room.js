@@ -272,8 +272,16 @@ export default function RoomPage() {
     if (!newSlots[targetSlotKey]) newSlots[targetSlotKey]={current:null,reservations:[]};
     const target = newSlots[targetSlotKey];
     if (mode==="current") {
-      if (target.current?.name) { if (!target.reservations) target.reservations=[]; target.reservations.push({...data}); }
-      else target.current = {...data};
+      if (target.current?.name) {
+        const existingName = target.current.name;
+        const choice = window.confirm(
+          `${targetSlotKey.replace("-","호 ")}번 병상에 ${existingName} 환자가 입원 중입니다.\n\n확인: 기존 환자를 예약으로 전환하고 이동\n취소: 이동 취소`
+        );
+        if (!choice) { setMovingPatient(null); return; }
+        if (!target.reservations) target.reservations=[];
+        target.reservations.push({...target.current});
+      }
+      target.current = {...data};
     } else {
       if (!target.reservations) target.reservations=[];
       target.reservations.push({...data});

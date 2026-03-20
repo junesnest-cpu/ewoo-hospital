@@ -467,12 +467,25 @@ export default function HospitalWardManager() {
   }, [slots, viewDate, isPreview, showReserved]);
 
   const totalStats = useCallback(() => {
-    let occ = 0;
+    const today = todayDate();
+    let occupied = 0; // 사용 중: 예약 포함
+    let actual = 0;   // 재원: 실제 입원 환자만
     Object.values(WARD_STRUCTURE).forEach(ward =>
-      ward.rooms.forEach(r => { occ += getRoomStats(r.id, r.capacity).occupied; })
+      ward.rooms.forEach(r => {
+        for (let i = 1; i <= r.capacity; i++) {
+          const slotKey = `${r.id}-${i}`;
+          const slot = slots[slotKey];
+          const { person } = getSlotOccupant(slot, viewDate);
+          if (person) occupied++;
+          if (slot?.current?.name) {
+            const dis = parseDateStr(slot.current.discharge);
+            if (!dis || dateOnly(dis) >= today) actual++;
+          }
+        }
+      })
     );
-    return { total: 78, occupied: occ, available: 78 - occ };
-  }, [getRoomStats]);
+    return { total: 78, occupied, available: 78 - occupied, actual };
+  }, [slots, viewDate]);
 
   // ── 빈 병상 순환 하이라이트 ───────────────────────────────────────────────
   const emptySlots = !isPreview ? getAllEmptySlots(slots, getRoomStats) : [];
@@ -518,13 +531,18 @@ export default function HospitalWardManager() {
     const targetSlot = newSlots[targetSlotKey];
 
     if (mode === "current") {
-      if (targetSlot.current) {
-        // 이미 사람 있으면 예약으로 추가
+      if (targetSlot.current?.name) {
+        // 이미 입원 중인 환자가 있으면 처리 방법 확인
+        const existingName = targetSlot.current.name;
+        const choice = window.confirm(
+          `${targetSlotKey.replace("-", "호 ")}번 병상에 ${existingName} 환자가 입원 중입니다.\n\n확인: 기존 환자를 예약으로 전환하고 이동\n취소: 이동 취소`
+        );
+        if (!choice) { setMovingPatient(null); return; }
+        // 기존 환자를 예약 목록으로 이동
         if (!targetSlot.reservations) targetSlot.reservations = [];
-        targetSlot.reservations.push({ ...data });
-      } else {
-        targetSlot.current = { ...data };
+        targetSlot.reservations.push({ ...targetSlot.current });
       }
+      targetSlot.current = { ...data };
     } else {
       if (!targetSlot.reservations) targetSlot.reservations = [];
       targetSlot.reservations.push({ ...data });
@@ -699,8 +717,9 @@ export default function HospitalWardManager() {
         </div>
         {/* 통계 필 + 토글 버튼 */}
         <div style={{ ...S.headerCenter, justifyContent: isMobile ? "flex-start" : "center" }}>
-          <StatPill label="사용 중"    value={stats.occupied}  color={isPreview ? "#34d399":"#0ea5e9"} />
-          <StatPill label="빈 병상"    value={stats.available} color={isPreview ? "#6ee7b7":"#10b981"} />
+          <StatPill label="사용 중"  value={stats.occupied}  color={isPreview ? "#34d399":"#0ea5e9"} />
+          <StatPill label="재원"     value={stats.actual}    color={isPreview ? "#6ee7b7":"#7c3aed"} />
+          <StatPill label="빈 병상"  value={stats.available} color={isPreview ? "#a7f3d0":"#10b981"} />
           {!isPreview && (
             <>
               <button onClick={() => setShowReserved(v => !v)}
