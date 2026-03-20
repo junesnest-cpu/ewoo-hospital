@@ -169,7 +169,6 @@ export default function HospitalWardManager() {
   // 빈 병상 하이라이트
   const [highlightEmpty, setHighlightEmpty] = useState(false);
   const [emptySlotIdx,   setEmptySlotIdx]   = useState(0); // 현재 포커스된 빈 병상 인덱스
-  const [conflictOpen,   setConflictOpen]   = useState(true); // 겹침 경고 패널 열림 여부
   const fileInputRef = useRef();
 
   // ── 환자 검색 ────────────────────────────────────────────────────────────
@@ -1045,38 +1044,6 @@ export default function HospitalWardManager() {
                   )}
                 </div>
               )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 입원 기간 겹침 경고 배너 */}
-      {!isPreview && overlapConflicts.length > 0 && (
-        <div style={{ background:"#fff7ed", borderBottom:"2px solid #f97316", padding:"0 16px" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 0", cursor:"pointer" }}
-            onClick={() => setConflictOpen(v => !v)}>
-            <span style={{ fontSize:16 }}>⚠️</span>
-            <span style={{ fontWeight:700, color:"#c2410c", fontSize:13 }}>
-              입원 기간 겹침 {overlapConflicts.length}건
-            </span>
-            <span style={{ fontSize:12, color:"#9a3412", marginLeft:4 }}>— 현재 환자 퇴원 전 예약 입원일이 설정되어 있습니다</span>
-            <span style={{ marginLeft:"auto", fontSize:13, color:"#c2410c", fontWeight:700 }}>{conflictOpen ? "▲" : "▼"}</span>
-          </div>
-          {conflictOpen && (
-            <div style={{ paddingBottom:10, display:"flex", flexDirection:"column", gap:4 }}>
-              {overlapConflicts.map((c, i) => (
-                <div key={i} style={{ display:"flex", alignItems:"center", gap:8, background:"#fff", border:"1px solid #fed7aa",
-                  borderRadius:8, padding:"6px 12px", fontSize:12 }}>
-                  <span style={{ fontWeight:800, color:"#9a3412", background:"#ffedd5", borderRadius:5, padding:"2px 8px", flexShrink:0 }}>
-                    {c.roomId}호 {c.bedNum}번
-                  </span>
-                  <span style={{ fontWeight:700, color:"#1e3a5f" }}>{c.currentName}</span>
-                  <span style={{ color:"#64748b" }}>퇴원 {c.currentDischarge}</span>
-                  <span style={{ color:"#94a3b8", fontWeight:700 }}>→</span>
-                  <span style={{ fontWeight:700, color:"#7c3aed" }}>{c.reservationName}</span>
-                  <span style={{ color:"#7c3aed" }}>예약 {c.reservationAdmit}</span>
-                </div>
-              ))}
             </div>
           )}
         </div>
