@@ -1142,8 +1142,42 @@ export default function ApprovalPage() {
 
   // ── 목록 뷰 ──────────────────────────────────────────────────────────────────
   const sortedDocs = (list) => [...list].sort(([,a],[,b])=>(b.createdAt||0)-(a.createdAt||0));
-  const weeklyDocs = Object.entries(docs).filter(([,d])=>d.type==="weekly");
-  const taxDocs    = Object.entries(docs).filter(([,d])=>d.type==="tax");
+
+  // ── 탭별 열람 권한 ────────────────────────────────────────────────────────────
+  const isDirector   = profile.role === "director";
+  const isWonmuHead  = profile.role === "dept_head" && profile.department === "원무과";
+  const isNutrition  = profile.department === "영양팀";
+
+  // vacation: 원무과장·병원장·손정아 → 전체, 나머지 → 본인만
+  const canSeeAllVacation = isDirector || isWonmuHead || profile.name === "손정아";
+  // refund: 병원장·원무과장·문경미만 탭 접근
+  const canAccessRefund   = isDirector || isWonmuHead || profile.name === "문경미";
+  // weekly: 영양팀·병원장만 탭 접근
+  const canAccessWeekly   = isDirector || isNutrition;
+  // tax: 병원장·원무과장·손정아만 탭 접근
+  const canAccessTax      = isDirector || isWonmuHead || profile.name === "손정아";
+
+  // 타입별 문서 목록
+  const allDocEntries  = Object.entries(docs);
+  const vacationDocs   = allDocEntries.filter(([,d]) => d.type === "vacation");
+  const supplyDocs     = allDocEntries.filter(([,d]) => d.type === "supply");
+  const refundDocs     = allDocEntries.filter(([,d]) => d.type === "refund");
+  const weeklyDocs     = allDocEntries.filter(([,d]) => d.type === "weekly");
+  const taxDocs        = allDocEntries.filter(([,d]) => d.type === "tax");
+
+  // 휴가신청서: 권한 없으면 본인 것만
+  const vacationDisplay = canSeeAllVacation
+    ? vacationDocs
+    : vacationDocs.filter(([,d]) => d.authorUid === user.uid);
+
+  // 물품청구서: 모든 직원 전체 열람
+  const supplyDisplay = supplyDocs;
+
+  // 위탁진료: 권한자만 전체, 나머지는 본인것 (탭 자체는 권한자만 표시)
+  const refundDisplay = refundDocs;
+
+  // 세금계산서: 권한자만 표시
+  const taxDisplay = taxDocs;
 
   // 월간보고 탭 네비게이션 헬퍼
   const prevMonth = (ym) => {
@@ -1154,21 +1188,26 @@ export default function ApprovalPage() {
     const [y, m] = ym.split("-").map(Number);
     return m === 12 ? `${y+1}-01` : `${y}-${String(m+1).padStart(2,"0")}`;
   };
-  const weeklyDocForMonth = weeklyDocs.find(([,d]) => d.formData?.reportMonth === weeklyNavMonth);
-  const weeklyAllMonths = [...new Set(weeklyDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
+  const weeklyDocForMonth  = weeklyDocs.find(([,d]) => d.formData?.reportMonth === weeklyNavMonth);
+  const weeklyAllMonths    = [...new Set(weeklyDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
 
-  const displayDocs = activeTab === "mine"    ? sortedDocs(myDocs)
-    : activeTab === "pending"  ? sortedDocs(pendingDocs)
-    : activeTab === "weekly"   ? sortedDocs(weeklyDocs)
-    : activeTab === "tax"      ? sortedDocs(taxDocs)
+  const displayDocs = activeTab === "mine"     ? sortedDocs(myDocs)
+    : activeTab === "pending"   ? sortedDocs(pendingDocs)
+    : activeTab === "vacation"  ? sortedDocs(vacationDisplay)
+    : activeTab === "supply"    ? sortedDocs(supplyDisplay)
+    : activeTab === "refund"    ? sortedDocs(refundDisplay)
+    : activeTab === "tax"       ? sortedDocs(taxDisplay)
     : sortedDocs(allPendingDocs);
 
   const tabConfig = [
-    { key:"mine",    label:`내 문서함 (${myDocs.length})` },
-    { key:"pending", label:`결재 대기 (${pendingDocs.length})` },
-    { key:"weekly",  label:`월간보고 (${weeklyDocs.length})` },
-    { key:"tax",     label:`세금계산서 (${taxDocs.length})` },
-    ...(profile.role === "director" ? [{ key:"all", label:`전체 진행중 (${allPendingDocs.length})` }] : []),
+    { key:"mine",     label:`내 문서함 (${myDocs.length})` },
+    { key:"pending",  label:`결재 대기 (${pendingDocs.length})` },
+    { key:"vacation", label:`휴가신청서 (${vacationDisplay.length})` },
+    { key:"supply",   label:`물품청구서 (${supplyDisplay.length})` },
+    ...(canAccessRefund  ? [{ key:"refund",  label:`위탁진료 환불금 (${refundDisplay.length})` }] : []),
+    ...(canAccessWeekly  ? [{ key:"weekly",  label:`영양팀 월간보고` }] : []),
+    ...(canAccessTax     ? [{ key:"tax",     label:`세금계산서 (${taxDisplay.length})` }] : []),
+    ...(isDirector       ? [{ key:"all",     label:`전체 진행중 (${allPendingDocs.length})` }] : []),
   ];
 
   return (
@@ -1249,7 +1288,7 @@ export default function ApprovalPage() {
         <div style={S.card}>
           {displayDocs.length === 0 && (
             <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8", fontSize:14 }}>
-              {activeTab==="mine"?"작성한 문서가 없습니다.":activeTab==="pending"?"결재 대기 문서가 없습니다.":activeTab==="tax"?"세금계산서 문서가 없습니다.":"진행 중인 문서가 없습니다."}
+              {{ mine:"작성한 문서가 없습니다.", pending:"결재 대기 문서가 없습니다.", vacation:"휴가신청서 문서가 없습니다.", supply:"물품청구서 문서가 없습니다.", refund:"위탁진료 환불금 문서가 없습니다.", tax:"세금계산서 문서가 없습니다.", all:"진행 중인 문서가 없습니다." }[activeTab] || "문서가 없습니다."}
             </div>
           )}
           {displayDocs.map(([id, doc]) => {
