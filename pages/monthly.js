@@ -37,6 +37,13 @@ function normName(name) {
   return (name || "").replace(/^신\)/, "").replace(/\d+$/, "").trim().toLowerCase();
 }
 function uid() { return Math.random().toString(36).slice(2,9); }
+function parseDateStr(str, contextYear) {
+  if (!str || str === "미정") return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return parseISO(str);
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (m) return new Date(contextYear, parseInt(m[1])-1, parseInt(m[2]));
+  return null;
+}
 
 const EMPTY_ADM = () => ({ id:uid(), name:"", room:"", isNew:false, isReserved:false, note:"" });
 const EMPTY_DIS = () => ({ id:uid(), name:"", room:"", note:"" });
@@ -65,7 +72,6 @@ export default function MonthlySchedule() {
   const [editAdm, setEditAdm] = useState([]);
   const [editDis, setEditDis] = useState([]);
   const [editSaving, setEditSaving] = useState(false);
-  const [autoFilling, setAutoFilling] = useState(false);
 
   // 인라인 추가 팝오버
   const [popover, setPopover] = useState(null); // { dateKey, type, rect }
@@ -210,6 +216,30 @@ export default function MonthlySchedule() {
     return data;
   }, [slots, consultations, year, month]);
 
+  // 날짜별 재원 환자 수 (admitDate <= day <= dischargeDate)
+  const censusData = useMemo(() => {
+    const counts = {};
+    const total = daysInMonth(year, month);
+    const countPatient = (p) => {
+      if (!p?.name) return;
+      const admitD = parseDateStr(p.admitDate, year);
+      if (!admitD) return;
+      const disD = parseDateStr(p.discharge, year);
+      for (let d = 1; d <= total; d++) {
+        const dayDate = new Date(year, month - 1, d);
+        if (dayDate >= admitD && (!disD || dayDate <= disD)) {
+          const k = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+          counts[k] = (counts[k] || 0) + 1;
+        }
+      }
+    };
+    Object.values(slots).forEach(slot => {
+      if (slot?.current) countPatient(slot.current);
+      (slot?.reservations || []).forEach(r => r && countPatient(r));
+    });
+    return counts;
+  }, [slots, year, month]);
+
   // 이름 기준 중복 제거 (boardData에 이미 저장된 중복도 처리)
   function dedupList(list) {
     const seen = new Set();
@@ -221,77 +251,83 @@ export default function MonthlySchedule() {
     });
   }
 
-  // 표시 데이터: boardData 우선, 없으면 calendarData (양쪽 모두 dedup 적용)
+  // 표시 데이터: calendarData 기반 + boardData 수동 추가/숨김 병합
   function getDisplayData(key) {
-    if (boardData[key]) return {
-      admissions: dedupList(boardData[key].admissions),
-      discharges: dedupList(boardData[key].discharges),
-      isManual: true,
-    };
     const cd = calendarData[key] || { admissions:[], discharges:[] };
-    return { admissions: dedupList(cd.admissions), discharges: dedupList(cd.discharges), isManual: false };
+    const bd = boardData[key];
+    if (!bd) return { admissions: dedupList(cd.admissions), discharges: dedupList(cd.discharges), isManual: false };
+    const hiddenAdm = new Set(bd.hiddenAdmissions || []);
+    const hiddenDis = new Set(bd.hiddenDischarges || []);
+    const baseAdm = (cd.admissions || []).filter(a => !hiddenAdm.has(normName(a.name)));
+    const baseDis = (cd.discharges || []).filter(d => !hiddenDis.has(normName(d.name)));
+    const cdAdmNorms = new Set((cd.admissions || []).map(a => normName(a.name)));
+    const cdDisNorms = new Set((cd.discharges || []).map(d => normName(d.name)));
+    const manualAdm = (bd.admissions || []).filter(a => !cdAdmNorms.has(normName(a.name)));
+    const manualDis = (bd.discharges || []).filter(d => !cdDisNorms.has(normName(d.name)));
+    const hasManual = hiddenAdm.size > 0 || hiddenDis.size > 0 || manualAdm.length > 0 || manualDis.length > 0;
+    return {
+      admissions: dedupList([...baseAdm, ...manualAdm]),
+      discharges: dedupList([...baseDis, ...manualDis]),
+      isManual: hasManual,
+    };
   }
 
   // 편집 모달 열기
   function openEdit(key) {
-    const base = boardData[key] || calendarData[key] || { admissions:[], discharges:[] };
-    setEditAdm((base.admissions || []).map(a => ({ ...a, id: a.id || uid() })));
-    setEditDis((base.discharges || []).map(d => ({ ...d, id: d.id || uid() })));
+    const merged = getDisplayData(key);
+    setEditAdm((merged.admissions || []).map(a => ({ ...a, id: a.id || uid() })));
+    setEditDis((merged.discharges || []).map(d => ({ ...d, id: d.id || uid() })));
     setEditModal(key);
   }
 
-  // 편집 저장
+  // 편집 저장 (calendarData 기반 수동 추가/숨김만 저장)
   async function saveEdit() {
     setEditSaving(true);
-    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${editModal}`), {
-      admissions: editAdm,
-      discharges: editDis,
-    });
+    const cd = calendarData[editModal] || { admissions:[], discharges:[] };
+    const cdAdmNorms = new Set((cd.admissions || []).map(a => normName(a.name)));
+    const cdDisNorms = new Set((cd.discharges || []).map(d => normName(d.name)));
+    const savedAdmNorms = new Set(editAdm.map(a => normName(a.name)));
+    const savedDisNorms = new Set(editDis.map(d => normName(d.name)));
+    const hiddenAdmissions = (cd.admissions || []).filter(a => !savedAdmNorms.has(normName(a.name))).map(a => normName(a.name));
+    const hiddenDischarges = (cd.discharges || []).filter(d => !savedDisNorms.has(normName(d.name))).map(d => normName(d.name));
+    const manualAdmissions = editAdm.filter(a => !cdAdmNorms.has(normName(a.name)));
+    const manualDischarges = editDis.filter(d => !cdDisNorms.has(normName(d.name)));
+    const hasAny = manualAdmissions.length || manualDischarges.length || hiddenAdmissions.length || hiddenDischarges.length;
+    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${editModal}`),
+      hasAny ? { admissions: manualAdmissions, discharges: manualDischarges, hiddenAdmissions, hiddenDischarges } : null);
     setEditSaving(false);
     setEditModal(null);
   }
 
-  // 해당 날짜 보드 데이터 삭제 (자동 데이터로 복원)
-  async function clearEdit(key) {
-    if (!confirm("수동 편집 내용을 삭제하고 자동 데이터로 되돌리시겠습니까?")) return;
-    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${key}`), null);
-  }
-
-  // 이번 달 전체 자동 채우기
-  async function autoFillMonth() {
-    if (!confirm(`${year}년 ${month}월 전체를 자동 데이터로 채웁니다. 기존 수동 편집 내용은 덮어씌워집니다.`)) return;
-    setAutoFilling(true);
-    const obj = {};
-    Object.entries(calendarData).forEach(([key, val]) => {
-      obj[key] = {
-        admissions: val.admissions.map(a => ({ ...a, id: a.id || uid() })),
-        discharges: val.discharges.map(d => ({ ...d, id: d.id || uid() })),
-      };
-    });
-    await set(ref(db, `monthlyBoards/${toYM(year, month)}`), Object.keys(obj).length ? obj : null);
-    setAutoFilling(false);
-  }
-
   // 인라인 삭제
   async function deleteEntry(dKey, type, entryId) {
-    const base = boardData[dKey] || calendarData[dKey] || { admissions:[], discharges:[] };
-    const adm = (base.admissions || []).map(a => ({...a, id: a.id || uid()}));
-    const dis = (base.discharges || []).map(d => ({...d, id: d.id || uid()}));
-    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), {
-      admissions: type === "admission" ? adm.filter(a => a.id !== entryId) : adm,
-      discharges: type === "discharge" ? dis.filter(d => d.id !== entryId) : dis,
-    });
+    const merged = getDisplayData(dKey);
+    const all = type === "admission" ? (merged.admissions || []) : (merged.discharges || []);
+    const deleted = all.find(e => (e.id || "") === entryId);
+    const deletedNorm = normName(deleted?.name || "");
+    const cd = calendarData[dKey] || { admissions:[], discharges:[] };
+    const bd = boardData[dKey] || {};
+    const newBd = { admissions: bd.admissions || [], discharges: bd.discharges || [], hiddenAdmissions: bd.hiddenAdmissions || [], hiddenDischarges: bd.hiddenDischarges || [] };
+    if (type === "admission") {
+      if ((cd.admissions || []).some(a => normName(a.name) === deletedNorm))
+        newBd.hiddenAdmissions = [...newBd.hiddenAdmissions.filter(n => n !== deletedNorm), deletedNorm];
+      else newBd.admissions = newBd.admissions.filter(a => a.id !== entryId);
+    } else {
+      if ((cd.discharges || []).some(d => normName(d.name) === deletedNorm))
+        newBd.hiddenDischarges = [...newBd.hiddenDischarges.filter(n => n !== deletedNorm), deletedNorm];
+      else newBd.discharges = newBd.discharges.filter(d => d.id !== entryId);
+    }
+    const hasAny = newBd.admissions.length || newBd.discharges.length || newBd.hiddenAdmissions.length || newBd.hiddenDischarges.length;
+    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), hasAny ? newBd : null);
   }
 
   // 인라인 추가
   async function addEntry(dKey, type, entry) {
-    const base = boardData[dKey] || calendarData[dKey] || { admissions:[], discharges:[] };
-    const adm = (base.admissions || []).map(a => ({...a, id: a.id || uid()}));
-    const dis = (base.discharges || []).map(d => ({...d, id: d.id || uid()}));
-    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), {
-      admissions: type === "admission" ? [...adm, {...entry, id: uid()}] : adm,
-      discharges: type === "discharge" ? [...dis, {...entry, id: uid()}] : dis,
-    });
+    const bd = boardData[dKey] || {};
+    const newBd = { admissions: bd.admissions || [], discharges: bd.discharges || [], hiddenAdmissions: bd.hiddenAdmissions || [], hiddenDischarges: bd.hiddenDischarges || [] };
+    if (type === "admission") newBd.admissions = [...newBd.admissions, {...entry, id: uid()}];
+    else newBd.discharges = [...newBd.discharges, {...entry, id: uid()}];
+    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), newBd);
   }
 
   function openPopover(dKey, type, e) {
@@ -380,13 +416,7 @@ export default function MonthlySchedule() {
           <span style={{ background:"#dcfce7", color:"#166534", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>↑ 입원</span>
           <span style={{ background:"#fee2e2", color:"#991b1b", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>↓ 퇴원</span>
           <span style={{ background:"#fef9c3", color:"#854d0e", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>★ 신환</span>
-          <span style={{ background:"#e0f2fe", color:"#0369a1", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>✏ 수동편집</span>
-        </div>
-        <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
-          <button onClick={autoFillMonth} disabled={autoFilling}
-            style={{ ...NS.monthBtn, background:"#0ea5e9", color:"#fff", border:"none", fontSize:12 }}>
-            {autoFilling ? "채우는 중..." : "⚡ 자동채우기"}
-          </button>
+          <span style={{ background:"#e0f2fe", color:"#0369a1", borderRadius:4, padding:"3px 10px", fontWeight:700 }}>🏥 재원수</span>
         </div>
       </div>
 
@@ -480,21 +510,19 @@ export default function MonthlySchedule() {
                         <span>{day}</span>
                         {isToday && <span style={{ fontSize:11, background:"#f59e0b", color:"#fff", borderRadius:3, padding:"0 4px", fontWeight:700 }}>오늘</span>}
                         {isManual && <span style={{ fontSize:10, background:"#bae6fd", color:"#0369a1", borderRadius:3, padding:"0 4px", fontWeight:700 }}>✏</span>}
+                        <span style={{ flex:1 }} />
+                        {(censusData[key] || 0) > 0 && (
+                          <span style={{ fontSize:10, background:"#dbeafe", color:"#1e40af", borderRadius:3, padding:"0 5px", fontWeight:800 }}>
+                            🏥{censusData[key]}
+                          </span>
+                        )}
                         {/* 편집 버튼 */}
                         <button className="no-print" onClick={() => openEdit(key)}
                           title="이 날 편집"
-                          style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer",
+                          style={{ background:"none", border:"none", cursor:"pointer",
                             fontSize:11, color:"#64748b", padding:"0 2px", lineHeight:1 }}>
                           ✏️
                         </button>
-                        {isManual && (
-                          <button className="no-print" onClick={() => clearEdit(key)}
-                            title="수동 편집 취소 (자동 데이터로 복원)"
-                            style={{ background:"none", border:"none", cursor:"pointer",
-                              fontSize:11, color:"#94a3b8", padding:"0 2px", lineHeight:1 }}>
-                            ↺
-                          </button>
-                        )}
                       </div>
 
                       {/* 입원 섹션 */}
