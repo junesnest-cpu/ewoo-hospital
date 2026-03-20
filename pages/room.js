@@ -565,7 +565,7 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
         const slotExtra=allPatients.filter(p=>!dbNames.has(p.name)&&p.name.toLowerCase().includes(q.toLowerCase())).slice(0,3);
         setSuggestions([...mapped,...slotExtra].slice(0,6));
       }catch{setSuggestions([]);}
-    },250);
+    },100);
     return()=>clearTimeout(timer);
   },[form.name]);
 
