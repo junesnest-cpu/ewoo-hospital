@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { ref, onValue, set, get, push, runTransaction, update } from "firebase/database";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { db, auth, storage } from "../lib/firebaseConfig";
+import { parseRefundExcel, parseWeeklyExcel, parseTaxExcel } from "../lib/excelParsers";
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
 const DOC_TYPES = {
@@ -76,6 +77,43 @@ const S = {
 };
 function Field({ label, children, style }) {
   return <div style={{ marginBottom:12, ...style }}><label style={S.label}>{label}</label>{children}</div>;
+}
+
+// ─── 엑셀 자동입력 버튼 ─────────────────────────────────────────────────────
+function ExcelImportButton({ onParsed, parserFn, accept=".xlsx,.xls", color="#0f2744", bg="#e0f2fe", label="엑셀 자동입력" }) {
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
+  const inputRef = useRef(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoading(true); setError("");
+    try {
+      const XLSX = (await import("xlsx")).default;
+      const results = await parserFn(file, XLSX);
+      if (!results || results.length === 0) { setError("파싱된 데이터가 없습니다. 파일 형식을 확인하세요."); return; }
+      onParsed(results);
+    } catch (err) {
+      setError("파싱 오류: " + err.message);
+    } finally {
+      setLoading(false);
+      e.target.value = "";
+    }
+  };
+
+  return (
+    <div style={{ marginBottom:14 }}>
+      <input ref={inputRef} type="file" accept={accept} style={{ display:"none" }} onChange={handleFile} />
+      <button type="button"
+        style={{ border:`1.5px solid ${color}33`, background:bg, color, borderRadius:8, padding:"7px 16px", fontWeight:700, fontSize:13, cursor:loading?"not-allowed":"pointer", display:"flex", alignItems:"center", gap:8, opacity:loading?0.7:1 }}
+        onClick={()=>!loading && inputRef.current?.click()}>
+        <span style={{ fontSize:16 }}>📂</span>
+        {loading ? "분석 중..." : label}
+      </button>
+      {error && <div style={{ fontSize:12, color:"#dc2626", marginTop:4 }}>{error}</div>}
+    </div>
+  );
 }
 function Grid({ cols=2, children }) {
   return <div style={{ display:"grid", gridTemplateColumns:`repeat(${cols},1fr)`, gap:12, marginBottom:12 }}>{children}</div>;
@@ -409,6 +447,21 @@ function RefundForm({ data, onChange, readonly }) {
 
   return (
     <div>
+      <ExcelImportButton
+        label="엑셀 자동입력 (위탁진료 양식)"
+        color="#f59e0b" bg="#fef3c7"
+        parserFn={parseRefundExcel}
+        onParsed={(results) => {
+          // 파싱 결과 첫 번째(또는 사용자가 선택) 시트 적용
+          if (results.length === 1) {
+            onChange({ ...f, reportMonth: results[0].reportMonth, patients: results[0].patients });
+          } else {
+            // 여러 시트: 현재 월과 일치하는 것 우선, 없으면 첫 번째
+            const match = results.find(r => r.reportMonth === f.reportMonth) || results[0];
+            onChange({ ...f, reportMonth: match.reportMonth, patients: match.patients });
+          }
+        }}
+      />
       <Field label="보고 월"><input type="month" style={{...S.input,maxWidth:180}} value={f.reportMonth||""} onChange={e=>upd("reportMonth",e.target.value)} /></Field>
       {/* 환자 검색 */}
       <div style={{ marginBottom:16, position:"relative" }}>
@@ -653,6 +706,15 @@ function WeeklyForm({ data, onChange, readonly }) {
 
   return (
     <div>
+      <ExcelImportButton
+        label="엑셀 자동입력 (영양팀 월간보고 양식)"
+        color="#7c3aed" bg="#ede9fe"
+        parserFn={parseWeeklyExcel}
+        onParsed={(results) => {
+          const match = results.find(r => r.reportMonth === f.reportMonth) || results[0];
+          onChange({ ...f, reportMonth: match.reportMonth, days: match.days, monthSummary: match.monthSummary });
+        }}
+      />
       <Field label="보고 월">
         <input type="month" style={{...S.input,maxWidth:200}} value={f.reportMonth||""} onChange={e=>setMonth(e.target.value)} />
       </Field>
@@ -769,6 +831,15 @@ function TaxForm({ data, onChange, readonly }) {
 
   return (
     <div>
+      <ExcelImportButton
+        label="엑셀 자동입력 (세금계산서 양식)"
+        color="#dc2626" bg="#fff1f2"
+        parserFn={parseTaxExcel}
+        onParsed={(results) => {
+          const match = results.find(r => r.reportMonth === f.reportMonth) || results[0];
+          onChange({ ...f, reportMonth: match.reportMonth, groups: match.groups });
+        }}
+      />
       <Field label="보고 월"><input type="month" style={{...S.input,maxWidth:180}} value={f.reportMonth||""} onChange={e=>upd("reportMonth",e.target.value)} /></Field>
       {(f.groups||[]).map((g,gi) => (
         <div key={gi} style={{marginBottom:20,border:"1.5px solid #e2e8f0",borderRadius:10,overflow:"hidden"}}>
