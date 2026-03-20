@@ -37,7 +37,7 @@ const TREATMENT_NAME_TO_ID = {
   "마이어스2": "myers2",
   "리쥬더마": "rejuderm", "리쥬더마크림": "rejuderm",
   "티옥트산": "thioctic",
-  "닥터라민": "dramin", "지씨멀티": "dramin",
+  "닥터라민": "dramin", "지씨멀티": "dramin", "닥터라민+미네랄": "dramin", "닥터라민미네랄": "dramin",
   "g+t": "gt", "gt": "gt",
   "페리주": "periview_360", "페리주360": "periview_360", "페리주560": "periview_560",
   "페리주360ml": "periview_360", "페리주560ml": "periview_560",
