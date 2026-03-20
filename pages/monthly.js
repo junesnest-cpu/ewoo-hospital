@@ -276,22 +276,18 @@ export default function MonthlySchedule() {
     };
 
     if (year === nowYear && month === nowMonth) {
-      // 현재 달: 오늘 실제 재원 수를 기준점으로 (index.js와 동일 병상 범위 + 이름 중복 제거)
+      // 현재 달: 오늘 실제 재원 수를 기준점으로 (index.js와 동일 병상 범위 + 동일 로직)
       const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const seenToday = new Set();
       let todayCensus = 0;
       WARD_ROOMS.forEach(({ id, cap }) => {
         for (let i = 1; i <= cap; i++) {
           const s = slots[`${id}-${i}`];
           if (!s?.current?.name) continue;
-          const n = normName(s.current.name);
-          if (!n || seenToday.has(n)) continue;
           const dis = parseDateStr(s.current.discharge, now.getFullYear());
           if (dis) {
             const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
             if (disD < todayDateOnly) continue;
           }
-          seenToday.add(n);
           todayCensus++;
         }
       });
