@@ -243,7 +243,8 @@ function VacationForm({ data, onChange, readonly }) {
 // ─── 물품청구서 ───────────────────────────────────────────────────────────────
 const emptyItem = () => ({ id:uid7(), name:"", unit:"개", qty:"", price:"", note:"" });
 function SupplyForm({ data, onChange, readonly }) {
-  const f = data || { department:"", requestDate:todayStr(), items:[emptyItem()] };
+  const f = { department:"", requestDate:todayStr(), items:[emptyItem()], ...(data||{}) };
+  if (!f.items || f.items.length === 0) f.items = [emptyItem()];
   const upd = (k,v) => onChange({...f,[k]:v});
   const updItem = (i,k,v) => { const items=[...f.items]; items[i]={...items[i],[k]:v}; upd("items",items); };
   const addItem = () => upd("items",[...f.items, emptyItem()]);
@@ -439,43 +440,169 @@ function RefundForm({ data, onChange, readonly }) {
 }
 
 // ─── 주간보고서 ───────────────────────────────────────────────────────────────
+const DAYS_KO = ["월","화","수","목","금","토","일"];
+const emptyDay = (date="") => ({ date, ecoFood:"", dojunFood:"", ecoSnack:"", dojunSnack:"", otherCost:"", staffCount:"", patientCount:"", note:"" });
 function WeeklyForm({ data, onChange, readonly }) {
-  const f = data || { weekFrom:"", weekTo:"", totalFood:"", staffCount:"", patientCount:"", perCapita:"", mainContent:"", notes:"" };
-  const upd = (k,v) => onChange({...f,[k]:v});
-  const total = Number(f.staffCount||0)+Number(f.patientCount||0);
+  const f = { weekFrom:"", weekTo:"", days: Array.from({length:7}, emptyDay), generalNote:"", ...(data||{}) };
+  if (!f.days || f.days.length !== 7) f.days = Array.from({length:7}, (_,i) => (data?.days?.[i] || emptyDay()));
+
+  const updDay = (i,k,v) => { const days=[...f.days]; days[i]={...days[i],[k]:v}; onChange({...f,days}); };
+  const setWeekFrom = (val) => {
+    if (!val) { onChange({...f,weekFrom:val}); return; }
+    const start = new Date(val);
+    const days = f.days.map((d,i) => {
+      const dt = new Date(start); dt.setDate(start.getDate()+i);
+      const ds = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,"0")}.${String(dt.getDate()).padStart(2,"0")}`;
+      return {...d, date: ds};
+    });
+    const end = new Date(start); end.setDate(start.getDate()+6);
+    const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,"0")}-${String(end.getDate()).padStart(2,"0")}`;
+    onChange({...f, weekFrom:val, weekTo:endStr, days});
+  };
+  const dayTotal  = d => (Number(d.ecoFood)||0)+(Number(d.dojunFood)||0)+(Number(d.ecoSnack)||0)+(Number(d.dojunSnack)||0)+(Number(d.otherCost)||0);
+  const totals = f.days.reduce((acc,d) => ({
+    food:  acc.food  + (Number(d.ecoFood)||0)  + (Number(d.dojunFood)||0),
+    snack: acc.snack + (Number(d.ecoSnack)||0) + (Number(d.dojunSnack)||0),
+    other: acc.other + (Number(d.otherCost)||0),
+    staff: acc.staff + (Number(d.staffCount)||0),
+    patient: acc.patient + (Number(d.patientCount)||0),
+  }), {food:0,snack:0,other:0,staff:0,patient:0});
+  totals.total   = totals.food + totals.snack + totals.other;
+  totals.count   = totals.staff + totals.patient;
+  totals.perCap  = totals.count > 0 ? Math.round(totals.total / totals.count) : 0;
+
   if (readonly) return (
     <div>
-      <ReadVal label="보고기간" value={f.weekFrom && f.weekTo ? `${f.weekFrom} ~ ${f.weekTo}` : "-"} />
-      <Grid cols={3}>
-        <ReadVal label="직원 식수" value={f.staffCount ? `${fmtNum(f.staffCount)}명` : "-"} />
-        <ReadVal label="환우 식수" value={f.patientCount ? `${fmtNum(f.patientCount)}명` : "-"} />
-        <ReadVal label="총 식수" value={total ? `${fmtNum(total)}명` : "-"} />
-      </Grid>
-      <Grid cols={2}>
-        <ReadVal label="해당 주 식비 합계" value={f.totalFood ? `${fmtNum(f.totalFood)} 원` : "-"} />
-        <ReadVal label="1인 식단가" value={f.perCapita ? `${fmtNum(f.perCapita)} 원` : "-"} />
-      </Grid>
-      <ReadVal label="주요 내용" value={f.mainContent} />
-      <ReadVal label="특이사항" value={f.notes} />
+      <ReadVal label="보고기간" value={f.weekFrom&&f.weekTo ? `${f.weekFrom} ~ ${f.weekTo}` : "-"} />
+      <div style={S.sectionTit}>일별 현황</div>
+      <div style={{overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:12,minWidth:700}}>
+        <thead>
+          <tr>
+            {["날짜","요일","식재료비","간식비","기타","식비합계","직원","환우","총식수","1인식단가","비고"].map(h=><th key={h} style={S.th}>{h}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {f.days.map((d,i)=>{
+            const dt = d.date ? new Date(d.date.replace(/\./g,"-")) : null;
+            const dow = dt && !isNaN(dt) ? DAYS_KO[(dt.getDay()+6)%7] : "";
+            const food=(Number(d.ecoFood)||0)+(Number(d.dojunFood)||0);
+            const snack=(Number(d.ecoSnack)||0)+(Number(d.dojunSnack)||0);
+            const other=Number(d.otherCost)||0;
+            const total=food+snack+other;
+            const cnt=(Number(d.staffCount)||0)+(Number(d.patientCount)||0);
+            const pc=cnt>0?Math.round(total/cnt):0;
+            return (
+              <tr key={i} style={{background:i%2===0?"#fff":"#f8fafc"}}>
+                <td style={S.td}>{d.date||"-"}</td>
+                <td style={{...S.td,textAlign:"center",fontWeight:700,color:dow==="토"?"#2563eb":dow==="일"?"#dc2626":"inherit"}}>{dow}</td>
+                <td style={{...S.td,textAlign:"right"}}>{food?fmtNum(food):"-"}</td>
+                <td style={{...S.td,textAlign:"right"}}>{snack?fmtNum(snack):"-"}</td>
+                <td style={{...S.td,textAlign:"right"}}>{other?fmtNum(other):"-"}</td>
+                <td style={{...S.td,textAlign:"right",fontWeight:700}}>{total?fmtNum(total):"-"}</td>
+                <td style={{...S.td,textAlign:"center"}}>{d.staffCount||"-"}</td>
+                <td style={{...S.td,textAlign:"center"}}>{d.patientCount||"-"}</td>
+                <td style={{...S.td,textAlign:"center",fontWeight:700}}>{cnt||"-"}</td>
+                <td style={{...S.td,textAlign:"right"}}>{pc?fmtNum(pc):"-"}</td>
+                <td style={S.td}>{d.note||""}</td>
+              </tr>
+            );
+          })}
+          <tr style={{background:"#f0f9ff"}}>
+            <td colSpan={2} style={{...S.th,textAlign:"center"}}>주간 합계</td>
+            <td style={{...S.th,textAlign:"right"}}>{fmtNum(totals.food)}</td>
+            <td style={{...S.th,textAlign:"right"}}>{fmtNum(totals.snack)}</td>
+            <td style={{...S.th,textAlign:"right"}}>{fmtNum(totals.other)}</td>
+            <td style={{...S.th,textAlign:"right",color:"#0f2744"}}>{fmtNum(totals.total)}</td>
+            <td style={{...S.th,textAlign:"center"}}>{totals.staff}</td>
+            <td style={{...S.th,textAlign:"center"}}>{totals.patient}</td>
+            <td style={{...S.th,textAlign:"center",fontWeight:900}}>{totals.count}</td>
+            <td style={{...S.th,textAlign:"right"}}>{fmtNum(totals.perCap)}</td>
+            <td style={S.th}></td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+      {f.generalNote && <ReadVal label="특이사항" value={f.generalNote} />}
     </div>
   );
+
   return (
     <div>
       <Grid>
-        <Field label="보고기간 시작일"><input type="date" style={S.input} value={f.weekFrom||""} onChange={e=>upd("weekFrom",e.target.value)} /></Field>
-        <Field label="보고기간 종료일"><input type="date" style={S.input} value={f.weekTo||""} onChange={e=>upd("weekTo",e.target.value)} /></Field>
+        <Field label="보고기간 시작일 (월요일)">
+          <input type="date" style={S.input} value={f.weekFrom||""} onChange={e=>setWeekFrom(e.target.value)} />
+        </Field>
+        <Field label="보고기간 종료일">
+          <input type="date" style={S.input} value={f.weekTo||""} readOnly style={{...S.input,background:"#f8fafc",color:"#64748b"}} />
+        </Field>
       </Grid>
-      <Grid cols={3}>
-        <Field label="직원 식수 (명)"><input type="number" style={S.input} value={f.staffCount||""} onChange={e=>upd("staffCount",e.target.value)} /></Field>
-        <Field label="환우 식수 (명)"><input type="number" style={S.input} value={f.patientCount||""} onChange={e=>upd("patientCount",e.target.value)} /></Field>
-        <Field label="총 식수"><div style={{ padding:"8px 10px", background:"#f8fafc", borderRadius:8, fontSize:13, border:"1.5px solid #e2e8f0" }}>{total ? `${fmtNum(total)}명` : "-"}</div></Field>
-      </Grid>
-      <Grid>
-        <Field label="해당 주 식비 합계 (원)"><input type="number" style={S.input} value={f.totalFood||""} onChange={e=>upd("totalFood",e.target.value)} /></Field>
-        <Field label="1인 식단가 (원)"><input type="number" style={S.input} value={f.perCapita||""} onChange={e=>upd("perCapita",e.target.value)} /></Field>
-      </Grid>
-      <Field label="주요 내용"><textarea style={{...S.input,height:100,resize:"vertical"}} value={f.mainContent||""} onChange={e=>upd("mainContent",e.target.value)} placeholder="해당 주 주요 내용을 작성하세요" /></Field>
-      <Field label="특이사항"><textarea style={{...S.input,height:80,resize:"vertical"}} value={f.notes||""} onChange={e=>upd("notes",e.target.value)} placeholder="특이사항 또는 건의사항" /></Field>
+      <div style={S.sectionTit}>일별 입력</div>
+      <div style={{overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
+        <thead>
+          <tr>
+            <th style={{...S.th,minWidth:90}}>날짜</th>
+            <th style={{...S.th,width:30}}>요일</th>
+            <th style={{...S.th,minWidth:90}}>에코 식재료비</th>
+            <th style={{...S.th,minWidth:90}}>도준 식재료비</th>
+            <th style={{...S.th,minWidth:80}}>에코 간식비</th>
+            <th style={{...S.th,minWidth:80}}>도준 간식비</th>
+            <th style={{...S.th,minWidth:90}}>기타(현지구매)</th>
+            <th style={{...S.th,width:80}}>식비합계</th>
+            <th style={{...S.th,width:55}}>직원</th>
+            <th style={{...S.th,width:55}}>환우</th>
+            <th style={{...S.th,width:65}}>총식수</th>
+            <th style={{...S.th,width:75}}>1인식단가</th>
+            <th style={{...S.th,minWidth:80}}>비고</th>
+          </tr>
+        </thead>
+        <tbody>
+          {f.days.map((d,i)=>{
+            const dt = d.date ? new Date(d.date.replace(/\./g,"-")) : null;
+            const dow = dt && !isNaN(dt) ? DAYS_KO[(dt.getDay()+6)%7] : "";
+            const isWeekend = dow==="토"||dow==="일";
+            const total = dayTotal(d);
+            const cnt = (Number(d.staffCount)||0)+(Number(d.patientCount)||0);
+            const pc = cnt>0?Math.round(total/cnt):0;
+            return (
+              <tr key={i} style={{background:isWeekend?"#fef9ec":i%2===0?"#fff":"#f8fafc"}}>
+                <td style={S.td}>
+                  <input style={{...S.input,padding:"3px 5px",fontSize:11,fontFamily:"monospace"}}
+                    value={d.date||""} onChange={e=>updDay(i,"date",e.target.value)} placeholder="YYYY.MM.DD" />
+                </td>
+                <td style={{...S.td,textAlign:"center",fontWeight:700,color:dow==="토"?"#2563eb":dow==="일"?"#dc2626":"#475569"}}>{dow}</td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"right"}} value={d.ecoFood||""} onChange={e=>updDay(i,"ecoFood",e.target.value)} /></td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"right"}} value={d.dojunFood||""} onChange={e=>updDay(i,"dojunFood",e.target.value)} /></td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"right"}} value={d.ecoSnack||""} onChange={e=>updDay(i,"ecoSnack",e.target.value)} /></td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"right"}} value={d.dojunSnack||""} onChange={e=>updDay(i,"dojunSnack",e.target.value)} /></td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"right"}} value={d.otherCost||""} onChange={e=>updDay(i,"otherCost",e.target.value)} /></td>
+                <td style={{...S.td,textAlign:"right",fontWeight:700,background:"#f0f9ff"}}>{total?fmtNum(total):"-"}</td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"center"}} value={d.staffCount||""} onChange={e=>updDay(i,"staffCount",e.target.value)} /></td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"center"}} value={d.patientCount||""} onChange={e=>updDay(i,"patientCount",e.target.value)} /></td>
+                <td style={{...S.td,textAlign:"center",fontWeight:700,background:"#f0f9ff"}}>{cnt||"-"}</td>
+                <td style={{...S.td,textAlign:"right",background:"#f0f9ff"}}>{pc?fmtNum(pc):"-"}</td>
+                <td style={S.td}><input style={{...S.input,padding:"3px 5px",fontSize:11}} value={d.note||""} onChange={e=>updDay(i,"note",e.target.value)} /></td>
+              </tr>
+            );
+          })}
+          <tr style={{background:"#e0f2fe"}}>
+            <td colSpan={2} style={{...S.th,textAlign:"center"}}>주간 합계</td>
+            <td colSpan={3} style={{...S.th,textAlign:"right"}}>식재료비 {fmtNum(totals.food)}</td>
+            <td colSpan={2} style={{...S.th,textAlign:"right"}}>간식+기타 {fmtNum(totals.snack+totals.other)}</td>
+            <td style={{...S.th,textAlign:"right",color:"#0f2744",fontSize:13}}>{fmtNum(totals.total)}</td>
+            <td style={{...S.th,textAlign:"center"}}>{totals.staff}</td>
+            <td style={{...S.th,textAlign:"center"}}>{totals.patient}</td>
+            <td style={{...S.th,textAlign:"center",fontWeight:900}}>{totals.count}</td>
+            <td style={{...S.th,textAlign:"right"}}>{fmtNum(totals.perCap)}</td>
+            <td style={S.th}></td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+      <Field label="특이사항" style={{marginTop:12}}>
+        <textarea style={{...S.input,height:80,resize:"vertical"}} value={f.generalNote||""} onChange={e=>onChange({...f,generalNote:e.target.value})} placeholder="해당 주 특이사항이나 건의사항을 입력하세요" />
+      </Field>
     </div>
   );
 }
