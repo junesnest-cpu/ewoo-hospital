@@ -9,6 +9,7 @@ const DOC_TYPES = {
   supply:   { label: "물품청구서",          code: "SUP", color: "#10b981", bg: "#d1fae5" },
   refund:   { label: "위탁진료 환불금 보고", code: "REF", color: "#f59e0b", bg: "#fef3c7" },
   weekly:   { label: "주간보고서(영양팀)",   code: "WKL", color: "#8b5cf6", bg: "#ede9fe" },
+  tax:      { label: "세금계산서 보고",      code: "TAX", color: "#dc2626", bg: "#fff1f2" },
 };
 const STATUS = {
   draft:        { label: "임시저장",        color: "#64748b", bg: "#f1f5f9" },
@@ -607,6 +608,152 @@ function WeeklyForm({ data, onChange, readonly }) {
   );
 }
 
+// ─── 세금계산서 보고 ──────────────────────────────────────────────────────────
+const PAYMENT_METHODS = ["청구","계좌","카드","영수","기타"];
+const PRESET_GROUPS = [
+  { name:"주요공과금", items:[
+    { category:"보험료",   vendor:"국민건강보험공단",             content:"월 건강보험료" },
+    { category:"보험료",   vendor:"국민건강보험공단",             content:"월 연금보험료" },
+    { category:"보험료",   vendor:"국민건강보험공단",             content:"월 고용보험료" },
+    { category:"보험료",   vendor:"국민건강보험공단",             content:"월 산재보험료" },
+    { category:"임대료",   vendor:"즐거운(박명희)",              content:"임대료" },
+    { category:"전기세",   vendor:"한국전력공사",                content:"전기세" },
+    { category:"관리비",   vendor:"즐거운건물관리",              content:"관리비" },
+    { category:"가스비",   vendor:"서울도시가스",                content:"가스비" },
+    { category:"수도세",   vendor:"서울특별시 서부수도사업소",    content:"수도비" },
+    { category:"퇴직세",   vendor:"",                           content:"퇴직연금" },
+  ]},
+  { name:"주요거래처", items:[
+    { category:"약제/주사제",  vendor:"제인스메디칼",             content:"의약품 월 결제분" },
+    { category:"약제/주사제",  vendor:"바른메디팜",               content:"약제 및 주사제 월 결제분" },
+    { category:"수탁료",       vendor:"의료법인 삼광의료재단",     content:"월분 검사료 결제" },
+    { category:"의료소모품",   vendor:"메디풀",                   content:"EXAM GLOVE외 월 결제분" },
+    { category:"식자재",       vendor:"신길축산육류직매장",        content:"정육 월분 결제" },
+    { category:"식자재",       vendor:"㈜에코푸드코리아",          content:"식자재 월 결제분" },
+    { category:"식자재",       vendor:"㈜도준푸드",               content:"식자재 월 결제분" },
+  ]},
+  { name:"시설관리", items:[
+    { category:"주유비",   vendor:"불광주유소",               content:"주유비 - 1호차 (140호 2373)" },
+    { category:"주유비",   vendor:"불광주유소",               content:"주유비 - 2호차 (234누 5978)" },
+    { category:"주유비",   vendor:"불광주유소",               content:"주유비 - 스포티지 (229호 6876)" },
+    { category:"방제",     vendor:"렌토킬이니셜코리아㈜",      content:"방제 월 결제분" },
+    { category:"관리비",   vendor:"성도엘리베이터",            content:"월분 승강기 보수료" },
+    { category:"수수료",   vendor:"㈜세광티이씨",              content:"전기안전관리대행수수료 월분" },
+  ]},
+  { name:"미화", items:[
+    { category:"정기소모품", vendor:"늘푸름보호작업장", content:"핸드타올 및 점보롤화장지" },
+  ]},
+  { name:"원무과", items:[
+    { category:"임대료", vendor:"㈜퍼스트전산", content:"복사기임대료" },
+  ]},
+  { name:"기타", items:[] },
+];
+
+function makeTaxItem(p={}) {
+  return { id:uid7(), category:p.category||"", vendor:p.vendor||"", content:p.content||"", amount:"", method:"청구", issueDate:"", count:"1", note:"" };
+}
+function makeTaxGroups() {
+  return PRESET_GROUPS.map(g => ({ name:g.name, items:g.items.map(makeTaxItem) }));
+}
+
+function TaxForm({ data, onChange, readonly }) {
+  const f = (data && data.groups) ? data : { reportMonth:todayStr().slice(0,7), groups:makeTaxGroups() };
+  const upd = (k,v) => onChange({...f,[k]:v});
+  const updGroup = (gi,k,v) => { const gs=[...f.groups]; gs[gi]={...gs[gi],[k]:v}; upd("groups",gs); };
+  const updItem  = (gi,ii,k,v) => { const gs=[...f.groups]; const its=[...gs[gi].items]; its[ii]={...its[ii],[k]:v}; gs[gi]={...gs[gi],items:its}; upd("groups",gs); };
+  const addItem  = (gi) => { const gs=[...f.groups]; gs[gi]={...gs[gi],items:[...gs[gi].items,makeTaxItem()]}; upd("groups",gs); };
+  const delItem  = (gi,ii) => { const gs=[...f.groups]; gs[gi]={...gs[gi],items:gs[gi].items.filter((_,i)=>i!==ii)}; upd("groups",gs); };
+  const addGroup = () => { const name=window.prompt("구분명을 입력하세요:"); if(!name) return; upd("groups",[...f.groups,{name,items:[makeTaxItem()]}]); };
+  const delGroup = (gi) => { if(!window.confirm("이 구분을 삭제하시겠습니까?")) return; upd("groups",f.groups.filter((_,i)=>i!==gi)); };
+  const groupTotal = (g) => (g.items||[]).reduce((s,it)=>s+(Number(it.amount)||0),0);
+  const grandTotal = (f.groups||[]).reduce((s,g)=>s+groupTotal(g),0);
+
+  const TH = S.th;
+  const TD = S.td;
+
+  if (readonly) return (
+    <div>
+      <ReadVal label="보고 월" value={f.reportMonth} />
+      {(f.groups||[]).map((g,gi) => {
+        const hasData = g.items.some(it=>it.amount||it.vendor||it.content);
+        if (!hasData) return null;
+        return (
+          <div key={gi} style={{marginBottom:16}}>
+            <div style={{...S.sectionTit,color:"#dc2626"}}>{g.name}</div>
+            <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead><tr>{["분류","업체","내용","금액(원)","처리","발행일","건수","비고"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+              <tbody>
+                {g.items.filter(it=>it.amount||it.vendor||it.content).map((it,ii)=>(
+                  <tr key={ii}>
+                    <td style={TD}>{it.category}</td><td style={TD}>{it.vendor}</td><td style={TD}>{it.content}</td>
+                    <td style={{...TD,textAlign:"right"}}>{it.amount?fmtNum(it.amount):"-"}</td>
+                    <td style={{...TD,textAlign:"center"}}>{it.method}</td>
+                    <td style={{...TD,textAlign:"center"}}>{it.issueDate}</td>
+                    <td style={{...TD,textAlign:"center"}}>{it.count?`${it.count}건`:""}</td>
+                    <td style={TD}>{it.note}</td>
+                  </tr>
+                ))}
+                <tr><td colSpan={3} style={{...TH,textAlign:"right"}}>소계</td>
+                  <td style={{...TH,textAlign:"right",color:"#dc2626"}}>{fmtNum(groupTotal(g))}</td>
+                  <td colSpan={4} style={TH}></td>
+                </tr>
+              </tbody>
+            </table>
+            </div>
+          </div>
+        );
+      })}
+      <div style={{textAlign:"right",fontWeight:800,fontSize:15,color:"#dc2626",padding:"10px 0",borderTop:"2px solid #e2e8f0"}}>
+        총 합계: {fmtNum(grandTotal)} 원
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <Field label="보고 월"><input type="month" style={{...S.input,maxWidth:180}} value={f.reportMonth||""} onChange={e=>upd("reportMonth",e.target.value)} /></Field>
+      {(f.groups||[]).map((g,gi) => (
+        <div key={gi} style={{marginBottom:20,border:"1.5px solid #e2e8f0",borderRadius:10,overflow:"hidden"}}>
+          <div style={{background:"#fff1f2",padding:"8px 14px",display:"flex",alignItems:"center",gap:10}}>
+            <input style={{...S.input,fontWeight:800,fontSize:14,color:"#dc2626",border:"none",background:"transparent",padding:0,width:"auto"}}
+              value={g.name} onChange={e=>updGroup(gi,"name",e.target.value)} />
+            <span style={{marginLeft:"auto",fontWeight:700,fontSize:13,color:"#dc2626"}}>소계: {fmtNum(groupTotal(g))} 원</span>
+            <button onClick={()=>delGroup(gi)} style={{border:"none",background:"none",cursor:"pointer",color:"#94a3b8",fontSize:18,padding:0}}>×</button>
+          </div>
+          <div style={{overflowX:"auto",padding:"0 0 8px"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:780}}>
+            <thead><tr>{["분류","업체","내용","금액(원)","처리","발행일","건수","비고",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+            <tbody>
+              {(g.items||[]).map((it,ii)=>(
+                <tr key={it.id}>
+                  <td style={{...TD,width:90}}><input style={{...S.input,padding:"3px 6px",fontSize:11}} value={it.category} onChange={e=>updItem(gi,ii,"category",e.target.value)} /></td>
+                  <td style={{...TD,minWidth:120}}><input style={{...S.input,padding:"3px 6px",fontSize:11}} value={it.vendor} onChange={e=>updItem(gi,ii,"vendor",e.target.value)} /></td>
+                  <td style={{...TD,minWidth:140}}><input style={{...S.input,padding:"3px 6px",fontSize:11}} value={it.content} onChange={e=>updItem(gi,ii,"content",e.target.value)} /></td>
+                  <td style={{...TD,width:100}}><input type="number" style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"right"}} value={it.amount} onChange={e=>updItem(gi,ii,"amount",e.target.value)} /></td>
+                  <td style={{...TD,width:70}}><select style={{...S.select,padding:"3px 5px",fontSize:11}} value={it.method} onChange={e=>updItem(gi,ii,"method",e.target.value)}>{PAYMENT_METHODS.map(m=><option key={m}>{m}</option>)}</select></td>
+                  <td style={{...TD,width:100}}><input style={{...S.input,padding:"3px 6px",fontSize:11}} value={it.issueDate} onChange={e=>updItem(gi,ii,"issueDate",e.target.value)} placeholder="예: 1/15" /></td>
+                  <td style={{...TD,width:55}}><input style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"center"}} value={it.count} onChange={e=>updItem(gi,ii,"count",e.target.value)} /></td>
+                  <td style={{...TD,minWidth:80}}><input style={{...S.input,padding:"3px 6px",fontSize:11}} value={it.note} onChange={e=>updItem(gi,ii,"note",e.target.value)} /></td>
+                  <td style={{...TD,width:26}}><button onClick={()=>delItem(gi,ii)} style={{border:"none",background:"none",cursor:"pointer",color:"#dc2626",fontSize:15}}>✕</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+          <div style={{padding:"0 12px 8px"}}>
+            <button style={{...S.btnSec,fontSize:11,padding:"4px 12px"}} onClick={()=>addItem(gi)}>+ 항목 추가</button>
+          </div>
+        </div>
+      ))}
+      <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:16}}>
+        <button style={{...S.btnSec,fontSize:12}} onClick={addGroup}>+ 구분 추가</button>
+        <span style={{marginLeft:"auto",fontWeight:800,fontSize:15,color:"#dc2626"}}>총 합계: {fmtNum(grandTotal)} 원</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 export default function ApprovalPage() {
   const [user,       setUser]       = useState(null);
@@ -793,6 +940,7 @@ export default function ApprovalPage() {
         {type==="supply"   && <SupplyForm   {...props} />}
         {type==="refund"   && <RefundForm   {...props} />}
         {type==="weekly"   && <WeeklyForm   {...props} />}
+        {type==="tax"      && <TaxForm      {...props} />}
         {!readonly && <div style={{ marginTop:20 }}>
           <div style={S.sectionTit}>첨부파일</div>
           <FileUpload files={fileList} onChange={onFileChange} docId={docId} />
@@ -819,6 +967,7 @@ export default function ApprovalPage() {
       <div style={S.page}>
         <header style={S.header}>
           <button onClick={()=>setView("list")} style={{ border:"none", background:"rgba(255,255,255,0.15)", color:"#fff", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:13 }}>← 목록</button>
+          <img src="/favicon.png" style={{ width:30, height:30, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
           <div style={{ flex:1, fontWeight:800, fontSize:16 }}>이우요양병원 결재 시스템</div>
           <div style={{ fontSize:13, color:"#94a3b8" }}>{profile.name} · {profile.department}</div>
         </header>
@@ -888,6 +1037,7 @@ export default function ApprovalPage() {
       <div style={S.page}>
         <header style={S.header}>
           <button onClick={()=>setView("list")} style={{ border:"none", background:"rgba(255,255,255,0.15)", color:"#fff", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700 }}>← 취소</button>
+          <img src="/favicon.png" style={{ width:30, height:30, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
           <div style={{ flex:1, fontWeight:800, fontSize:16 }}>새 문서 작성</div>
         </header>
         <div style={S.main}>
@@ -898,7 +1048,7 @@ export default function ApprovalPage() {
                 <button key={key} onClick={()=>{setNewType(key);setFormData({});setFiles([]);}}
                   style={{ padding:"20px", border:`2px solid ${t.color}`, borderRadius:12, background:t.bg, cursor:"pointer", textAlign:"left" }}>
                   <div style={{ fontSize:15, fontWeight:800, color:t.color, marginBottom:4 }}>{t.label}</div>
-                  <div style={{ fontSize:12, color:"#64748b" }}>{key==="vacation"?"연차·병가·생리휴가 등":key==="supply"?"각 부서 물품 요청":key==="refund"?"위탁진료 환자 환불 처리":"영양팀 주간 식비 보고"}</div>
+                  <div style={{ fontSize:12, color:"#64748b" }}>{key==="vacation"?"연차·병가·생리휴가 등":key==="supply"?"각 부서 물품 요청":key==="refund"?"위탁진료 환자 환불 처리":key==="weekly"?"영양팀 주간 식비 보고":"월별 지출 세금계산서 내역"}</div>
                 </button>
               ))}
             </div>
@@ -911,6 +1061,7 @@ export default function ApprovalPage() {
       <div style={S.page}>
         <header style={S.header}>
           <button onClick={()=>setNewType(null)} style={{ border:"none", background:"rgba(255,255,255,0.15)", color:"#fff", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700 }}>← 뒤로</button>
+          <img src="/favicon.png" style={{ width:30, height:30, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
           <div style={{ flex:1, fontWeight:800, fontSize:16 }}>{typeInfo.label} 작성</div>
           <div style={{ fontSize:13, color:"#94a3b8" }}>{profile.name} · {profile.department}</div>
         </header>
@@ -930,20 +1081,27 @@ export default function ApprovalPage() {
 
   // ── 목록 뷰 ──────────────────────────────────────────────────────────────────
   const sortedDocs = (list) => [...list].sort(([,a],[,b])=>(b.createdAt||0)-(a.createdAt||0));
-  const displayDocs = activeTab === "mine" ? sortedDocs(myDocs)
-    : activeTab === "pending" ? sortedDocs(pendingDocs)
+  const weeklyDocs = Object.entries(docs).filter(([,d])=>d.type==="weekly");
+  const taxDocs    = Object.entries(docs).filter(([,d])=>d.type==="tax");
+  const displayDocs = activeTab === "mine"    ? sortedDocs(myDocs)
+    : activeTab === "pending"  ? sortedDocs(pendingDocs)
+    : activeTab === "weekly"   ? sortedDocs(weeklyDocs)
+    : activeTab === "tax"      ? sortedDocs(taxDocs)
     : sortedDocs(allPendingDocs);
 
   const tabConfig = [
     { key:"mine",    label:`내 문서함 (${myDocs.length})` },
     { key:"pending", label:`결재 대기 (${pendingDocs.length})` },
+    { key:"weekly",  label:`주간보고 (${weeklyDocs.length})` },
+    { key:"tax",     label:`세금계산서 (${taxDocs.length})` },
     ...(profile.role === "director" ? [{ key:"all", label:`전체 진행중 (${allPendingDocs.length})` }] : []),
   ];
 
   return (
     <div style={S.page}>
       <header style={S.header}>
-        <div style={{ fontWeight:800, fontSize:17, flex:1 }}>🏥 이우요양병원 결재 시스템</div>
+        <img src="/favicon.png" style={{ width:36, height:36, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
+        <div style={{ fontWeight:800, fontSize:17, flex:1 }}>이우요양병원 결재 시스템</div>
         <div style={{ fontSize:13, background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"4px 12px" }}>
           {profile.name} · {profile.department} · {profile.role==="director"?"병원장":profile.role==="dept_head"?"부서장":"직원"}
         </div>
@@ -956,6 +1114,12 @@ export default function ApprovalPage() {
             <button onClick={()=>setActiveTab("pending")} style={{ marginLeft:"auto", border:"none", background:"#f59e0b", color:"#fff", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontWeight:700, fontSize:12 }}>확인하기</button>
           </div>
         )}
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+          <button style={{ ...S.btnPri, padding:"10px 22px", fontSize:14, borderRadius:10 }}
+            onClick={()=>{setView("new");setNewType(null);}}>
+            + 새 문서
+          </button>
+        </div>
         <div style={S.tabs}>
           {tabConfig.map(t=>(
             <button key={t.key} style={S.tab(activeTab===t.key)} onClick={()=>setActiveTab(t.key)}>{t.label}</button>
@@ -964,7 +1128,7 @@ export default function ApprovalPage() {
         <div style={S.card}>
           {displayDocs.length === 0 && (
             <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8", fontSize:14 }}>
-              {activeTab==="mine" ? "작성한 문서가 없습니다." : activeTab==="pending" ? "결재 대기 문서가 없습니다." : "진행 중인 문서가 없습니다."}
+              {activeTab==="mine"?"작성한 문서가 없습니다.":activeTab==="pending"?"결재 대기 문서가 없습니다.":activeTab==="weekly"?"주간보고 문서가 없습니다.":activeTab==="tax"?"세금계산서 문서가 없습니다.":"진행 중인 문서가 없습니다."}
             </div>
           )}
           {displayDocs.map(([id, doc]) => {
@@ -984,7 +1148,6 @@ export default function ApprovalPage() {
           })}
         </div>
       </div>
-      <button style={S.fab} onClick={()=>{setView("new");setNewType(null);}}>+ 새 문서</button>
 
       {/* 반려 모달 */}
       {rejectModal && (
