@@ -216,29 +216,62 @@ export default function MonthlySchedule() {
     return data;
   }, [slots, consultations, year, month]);
 
-  // 날짜별 재원 환자 수 (admitDate <= day <= dischargeDate)
+  // 날짜별 재원 환자 수: 오늘 실제 재원 수 기준으로 입/퇴원 이벤트 누적
   const censusData = useMemo(() => {
     const counts = {};
     const total = daysInMonth(year, month);
-    const countPatient = (p) => {
-      if (!p?.name) return;
-      const admitD = parseDateStr(p.admitDate, year);
-      if (!admitD) return;
-      const disD = parseDateStr(p.discharge, year);
-      for (let d = 1; d <= total; d++) {
-        const dayDate = new Date(year, month - 1, d);
-        if (dayDate >= admitD && (!disD || dayDate <= disD)) {
-          const k = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-          counts[k] = (counts[k] || 0) + 1;
-        }
-      }
+    const now = new Date();
+    const nowYear = now.getFullYear();
+    const nowMonth = now.getMonth() + 1;
+    const nowDay = now.getDate();
+
+    // 날짜별 입/퇴원 건수 계산 (calendarData + boardData 병합 인라인)
+    const getAdmDis = (d) => {
+      const k = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      const cd = calendarData[k] || { admissions:[], discharges:[] };
+      const bd = boardData[k];
+      if (!bd) return { adm: (cd.admissions||[]).length, dis: (cd.discharges||[]).length };
+      const hiddenAdm = new Set(bd.hiddenAdmissions || []);
+      const hiddenDis = new Set(bd.hiddenDischarges || []);
+      const baseAdm = (cd.admissions||[]).filter(a => !hiddenAdm.has(normName(a.name)));
+      const baseDis = (cd.discharges||[]).filter(d2 => !hiddenDis.has(normName(d2.name)));
+      const cdAdmNorms = new Set((cd.admissions||[]).map(a => normName(a.name)));
+      const cdDisNorms = new Set((cd.discharges||[]).map(d2 => normName(d2.name)));
+      const manualAdm = (bd.admissions||[]).filter(a => !cdAdmNorms.has(normName(a.name)));
+      const manualDis = (bd.discharges||[]).filter(d2 => !cdDisNorms.has(normName(d2.name)));
+      return { adm: baseAdm.length + manualAdm.length, dis: baseDis.length + manualDis.length };
     };
-    Object.values(slots).forEach(slot => {
-      if (slot?.current) countPatient(slot.current);
-      (slot?.reservations || []).forEach(r => r && countPatient(r));
-    });
+
+    if (year === nowYear && month === nowMonth) {
+      // 현재 달: 오늘 실제 재원 수를 기준점으로
+      const todayCensus = Object.values(slots).filter(s => s?.current?.name).length;
+      const todayKey = `${year}-${String(month).padStart(2,"0")}-${String(nowDay).padStart(2,"0")}`;
+      counts[todayKey] = todayCensus;
+      // 오늘 이후 → 앞으로 누적
+      let cur = todayCensus;
+      for (let d = nowDay + 1; d <= total; d++) {
+        const { adm, dis } = getAdmDis(d);
+        cur = Math.max(0, cur + adm - dis);
+        counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
+      }
+      // 오늘 이전 → 역방향 누적 (census[d] = census[d+1] - adm[d+1] + dis[d+1])
+      cur = todayCensus;
+      for (let d = nowDay - 1; d >= 1; d--) {
+        const { adm, dis } = getAdmDis(d + 1);
+        cur = Math.max(0, cur - adm + dis);
+        counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
+      }
+    } else {
+      // 다른 달: day 1부터 순방향 누적 (시작값 = 0, 상대적 변화량 표시)
+      let cur = 0;
+      for (let d = 1; d <= total; d++) {
+        const { adm, dis } = getAdmDis(d);
+        cur = Math.max(0, cur + adm - dis);
+        counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
+      }
+    }
     return counts;
-  }, [slots, year, month]);
+  }, [slots, calendarData, boardData, year, month]);
 
   // 이름 기준 중복 제거 (boardData에 이미 저장된 중복도 처리)
   function dedupList(list) {
