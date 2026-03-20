@@ -8,7 +8,7 @@ const DOC_TYPES = {
   vacation: { label: "휴가신청서",          code: "VAC", color: "#0ea5e9", bg: "#e0f2fe" },
   supply:   { label: "물품청구서",          code: "SUP", color: "#10b981", bg: "#d1fae5" },
   refund:   { label: "위탁진료 환불금 보고", code: "REF", color: "#f59e0b", bg: "#fef3c7" },
-  weekly:   { label: "주간보고서(영양팀)",   code: "WKL", color: "#8b5cf6", bg: "#ede9fe" },
+  weekly:   { label: "월간보고서(영양팀)",   code: "WKL", color: "#8b5cf6", bg: "#ede9fe" },
   tax:      { label: "세금계산서 보고",      code: "TAX", color: "#dc2626", bg: "#fff1f2" },
 };
 const STATUS = {
@@ -86,6 +86,45 @@ function ReadVal({ label, value, style }) {
 function StatusBadge({ status }) {
   const s = STATUS[status] || STATUS.draft;
   return <span style={S.badge(s.color, s.bg)}>{s.label}</span>;
+}
+
+// ─── 결재 도장 ─────────────────────────────────────────────────────────────
+function ApprovalStamp({ label, name, date, color, action }) {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+      <div style={{ width:80, height:80, borderRadius:"50%", border:`3px solid ${color}`,
+        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+        transform:"rotate(-7deg)", opacity:0.88, padding:4, userSelect:"none",
+        boxShadow:`inset 0 0 0 1px ${color}44` }}>
+        <div style={{ fontSize:9, color, fontWeight:800, letterSpacing:1 }}>{action}</div>
+        <div style={{ fontSize:12, color, fontWeight:900, marginTop:1 }}>{name}</div>
+        <div style={{ fontSize:9, color, fontWeight:600 }}>{label}</div>
+        <div style={{ fontSize:8, color:`${color}bb` }}>{date}</div>
+      </div>
+    </div>
+  );
+}
+function ApprovalStampArea({ doc }) {
+  const hist = doc.history || [];
+  const deptStep = hist.find(h => ["approved","final"].includes(h.action) && h.byRole === "dept_head");
+  const dirStep  = hist.find(h => h.action === "approved" && h.byRole === "director");
+  const finalStep = hist.find(h => h.action === "final");
+  if (!deptStep && !dirStep && !finalStep) return null;
+  return (
+    <div style={{ display:"flex", gap:20, justifyContent:"flex-end", alignItems:"flex-end",
+      padding:"16px 8px 4px", borderTop:"1px dashed #e2e8f0", marginTop:8 }}>
+      {deptStep && doc.type !== "weekly" && (
+        <ApprovalStamp label="부서장" name={deptStep.byName}
+          date={fmtTs(deptStep.at).slice(0,10)} color="#7c3aed"
+          action={deptStep.action==="final"?"전결":"결재"} />
+      )}
+      {(dirStep || finalStep) && (
+        <ApprovalStamp label="병원장" name={(dirStep||finalStep).byName}
+          date={fmtTs((dirStep||finalStep).at).slice(0,10)} color="#dc2626"
+          action="결재" />
+      )}
+    </div>
+  );
 }
 
 // ─── 결재 흐름 계산 ───────────────────────────────────────────────────────────
@@ -440,169 +479,163 @@ function RefundForm({ data, onChange, readonly }) {
   );
 }
 
-// ─── 주간보고서 ───────────────────────────────────────────────────────────────
+// ─── 월간보고서(영양팀) ────────────────────────────────────────────────────────
 const DAYS_KO = ["월","화","수","목","금","토","일"];
 const emptyDay = (date="") => ({ date, ecoFood:"", dojunFood:"", ecoSnack:"", dojunSnack:"", otherCost:"", staffCount:"", patientCount:"", note:"" });
-function WeeklyForm({ data, onChange, readonly }) {
-  const f = { weekFrom:"", weekTo:"", days: Array.from({length:7}, emptyDay), generalNote:"", ...(data||{}) };
-  if (!f.days || f.days.length !== 7) f.days = Array.from({length:7}, (_,i) => (data?.days?.[i] || emptyDay()));
 
-  const updDay = (i,k,v) => { const days=[...f.days]; days[i]={...days[i],[k]:v}; onChange({...f,days}); };
-  const setWeekFrom = (val) => {
-    if (!val) { onChange({...f,weekFrom:val}); return; }
-    const start = new Date(val);
-    const days = f.days.map((d,i) => {
-      const dt = new Date(start); dt.setDate(start.getDate()+i);
-      const ds = `${dt.getFullYear()}.${String(dt.getMonth()+1).padStart(2,"0")}.${String(dt.getDate()).padStart(2,"0")}`;
-      return {...d, date: ds};
+function makeDaysForMonth(ym) {
+  if (!ym) return [];
+  const [y, m] = ym.split("-").map(Number);
+  const count = new Date(y, m, 0).getDate();
+  return Array.from({ length: count }, (_, i) => {
+    const d = i + 1;
+    return emptyDay(`${y}.${String(m).padStart(2,"0")}.${String(d).padStart(2,"0")}`);
+  });
+}
+
+function WeeklyForm({ data, onChange, readonly }) {
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+
+  // 구 형식(weekFrom) 호환 처리
+  const reportMonth = data?.reportMonth || (data?.weekFrom ? data.weekFrom.slice(0,7) : defaultMonth);
+  const baseDays = (data?.days && data.days.length > 0) ? data.days : makeDaysForMonth(reportMonth);
+  const f = { reportMonth, days: baseDays, generalNote: data?.generalNote||"" };
+
+  const setMonth = (ym) => {
+    if (!ym) return;
+    const newDays = makeDaysForMonth(ym);
+    // 기존 입력값 보존: 날짜 일치하면 유지
+    const merged = newDays.map(nd => {
+      const existing = f.days.find(d => d.date === nd.date);
+      return existing || nd;
     });
-    const end = new Date(start); end.setDate(start.getDate()+6);
-    const endStr = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,"0")}-${String(end.getDate()).padStart(2,"0")}`;
-    onChange({...f, weekFrom:val, weekTo:endStr, days});
+    onChange({ reportMonth: ym, days: merged, generalNote: f.generalNote });
   };
-  const dayTotal  = d => (Number(d.ecoFood)||0)+(Number(d.dojunFood)||0)+(Number(d.ecoSnack)||0)+(Number(d.dojunSnack)||0)+(Number(d.otherCost)||0);
+
+  const updDay = (i,k,v) => {
+    const days = [...f.days]; days[i]={...days[i],[k]:v}; onChange({...f,days});
+  };
+
+  const dayTotal = d => (Number(d.ecoFood)||0)+(Number(d.dojunFood)||0)+(Number(d.ecoSnack)||0)+(Number(d.dojunSnack)||0)+(Number(d.otherCost)||0);
   const totals = f.days.reduce((acc,d) => ({
-    food:  acc.food  + (Number(d.ecoFood)||0)  + (Number(d.dojunFood)||0),
-    snack: acc.snack + (Number(d.ecoSnack)||0) + (Number(d.dojunSnack)||0),
-    other: acc.other + (Number(d.otherCost)||0),
-    staff: acc.staff + (Number(d.staffCount)||0),
+    food:    acc.food    + (Number(d.ecoFood)||0)  + (Number(d.dojunFood)||0),
+    snack:   acc.snack   + (Number(d.ecoSnack)||0) + (Number(d.dojunSnack)||0),
+    other:   acc.other   + (Number(d.otherCost)||0),
+    staff:   acc.staff   + (Number(d.staffCount)||0),
     patient: acc.patient + (Number(d.patientCount)||0),
   }), {food:0,snack:0,other:0,staff:0,patient:0});
-  totals.total   = totals.food + totals.snack + totals.other;
-  totals.count   = totals.staff + totals.patient;
-  totals.perCap  = totals.count > 0 ? Math.round(totals.total / totals.count) : 0;
+  totals.total  = totals.food + totals.snack + totals.other;
+  totals.count  = totals.staff + totals.patient;
+  totals.perCap = totals.count > 0 ? Math.round(totals.total / totals.count) : 0;
+
+  // 주별 구분선: 월요일 행 위에 선 표시
+  const isMonday = (dateStr) => {
+    if (!dateStr) return false;
+    const dt = new Date(dateStr.replace(/\./g,"-"));
+    return !isNaN(dt) && dt.getDay() === 1;
+  };
+
+  // 공통 테이블 렌더
+  const DayTable = ({ editable }) => (
+    <div style={{overflowX:"auto"}}>
+    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:780}}>
+      <thead>
+        <tr style={{background:"#ede9fe"}}>
+          <th style={{...S.th,width:90,background:"#ede9fe"}}>날짜</th>
+          <th style={{...S.th,width:28,background:"#ede9fe"}}>요일</th>
+          <th style={{...S.th,minWidth:85,background:"#ede9fe"}}>에코 식재료비</th>
+          <th style={{...S.th,minWidth:85,background:"#ede9fe"}}>도준 식재료비</th>
+          <th style={{...S.th,minWidth:75,background:"#ede9fe"}}>에코 간식비</th>
+          <th style={{...S.th,minWidth:75,background:"#ede9fe"}}>도준 간식비</th>
+          <th style={{...S.th,minWidth:85,background:"#ede9fe"}}>기타(현지구매)</th>
+          <th style={{...S.th,width:90,background:"#ede9fe"}}>식비합계</th>
+          <th style={{...S.th,width:50,background:"#ede9fe"}}>직원</th>
+          <th style={{...S.th,width:50,background:"#ede9fe"}}>환우</th>
+          <th style={{...S.th,width:60,background:"#ede9fe"}}>총식수</th>
+          <th style={{...S.th,width:80,background:"#ede9fe"}}>1인식단가</th>
+          {editable && <th style={{...S.th,minWidth:70,background:"#ede9fe"}}>비고</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {f.days.map((d,i)=>{
+          const dt = d.date ? new Date(d.date.replace(/\./g,"-")) : null;
+          const dow = dt&&!isNaN(dt) ? DAYS_KO[(dt.getDay()+6)%7] : "";
+          const isWE = dow==="토"||dow==="일";
+          const isMon = dow==="월";
+          const food  = (Number(d.ecoFood)||0)+(Number(d.dojunFood)||0);
+          const snack = (Number(d.ecoSnack)||0)+(Number(d.dojunSnack)||0);
+          const other = Number(d.otherCost)||0;
+          const total = food+snack+other;
+          const cnt   = (Number(d.staffCount)||0)+(Number(d.patientCount)||0);
+          const pc    = cnt>0?Math.round(total/cnt):0;
+          const bg    = isWE?"#fef9ec":i%2===0?"#fff":"#f8fafc";
+          const borderTop = isMon && i>0 ? "2px solid #c4b5fd" : undefined;
+          return (
+            <tr key={i} style={{background:bg, borderTop}}>
+              <td style={{...S.td,fontFamily:"monospace",fontSize:11}}>{d.date||"-"}</td>
+              <td style={{...S.td,textAlign:"center",fontWeight:700,color:dow==="토"?"#2563eb":dow==="일"?"#dc2626":"#475569"}}>{dow}</td>
+              {editable ? <>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 4px",fontSize:11,textAlign:"right"}} value={d.ecoFood||""} onChange={e=>updDay(i,"ecoFood",e.target.value)} /></td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 4px",fontSize:11,textAlign:"right"}} value={d.dojunFood||""} onChange={e=>updDay(i,"dojunFood",e.target.value)} /></td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 4px",fontSize:11,textAlign:"right"}} value={d.ecoSnack||""} onChange={e=>updDay(i,"ecoSnack",e.target.value)} /></td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 4px",fontSize:11,textAlign:"right"}} value={d.dojunSnack||""} onChange={e=>updDay(i,"dojunSnack",e.target.value)} /></td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 4px",fontSize:11,textAlign:"right"}} value={d.otherCost||""} onChange={e=>updDay(i,"otherCost",e.target.value)} /></td>
+              </> : <>
+                <td style={{...S.td,textAlign:"right"}}>{food?fmtNum(food):""}</td>
+                <td style={{...S.td,textAlign:"right"}}>{(Number(d.dojunFood)||0)?fmtNum(Number(d.dojunFood)):""}</td>
+                <td style={{...S.td,textAlign:"right"}}>{(Number(d.ecoSnack)||0)?fmtNum(Number(d.ecoSnack)):""}</td>
+                <td style={{...S.td,textAlign:"right"}}>{(Number(d.dojunSnack)||0)?fmtNum(Number(d.dojunSnack)):""}</td>
+                <td style={{...S.td,textAlign:"right"}}>{other?fmtNum(other):""}</td>
+              </>}
+              <td style={{...S.td,textAlign:"right",fontWeight:700,background:"#f3f0ff"}}>{total?fmtNum(total):"-"}</td>
+              {editable ? <>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 4px",fontSize:11,textAlign:"center"}} value={d.staffCount||""} onChange={e=>updDay(i,"staffCount",e.target.value)} /></td>
+                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 4px",fontSize:11,textAlign:"center"}} value={d.patientCount||""} onChange={e=>updDay(i,"patientCount",e.target.value)} /></td>
+              </> : <>
+                <td style={{...S.td,textAlign:"center"}}>{d.staffCount||""}</td>
+                <td style={{...S.td,textAlign:"center"}}>{d.patientCount||""}</td>
+              </>}
+              <td style={{...S.td,textAlign:"center",fontWeight:700,background:"#f3f0ff"}}>{cnt||"-"}</td>
+              <td style={{...S.td,textAlign:"right",background:"#f3f0ff"}}>{pc?fmtNum(pc):"-"}</td>
+              {editable && <td style={S.td}><input style={{...S.input,padding:"3px 4px",fontSize:11}} value={d.note||""} onChange={e=>updDay(i,"note",e.target.value)} /></td>}
+            </tr>
+          );
+        })}
+        <tr style={{background:"#ddd6fe"}}>
+          <td colSpan={2} style={{...S.th,textAlign:"center",background:"#ddd6fe"}}>월간 합계</td>
+          <td colSpan={3} style={{...S.th,textAlign:"right",background:"#ddd6fe"}}>식재료비 {fmtNum(totals.food)}</td>
+          <td colSpan={2} style={{...S.th,textAlign:"right",background:"#ddd6fe"}}>간식+기타 {fmtNum(totals.snack+totals.other)}</td>
+          <td style={{...S.th,textAlign:"right",background:"#ddd6fe",color:"#4c1d95",fontSize:13}}>{fmtNum(totals.total)}</td>
+          <td style={{...S.th,textAlign:"center",background:"#ddd6fe"}}>{totals.staff}</td>
+          <td style={{...S.th,textAlign:"center",background:"#ddd6fe"}}>{totals.patient}</td>
+          <td style={{...S.th,textAlign:"center",background:"#ddd6fe",fontWeight:900}}>{totals.count}</td>
+          <td style={{...S.th,textAlign:"right",background:"#ddd6fe"}}>{fmtNum(totals.perCap)}</td>
+          {editable && <td style={{...S.th,background:"#ddd6fe"}}></td>}
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  );
 
   if (readonly) return (
     <div>
-      <ReadVal label="보고기간" value={f.weekFrom&&f.weekTo ? `${f.weekFrom} ~ ${f.weekTo}` : "-"} />
-      <div style={S.sectionTit}>일별 현황</div>
-      <div style={{overflowX:"auto"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:12,minWidth:700}}>
-        <thead>
-          <tr>
-            {["날짜","요일","식재료비","간식비","기타","식비합계","직원","환우","총식수","1인식단가","비고"].map(h=><th key={h} style={S.th}>{h}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {f.days.map((d,i)=>{
-            const dt = d.date ? new Date(d.date.replace(/\./g,"-")) : null;
-            const dow = dt && !isNaN(dt) ? DAYS_KO[(dt.getDay()+6)%7] : "";
-            const food=(Number(d.ecoFood)||0)+(Number(d.dojunFood)||0);
-            const snack=(Number(d.ecoSnack)||0)+(Number(d.dojunSnack)||0);
-            const other=Number(d.otherCost)||0;
-            const total=food+snack+other;
-            const cnt=(Number(d.staffCount)||0)+(Number(d.patientCount)||0);
-            const pc=cnt>0?Math.round(total/cnt):0;
-            return (
-              <tr key={i} style={{background:i%2===0?"#fff":"#f8fafc"}}>
-                <td style={S.td}>{d.date||"-"}</td>
-                <td style={{...S.td,textAlign:"center",fontWeight:700,color:dow==="토"?"#2563eb":dow==="일"?"#dc2626":"inherit"}}>{dow}</td>
-                <td style={{...S.td,textAlign:"right"}}>{food?fmtNum(food):"-"}</td>
-                <td style={{...S.td,textAlign:"right"}}>{snack?fmtNum(snack):"-"}</td>
-                <td style={{...S.td,textAlign:"right"}}>{other?fmtNum(other):"-"}</td>
-                <td style={{...S.td,textAlign:"right",fontWeight:700}}>{total?fmtNum(total):"-"}</td>
-                <td style={{...S.td,textAlign:"center"}}>{d.staffCount||"-"}</td>
-                <td style={{...S.td,textAlign:"center"}}>{d.patientCount||"-"}</td>
-                <td style={{...S.td,textAlign:"center",fontWeight:700}}>{cnt||"-"}</td>
-                <td style={{...S.td,textAlign:"right"}}>{pc?fmtNum(pc):"-"}</td>
-                <td style={S.td}>{d.note||""}</td>
-              </tr>
-            );
-          })}
-          <tr style={{background:"#f0f9ff"}}>
-            <td colSpan={2} style={{...S.th,textAlign:"center"}}>주간 합계</td>
-            <td style={{...S.th,textAlign:"right"}}>{fmtNum(totals.food)}</td>
-            <td style={{...S.th,textAlign:"right"}}>{fmtNum(totals.snack)}</td>
-            <td style={{...S.th,textAlign:"right"}}>{fmtNum(totals.other)}</td>
-            <td style={{...S.th,textAlign:"right",color:"#0f2744"}}>{fmtNum(totals.total)}</td>
-            <td style={{...S.th,textAlign:"center"}}>{totals.staff}</td>
-            <td style={{...S.th,textAlign:"center"}}>{totals.patient}</td>
-            <td style={{...S.th,textAlign:"center",fontWeight:900}}>{totals.count}</td>
-            <td style={{...S.th,textAlign:"right"}}>{fmtNum(totals.perCap)}</td>
-            <td style={S.th}></td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
-      {f.generalNote && <ReadVal label="특이사항" value={f.generalNote} />}
+      <ReadVal label="보고 월" value={f.reportMonth} />
+      <div style={{...S.sectionTit,color:"#7c3aed"}}>일별 식비 현황</div>
+      <DayTable editable={false} />
+      {f.generalNote && <ReadVal label="특이사항" value={f.generalNote} style={{marginTop:12}} />}
     </div>
   );
 
   return (
     <div>
-      <Grid>
-        <Field label="보고기간 시작일 (월요일)">
-          <input type="date" style={S.input} value={f.weekFrom||""} onChange={e=>setWeekFrom(e.target.value)} />
-        </Field>
-        <Field label="보고기간 종료일">
-          <input type="date" style={S.input} value={f.weekTo||""} readOnly style={{...S.input,background:"#f8fafc",color:"#64748b"}} />
-        </Field>
-      </Grid>
-      <div style={S.sectionTit}>일별 입력</div>
-      <div style={{overflowX:"auto"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
-        <thead>
-          <tr>
-            <th style={{...S.th,minWidth:90}}>날짜</th>
-            <th style={{...S.th,width:30}}>요일</th>
-            <th style={{...S.th,minWidth:90}}>에코 식재료비</th>
-            <th style={{...S.th,minWidth:90}}>도준 식재료비</th>
-            <th style={{...S.th,minWidth:80}}>에코 간식비</th>
-            <th style={{...S.th,minWidth:80}}>도준 간식비</th>
-            <th style={{...S.th,minWidth:90}}>기타(현지구매)</th>
-            <th style={{...S.th,width:80}}>식비합계</th>
-            <th style={{...S.th,width:55}}>직원</th>
-            <th style={{...S.th,width:55}}>환우</th>
-            <th style={{...S.th,width:65}}>총식수</th>
-            <th style={{...S.th,width:75}}>1인식단가</th>
-            <th style={{...S.th,minWidth:80}}>비고</th>
-          </tr>
-        </thead>
-        <tbody>
-          {f.days.map((d,i)=>{
-            const dt = d.date ? new Date(d.date.replace(/\./g,"-")) : null;
-            const dow = dt && !isNaN(dt) ? DAYS_KO[(dt.getDay()+6)%7] : "";
-            const isWeekend = dow==="토"||dow==="일";
-            const total = dayTotal(d);
-            const cnt = (Number(d.staffCount)||0)+(Number(d.patientCount)||0);
-            const pc = cnt>0?Math.round(total/cnt):0;
-            return (
-              <tr key={i} style={{background:isWeekend?"#fef9ec":i%2===0?"#fff":"#f8fafc"}}>
-                <td style={S.td}>
-                  <input style={{...S.input,padding:"3px 5px",fontSize:11,fontFamily:"monospace"}}
-                    value={d.date||""} onChange={e=>updDay(i,"date",e.target.value)} placeholder="YYYY.MM.DD" />
-                </td>
-                <td style={{...S.td,textAlign:"center",fontWeight:700,color:dow==="토"?"#2563eb":dow==="일"?"#dc2626":"#475569"}}>{dow}</td>
-                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"right"}} value={d.ecoFood||""} onChange={e=>updDay(i,"ecoFood",e.target.value)} /></td>
-                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"right"}} value={d.dojunFood||""} onChange={e=>updDay(i,"dojunFood",e.target.value)} /></td>
-                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"right"}} value={d.ecoSnack||""} onChange={e=>updDay(i,"ecoSnack",e.target.value)} /></td>
-                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"right"}} value={d.dojunSnack||""} onChange={e=>updDay(i,"dojunSnack",e.target.value)} /></td>
-                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"right"}} value={d.otherCost||""} onChange={e=>updDay(i,"otherCost",e.target.value)} /></td>
-                <td style={{...S.td,textAlign:"right",fontWeight:700,background:"#f0f9ff"}}>{total?fmtNum(total):"-"}</td>
-                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"center"}} value={d.staffCount||""} onChange={e=>updDay(i,"staffCount",e.target.value)} /></td>
-                <td style={S.td}><input type="number" style={{...S.input,padding:"3px 5px",fontSize:11,textAlign:"center"}} value={d.patientCount||""} onChange={e=>updDay(i,"patientCount",e.target.value)} /></td>
-                <td style={{...S.td,textAlign:"center",fontWeight:700,background:"#f0f9ff"}}>{cnt||"-"}</td>
-                <td style={{...S.td,textAlign:"right",background:"#f0f9ff"}}>{pc?fmtNum(pc):"-"}</td>
-                <td style={S.td}><input style={{...S.input,padding:"3px 5px",fontSize:11}} value={d.note||""} onChange={e=>updDay(i,"note",e.target.value)} /></td>
-              </tr>
-            );
-          })}
-          <tr style={{background:"#e0f2fe"}}>
-            <td colSpan={2} style={{...S.th,textAlign:"center"}}>주간 합계</td>
-            <td colSpan={3} style={{...S.th,textAlign:"right"}}>식재료비 {fmtNum(totals.food)}</td>
-            <td colSpan={2} style={{...S.th,textAlign:"right"}}>간식+기타 {fmtNum(totals.snack+totals.other)}</td>
-            <td style={{...S.th,textAlign:"right",color:"#0f2744",fontSize:13}}>{fmtNum(totals.total)}</td>
-            <td style={{...S.th,textAlign:"center"}}>{totals.staff}</td>
-            <td style={{...S.th,textAlign:"center"}}>{totals.patient}</td>
-            <td style={{...S.th,textAlign:"center",fontWeight:900}}>{totals.count}</td>
-            <td style={{...S.th,textAlign:"right"}}>{fmtNum(totals.perCap)}</td>
-            <td style={S.th}></td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
+      <Field label="보고 월">
+        <input type="month" style={{...S.input,maxWidth:200}} value={f.reportMonth||""} onChange={e=>setMonth(e.target.value)} />
+      </Field>
+      <div style={{...S.sectionTit,color:"#7c3aed"}}>일별 입력 <span style={{fontSize:11,fontWeight:400,color:"#94a3b8"}}>(주 경계: 보라색 구분선)</span></div>
+      <DayTable editable={true} />
       <Field label="특이사항" style={{marginTop:12}}>
-        <textarea style={{...S.input,height:80,resize:"vertical"}} value={f.generalNote||""} onChange={e=>onChange({...f,generalNote:e.target.value})} placeholder="해당 주 특이사항이나 건의사항을 입력하세요" />
+        <textarea style={{...S.input,height:80,resize:"vertical"}} value={f.generalNote||""} onChange={e=>onChange({...f,generalNote:e.target.value})} placeholder="이달의 특이사항이나 건의사항을 입력하세요" />
       </Field>
     </div>
   );
@@ -983,6 +1016,7 @@ export default function ApprovalPage() {
             <hr style={{ border:"none", borderTop:"1px solid #f1f5f9", margin:"16px 0" }} />
             <div style={S.sectionTit}>문서 내용</div>
             {renderDocForm(doc.type, doc.formData, null, null, doc.fileUrls, null, true)}
+            <ApprovalStampArea doc={doc} />
           </div>
 
           {/* 결재 이력 */}
@@ -1048,7 +1082,7 @@ export default function ApprovalPage() {
                 <button key={key} onClick={()=>{setNewType(key);setFormData({});setFiles([]);}}
                   style={{ padding:"20px", border:`2px solid ${t.color}`, borderRadius:12, background:t.bg, cursor:"pointer", textAlign:"left" }}>
                   <div style={{ fontSize:15, fontWeight:800, color:t.color, marginBottom:4 }}>{t.label}</div>
-                  <div style={{ fontSize:12, color:"#64748b" }}>{key==="vacation"?"연차·병가·생리휴가 등":key==="supply"?"각 부서 물품 요청":key==="refund"?"위탁진료 환자 환불 처리":key==="weekly"?"영양팀 주간 식비 보고":"월별 지출 세금계산서 내역"}</div>
+                  <div style={{ fontSize:12, color:"#64748b" }}>{key==="vacation"?"연차·병가·생리휴가 등":key==="supply"?"각 부서 물품 요청":key==="refund"?"위탁진료 환자 환불 처리":key==="weekly"?"영양팀 월간 식비 보고":"월별 지출 세금계산서 내역"}</div>
                 </button>
               ))}
             </div>
@@ -1092,7 +1126,7 @@ export default function ApprovalPage() {
   const tabConfig = [
     { key:"mine",    label:`내 문서함 (${myDocs.length})` },
     { key:"pending", label:`결재 대기 (${pendingDocs.length})` },
-    { key:"weekly",  label:`주간보고 (${weeklyDocs.length})` },
+    { key:"weekly",  label:`월간보고 (${weeklyDocs.length})` },
     { key:"tax",     label:`세금계산서 (${taxDocs.length})` },
     ...(profile.role === "director" ? [{ key:"all", label:`전체 진행중 (${allPendingDocs.length})` }] : []),
   ];
@@ -1128,7 +1162,7 @@ export default function ApprovalPage() {
         <div style={S.card}>
           {displayDocs.length === 0 && (
             <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8", fontSize:14 }}>
-              {activeTab==="mine"?"작성한 문서가 없습니다.":activeTab==="pending"?"결재 대기 문서가 없습니다.":activeTab==="weekly"?"주간보고 문서가 없습니다.":activeTab==="tax"?"세금계산서 문서가 없습니다.":"진행 중인 문서가 없습니다."}
+              {activeTab==="mine"?"작성한 문서가 없습니다.":activeTab==="pending"?"결재 대기 문서가 없습니다.":activeTab==="weekly"?"월간보고 문서가 없습니다.":activeTab==="tax"?"세금계산서 문서가 없습니다.":"진행 중인 문서가 없습니다."}
             </div>
           )}
           {displayDocs.map(([id, doc]) => {
