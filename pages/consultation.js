@@ -717,7 +717,7 @@ export default function ConsultationPage() {
         {filteredWithDivider.map((item, idx) => {
           // 월 구분선
           if (item._divider) {
-            const totalInMonth = allList.filter(c => monthKey(c.createdAt) === item.monthKey).length;
+            const totalInMonth = filtered.filter(c => monthKey(c.createdAt) === item.monthKey).length;
             return (
               <div key={`div-${item.monthKey}`} style={S.monthDivider}>
                 <span style={S.monthDividerLabel}>{korMonth(item.monthKey)}</span>
