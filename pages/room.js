@@ -291,12 +291,6 @@ export default function RoomPage() {
     await addLog({ action:"이동", from:fromKey, to:targetSlotKey, name:data.name });
   },[movingPatient, slots, saveSlots, addLog]);
 
-  if (loading || !room) return (
-    <div style={{ display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"'Noto Sans KR',sans-serif",color:"#64748b" }}>
-      {loading ? "로딩 중..." : "병실을 찾을 수 없습니다."}
-    </div>
-  );
-
   const allKnownPatients = useMemo(() => {
     const seen = new Set();
     const list = [];
@@ -313,6 +307,12 @@ export default function RoomPage() {
     });
     return list.sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }, [slots]);
+
+  if (loading || !room) return (
+    <div style={{ display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"'Noto Sans KR',sans-serif",color:"#64748b" }}>
+      {loading ? "로딩 중..." : "병실을 찾을 수 없습니다."}
+    </div>
+  );
 
   const bedList = Array.from({length:room.capacity},(_,i)=>{
     const slotKey=`${room.id}-${i+1}`;

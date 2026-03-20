@@ -486,16 +486,16 @@ export default function HospitalWardManager() {
     return { occupied, available: capacity - occupied, bedList };
   }, [slots, viewDate, isPreview, showReserved]);
 
-  const totalStats = useCallback(() => {
+  const stats = useMemo(() => {
     const today = todayDate();
-    let occupied = 0; // 사용 중: 예약 포함
-    let actual = 0;   // 재원: 실제 입원 환자만
+    let occupied = 0; // 사용 중: 현재 입원 + 활성 예약 포함
+    let actual = 0;   // 재원: slot.current 기준 실제 입원만
     Object.values(WARD_STRUCTURE).forEach(ward =>
       ward.rooms.forEach(r => {
         for (let i = 1; i <= r.capacity; i++) {
           const slotKey = `${r.id}-${i}`;
           const slot = slots[slotKey];
-          const { person } = getSlotOccupant(slot, viewDate);
+          const { person } = getSlotOccupant(slot, today);
           if (person) occupied++;
           if (slot?.current?.name) {
             const dis = parseDateStr(slot.current.discharge);
@@ -504,8 +504,8 @@ export default function HospitalWardManager() {
         }
       })
     );
-    return { total: 78, occupied, available: 78 - occupied, actual };
-  }, [slots, viewDate]);
+    return { occupied, available: 78 - occupied, actual };
+  }, [slots]);
 
   // ── 빈 병상 순환 하이라이트 ───────────────────────────────────────────────
   const emptySlots = !isPreview ? getAllEmptySlots(slots, getRoomStats) : [];
@@ -665,7 +665,6 @@ export default function HospitalWardManager() {
     setUploadResult(null);
   };
 
-  const stats = totalStats();
   const currentEmptySlotKey = highlightEmpty && emptySlots.length > 0 ? emptySlots[emptySlotIdx % emptySlots.length]?.slotKey : null;
 
   if (syncing && Object.keys(slots).length === 0) return (
