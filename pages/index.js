@@ -489,19 +489,22 @@ export default function HospitalWardManager() {
 
   const stats = useMemo(() => {
     const today = todayDate();
-    let occupied = 0; // 사용 중: 현재 입원 + 활성 예약 포함
-    let actual = 0;   // 재원: slot.current 기준 실제 입원만
+    let occupied = 0; // 사용 중: 현재 입원 OR 예약 있는 병상
+    let actual = 0;   // 재원: slot.current 기준 실제 입원만 (퇴원일 >= 오늘)
     Object.values(WARD_STRUCTURE).forEach(ward =>
       ward.rooms.forEach(r => {
         for (let i = 1; i <= r.capacity; i++) {
           const slotKey = `${r.id}-${i}`;
           const slot = slots[slotKey];
-          const { person } = getSlotOccupant(slot, today);
-          if (person) occupied++;
+          // 재원: 실제 입원 환자 (slot.current, 퇴원일 >= 오늘)
+          let hasCurrent = false;
           if (slot?.current?.name) {
             const dis = parseDateStr(slot.current.discharge);
-            if (!dis || dateOnly(dis) >= today) actual++;
+            if (!dis || dateOnly(dis) >= today) { actual++; hasCurrent = true; }
           }
+          // 사용 중: 재원 OR 예약이 하나라도 있으면
+          const hasReservation = (slot?.reservations || []).some(r2 => r2?.name);
+          if (hasCurrent || hasReservation) occupied++;
         }
       })
     );

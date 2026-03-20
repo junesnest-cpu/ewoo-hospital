@@ -590,7 +590,7 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
         </>}
         <label style={NS.label}>환자명 ★</label>
         <div style={{ position:"relative" }}>
-          <input style={NS.input} value={form.name||""} onChange={e=>handleNameChange(e.target.value)}
+          <input style={NS.input} value={form.name||""} onChange={e=>setF("name",e.target.value)}
             onBlur={()=>setTimeout(()=>setSuggestions([]),150)} placeholder="환자명" autoComplete="off"/>
           {suggestions.length>0&&(
             <div style={{ position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1.5px solid #a78bfa",
