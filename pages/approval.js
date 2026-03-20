@@ -618,14 +618,38 @@ function WeeklyForm({ data, onChange, readonly }) {
     </div>
   );
 
-  if (readonly) return (
-    <div>
-      <ReadVal label="보고 월" value={f.reportMonth} />
-      <div style={{...S.sectionTit,color:"#7c3aed"}}>일별 식비 현황</div>
-      <DayTable editable={false} />
-      {f.generalNote && <ReadVal label="특이사항" value={f.generalNote} style={{marginTop:12}} />}
-    </div>
-  );
+  if (readonly) {
+    const ms = data?.monthSummary;
+    const hasDailyData = f.days && f.days.some(d => Number(d.ecoFood)||Number(d.dojunFood)||Number(d.ecoSnack)||Number(d.dojunSnack)||Number(d.otherCost)||Number(d.staffCount)||Number(d.patientCount));
+    return (
+      <div>
+        <ReadVal label="보고 월" value={f.reportMonth} />
+        {ms && (
+          <div style={{ background:"#f3f0ff", borderRadius:10, padding:"14px 16px", marginBottom:14 }}>
+            <div style={{...S.sectionTit, color:"#7c3aed", marginBottom:10}}>월간 요약</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"8px 16px" }}>
+              <ReadVal label="식재료비(에코+도준)" value={fmtNum((ms.ecoFood||0)+(ms.dojunFood||0))+"원"} />
+              <ReadVal label="간식비(에코+도준)"   value={fmtNum((ms.ecoSnack||0)+(ms.dojunSnack||0))+"원"} />
+              <ReadVal label="기타(현지구매)"       value={fmtNum(ms.otherCost||0)+"원"} />
+              <ReadVal label="총 식비합계"   value={<strong style={{color:"#4c1d95",fontSize:15}}>{fmtNum(ms.totalCost||0)}원</strong>} />
+              <ReadVal label="직원/환우/총식수" value={`${ms.staff||0} / ${ms.patient||0} / ${ms.totalCount||0}명`} />
+              <ReadVal label="1인 식단가" value={fmtNum(ms.perCapita||0)+"원"} />
+            </div>
+          </div>
+        )}
+        {hasDailyData && (
+          <>
+            <div style={{...S.sectionTit,color:"#7c3aed"}}>일별 식비 현황</div>
+            <DayTable editable={false} />
+          </>
+        )}
+        {!hasDailyData && !ms && (
+          <div style={{ textAlign:"center", padding:"20px 0", color:"#94a3b8", fontSize:13 }}>일별 상세 데이터가 없습니다.</div>
+        )}
+        {f.generalNote && <ReadVal label="특이사항" value={f.generalNote} style={{marginTop:12}} />}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -800,6 +824,9 @@ export default function ApprovalPage() {
   const [activeTab,  setActiveTab]  = useState("mine"); // mine | pending | all(director)
   const [selectedId, setSelectedId] = useState(null);
   const [newType,    setNewType]    = useState(null);
+  // 월간보고 탭 월 네비게이션
+  const nowYM = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; })();
+  const [weeklyNavMonth, setWeeklyNavMonth] = useState(nowYM);
 
   // 결재 액션
   const [rejectModal, setRejectModal] = useState(null); // { docId }
@@ -1117,6 +1144,19 @@ export default function ApprovalPage() {
   const sortedDocs = (list) => [...list].sort(([,a],[,b])=>(b.createdAt||0)-(a.createdAt||0));
   const weeklyDocs = Object.entries(docs).filter(([,d])=>d.type==="weekly");
   const taxDocs    = Object.entries(docs).filter(([,d])=>d.type==="tax");
+
+  // 월간보고 탭 네비게이션 헬퍼
+  const prevMonth = (ym) => {
+    const [y, m] = ym.split("-").map(Number);
+    return m === 1 ? `${y-1}-12` : `${y}-${String(m-1).padStart(2,"0")}`;
+  };
+  const nextMonth = (ym) => {
+    const [y, m] = ym.split("-").map(Number);
+    return m === 12 ? `${y+1}-01` : `${y}-${String(m+1).padStart(2,"0")}`;
+  };
+  const weeklyDocForMonth = weeklyDocs.find(([,d]) => d.formData?.reportMonth === weeklyNavMonth);
+  const weeklyAllMonths = [...new Set(weeklyDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
+
   const displayDocs = activeTab === "mine"    ? sortedDocs(myDocs)
     : activeTab === "pending"  ? sortedDocs(pendingDocs)
     : activeTab === "weekly"   ? sortedDocs(weeklyDocs)
@@ -1159,10 +1199,57 @@ export default function ApprovalPage() {
             <button key={t.key} style={S.tab(activeTab===t.key)} onClick={()=>setActiveTab(t.key)}>{t.label}</button>
           ))}
         </div>
+        {/* 월간보고 탭: 월 네비게이터 + 인라인 표시 */}
+        {activeTab === "weekly" && (
+          <div style={S.card}>
+            {/* 월 네비게이션 */}
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+              <button style={{ border:"1.5px solid #c4b5fd", background:"#f5f3ff", color:"#7c3aed", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                onClick={()=>setWeeklyNavMonth(prevMonth(weeklyNavMonth))}>
+                ← 이전달
+              </button>
+              <input type="month" style={{ ...S.input, maxWidth:180, textAlign:"center", fontWeight:700, color:"#4c1d95", fontSize:15 }}
+                value={weeklyNavMonth} onChange={e=>setWeeklyNavMonth(e.target.value)} />
+              <button style={{ border:"1.5px solid #c4b5fd", background:"#f5f3ff", color:"#7c3aed", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                onClick={()=>setWeeklyNavMonth(nextMonth(weeklyNavMonth))}
+                disabled={weeklyNavMonth >= nowYM}>
+                다음달 →
+              </button>
+              {weeklyDocForMonth && (
+                <button style={{ marginLeft:"auto", ...S.btnPurple, fontSize:12, padding:"5px 12px" }}
+                  onClick={()=>{setSelectedId(weeklyDocForMonth[0]);setView("detail");}}>
+                  상세 보기
+                </button>
+              )}
+            </div>
+            {/* 월 데이터 인라인 표시 */}
+            {weeklyDocForMonth ? (
+              <div>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                  <span style={{ fontWeight:800, fontSize:15, color:"#4c1d95" }}>{weeklyNavMonth} 월간보고</span>
+                  <StatusBadge status={weeklyDocForMonth[1].status} />
+                  <span style={{ fontSize:12, color:"#94a3b8", marginLeft:"auto" }}>{weeklyDocForMonth[1].authorName}</span>
+                </div>
+                <WeeklyForm data={weeklyDocForMonth[1].formData} onChange={()=>{}} readonly={true} />
+              </div>
+            ) : (
+              <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
+                <div style={{ fontSize:15, marginBottom:8 }}>{weeklyNavMonth} 월 보고서가 없습니다.</div>
+                {weeklyAllMonths.length > 0 && (
+                  <div style={{ fontSize:12, color:"#c4b5fd" }}>
+                    자료 있는 월: {weeklyAllMonths.slice(0,6).join(", ")}{weeklyAllMonths.length>6?" 외 "+String(weeklyAllMonths.length-6)+"건":""}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab !== "weekly" && (
         <div style={S.card}>
           {displayDocs.length === 0 && (
             <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8", fontSize:14 }}>
-              {activeTab==="mine"?"작성한 문서가 없습니다.":activeTab==="pending"?"결재 대기 문서가 없습니다.":activeTab==="weekly"?"월간보고 문서가 없습니다.":activeTab==="tax"?"세금계산서 문서가 없습니다.":"진행 중인 문서가 없습니다."}
+              {activeTab==="mine"?"작성한 문서가 없습니다.":activeTab==="pending"?"결재 대기 문서가 없습니다.":activeTab==="tax"?"세금계산서 문서가 없습니다.":"진행 중인 문서가 없습니다."}
             </div>
           )}
           {displayDocs.map(([id, doc]) => {
@@ -1181,6 +1268,7 @@ export default function ApprovalPage() {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* 반려 모달 */}
