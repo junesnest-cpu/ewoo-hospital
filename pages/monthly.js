@@ -255,8 +255,15 @@ export default function MonthlySchedule() {
     };
 
     if (year === nowYear && month === nowMonth) {
-      // 현재 달: 오늘 실제 재원 수를 기준점으로
-      const todayCensus = Object.values(slots).filter(s => s?.current?.name).length;
+      // 현재 달: 오늘 실제 재원 수를 기준점으로 (퇴원일이 오늘 이전인 환자 제외 - 병동 현황판과 동일 로직)
+      const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayCensus = Object.values(slots).filter(s => {
+        if (!s?.current?.name) return false;
+        const dis = parseDateStr(s.current.discharge, now.getFullYear());
+        if (!dis) return true;
+        const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
+        return disD >= todayDateOnly;
+      }).length;
       const todayKey = `${year}-${String(month).padStart(2,"0")}-${String(nowDay).padStart(2,"0")}`;
       counts[todayKey] = todayCensus;
       // 오늘 이후 → 앞으로 누적
