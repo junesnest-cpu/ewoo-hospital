@@ -145,6 +145,16 @@ function findPatientInRoom(slots, roomId, patientName) {
   return null;
 }
 
+// 전체 slots에서 이름으로 환자 검색 (병실 미기재 시)
+function findPatientAnywhere(slots, patientName) {
+  for (const [slotKey, slot] of Object.entries(slots)) {
+    if (!slot) continue;
+    if (slot.current?.name === patientName) return slotKey;
+    if ((slot.reservations || []).some((r) => r.name === patientName)) return slotKey;
+  }
+  return null;
+}
+
 function findEmptyBed(slots, roomId) {
   const capacity = WARD_ROOMS[roomId] || 1;
   for (let i = 1; i <= capacity; i++) {
@@ -275,6 +285,9 @@ export default async function handler(req, res) {
             ? `${item.room}-${item.bedNumber}`
             : findPatientInRoom(slots, item.room, item.name) ||
               findEmptyBed(slots, item.room);
+        } else {
+          // 병실 미기재 시 전체 slots에서 이름으로 검색
+          suggestedSlotKey = findPatientAnywhere(slots, item.name);
         }
       }
 
