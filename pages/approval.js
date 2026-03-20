@@ -824,9 +824,10 @@ export default function ApprovalPage() {
   const [activeTab,  setActiveTab]  = useState("mine"); // mine | pending | all(director)
   const [selectedId, setSelectedId] = useState(null);
   const [newType,    setNewType]    = useState(null);
-  // 월간보고 탭 월 네비게이션
+  // 탭 월 네비게이션
   const nowYM = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; })();
   const [weeklyNavMonth, setWeeklyNavMonth] = useState(nowYM);
+  const [refundNavMonth, setRefundNavMonth] = useState(nowYM);
 
   // 결재 액션
   const [rejectModal, setRejectModal] = useState(null); // { docId }
@@ -1190,6 +1191,8 @@ export default function ApprovalPage() {
   };
   const weeklyDocForMonth  = weeklyDocs.find(([,d]) => d.formData?.reportMonth === weeklyNavMonth);
   const weeklyAllMonths    = [...new Set(weeklyDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
+  const refundDocForMonth  = refundDocs.find(([,d]) => d.formData?.reportMonth === refundNavMonth);
+  const refundAllMonths    = [...new Set(refundDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
 
   const displayDocs = activeTab === "mine"     ? sortedDocs(myDocs)
     : activeTab === "pending"   ? sortedDocs(pendingDocs)
@@ -1238,6 +1241,50 @@ export default function ApprovalPage() {
             <button key={t.key} style={S.tab(activeTab===t.key)} onClick={()=>setActiveTab(t.key)}>{t.label}</button>
           ))}
         </div>
+        {/* 위탁진료 환불금 탭: 월 네비게이터 + 인라인 표시 */}
+        {activeTab === "refund" && (
+          <div style={S.card}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+              <button style={{ border:"1.5px solid #fcd34d", background:"#fffbeb", color:"#b45309", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                onClick={()=>setRefundNavMonth(prevMonth(refundNavMonth))}>
+                ← 이전달
+              </button>
+              <input type="month" style={{ ...S.input, maxWidth:180, textAlign:"center", fontWeight:700, color:"#92400e", fontSize:15 }}
+                value={refundNavMonth} onChange={e=>setRefundNavMonth(e.target.value)} />
+              <button style={{ border:"1.5px solid #fcd34d", background:"#fffbeb", color:"#b45309", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                onClick={()=>setRefundNavMonth(nextMonth(refundNavMonth))}
+                disabled={refundNavMonth >= nowYM}>
+                다음달 →
+              </button>
+              {refundDocForMonth && (
+                <button style={{ marginLeft:"auto", ...S.btnSec, fontSize:12, padding:"5px 12px", background:"#fef3c7", color:"#92400e" }}
+                  onClick={()=>{setSelectedId(refundDocForMonth[0]);setView("detail");}}>
+                  상세 보기
+                </button>
+              )}
+            </div>
+            {refundDocForMonth ? (
+              <div>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                  <span style={{ fontWeight:800, fontSize:15, color:"#92400e" }}>{refundNavMonth} 위탁진료 환불금</span>
+                  <StatusBadge status={refundDocForMonth[1].status} />
+                  <span style={{ fontSize:12, color:"#94a3b8", marginLeft:"auto" }}>{refundDocForMonth[1].authorName}</span>
+                </div>
+                <RefundForm data={refundDocForMonth[1].formData} onChange={()=>{}} readonly={true} />
+              </div>
+            ) : (
+              <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>
+                <div style={{ fontSize:15, marginBottom:8 }}>{refundNavMonth} 월 환불금 보고서가 없습니다.</div>
+                {refundAllMonths.length > 0 && (
+                  <div style={{ fontSize:12, color:"#fbbf24" }}>
+                    자료 있는 월: {refundAllMonths.slice(-6).join(", ")}{refundAllMonths.length>6?" 외 "+String(refundAllMonths.length-6)+"건":""}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 월간보고 탭: 월 네비게이터 + 인라인 표시 */}
         {activeTab === "weekly" && (
           <div style={S.card}>
@@ -1284,7 +1331,7 @@ export default function ApprovalPage() {
           </div>
         )}
 
-        {activeTab !== "weekly" && (
+        {activeTab !== "weekly" && activeTab !== "refund" && (
         <div style={S.card}>
           {displayDocs.length === 0 && (
             <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8", fontSize:14 }}>
