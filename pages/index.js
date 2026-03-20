@@ -969,7 +969,10 @@ export default function HospitalWardManager() {
             slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
             showReserved={showReserved} highlightEmpty={highlightEmpty} currentEmptySlotKey={currentEmptySlotKey}
             movingPatient={movingPatient} onMoveTarget={executeMove}
-            onSelectRoom={r => { router.push(`/room?roomId=${r.id}${previewDate?`&preview=${toInputValue(previewDate)}`:""}`) }}
+            onSelectRoom={r => {
+              if (movingPatient) sessionStorage.setItem("pendingMove", JSON.stringify(movingPatient));
+              router.push(`/room?roomId=${r.id}${previewDate?`&preview=${toInputValue(previewDate)}`:""}`)
+            }}
             cardRefs={cardRefs}
           />
         )}

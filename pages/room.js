@@ -170,6 +170,14 @@ export default function RoomPage() {
   }, [preview]);
 
   useEffect(()=>{
+    const pending = sessionStorage.getItem("pendingMove");
+    if (pending) {
+      try { setMovingPatient(JSON.parse(pending)); } catch(e) {}
+      sessionStorage.removeItem("pendingMove");
+    }
+  }, []);
+
+  useEffect(()=>{
     const unsub = onValue(ref(db,"slots"), snap=>{ setSlots(snap.val()||{}); setLoading(false); });
     return ()=>unsub();
   },[]);
@@ -391,7 +399,7 @@ export default function RoomPage() {
                     {!isPreview&&!movingPatient&&(type==="current"||type==="discharging_today"||type==="admitting_today")&&(
                       <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginTop:8 }}>
                         <button style={NS.btnEdit} onClick={()=>setEditingSlot({slotKey,mode:"current",data:{...person}})}>수정</button>
-                        <button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>setMovingPatient({slotKey,mode:"current",data:person})}>🚚 이동</button>
+                        <button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"current",data:person,resIndex:undefined})); router.push("/"); }}>🚚 이동</button>
                         <button style={{...NS.btnEdit,background:"#dc2626",width:"100%",marginTop:2}}
                           onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}${person.patientId?"&patientId="+encodeURIComponent(person.patientId):""}`)}>
                           📋 치료 일정표
