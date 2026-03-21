@@ -63,7 +63,9 @@ async function parseMessageWithClaude(text) {
     "dischargeNote": "퇴원약 중 수량 불명이거나 개수 없는 메모만",
     "roomFeeType": "F" 또는 "O" 또는 null,
     "note": "기타 특이사항 또는 null",
-    "scheduleAlert": false
+    "scheduleAlert": false,
+    "keepSchedule": false,
+    "cancelTreatments": []
   }
 ]
 
@@ -112,7 +114,11 @@ specificDates 형식:
 - "퇴원시 부족분 셀레나제 있습니다" → dischargeNote (수량 불명)
 - "도수2 2회" (날짜/요일 없이 횟수만) → sessionCount: [{"name":"도수2","count":"2"}]
 - "고주파3회" (날짜/요일 없이 횟수만) → sessionCount: [{"name":"고주파","count":"3"}]
-- 스케줄/일정 확인 필요 → scheduleAlert: true`;
+- 스케줄/일정 확인 필요 → scheduleAlert: true
+- "이전 스케쥴 유지" / "기존 스케쥴 유지" / "이전과 동일" 등 → keepSchedule: true (이전에 기록된 치료 계획을 이어서 적용한다는 의미)
+- "자닥신 취소" / "이뮤알파 취소" / "해당 치료 취소" / "(치료명) 중단" 등 → cancelTreatments 배열에 해당 치료의 정규 명칭 기재
+  예: "자닥신 취소" → cancelTreatments: ["자닥신"]
+  예: "이뮤알파, 이스카도 치료 취소" → cancelTreatments: ["이뮤알파", "이스카도M"]`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

@@ -402,6 +402,77 @@ async function addWeeklyTreatmentPlan(slotKey, parsedSchedule, startDateStr, end
   return totalAdded;
 }
 
+// 퇴원 예정일(당일 포함) 이후의 치료 계획 삭제
+async function deleteTreatmentsAfterDate(slotKey, dischargeDateStr) {
+  if (!slotKey || !dischargeDateStr || dischargeDateStr === "미정") return;
+  const dateStr = parseMMDD(dischargeDateStr);
+  if (!dateStr) return;
+  const dischargeDate = new Date(dateStr + "T00:00:00");
+
+  const snap = await get(ref(db, `treatmentPlans/${slotKey}`));
+  const plan = snap.val();
+  if (!plan) return;
+
+  let changed = false;
+  const newPlan = {};
+  for (const [mk, monthData] of Object.entries(plan)) {
+    const [y, m] = mk.split("-").map(Number);
+    const monthNewData = {};
+    for (const [dk, items] of Object.entries(monthData)) {
+      const d = new Date(y, m - 1, parseInt(dk));
+      if (d > dischargeDate) {
+        changed = true; // 퇴원일 다음날부터 삭제
+      } else {
+        monthNewData[dk] = items;
+      }
+    }
+    if (Object.keys(monthNewData).length > 0) {
+      newPlan[mk] = monthNewData;
+    } else {
+      changed = true;
+    }
+  }
+
+  if (changed) await set(ref(db, `treatmentPlans/${slotKey}`), newPlan);
+}
+
+// 특정 치료를 오늘 이후 날짜에서 모두 삭제
+async function cancelFutureTreatments(slotKey, cancelTreatments) {
+  if (!slotKey || !cancelTreatments?.length) return;
+  const cancelIds = cancelTreatments
+    .map(t => {
+      const key = t.toLowerCase().replace(/\s/g, "");
+      return TREATMENT_NAME_TO_ID[key] || TREATMENT_NAME_TO_ID[t.toLowerCase()] || null;
+    })
+    .filter(Boolean);
+  if (!cancelIds.length) return;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const snap = await get(ref(db, `treatmentPlans/${slotKey}`));
+  const plan = snap.val();
+  if (!plan) return;
+
+  let changed = false;
+  const newPlan = JSON.parse(JSON.stringify(plan));
+  for (const [mk, monthData] of Object.entries(newPlan)) {
+    const [y, m] = mk.split("-").map(Number);
+    for (const [dk, items] of Object.entries(monthData)) {
+      const d = new Date(y, m - 1, parseInt(dk));
+      if (d >= today && Array.isArray(items)) {
+        const filtered = items.filter(e => !cancelIds.includes(e.id));
+        if (filtered.length !== items.length) {
+          newPlan[mk][dk] = filtered;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  if (changed) await set(ref(db, `treatmentPlans/${slotKey}`), newPlan);
+}
+
 // specificDates: [{treatments:["자닥신","이뮤알파"], qty:"1", dates:["3/11","3/24"]}]
 async function addSpecificDateTreatments(slotKey, specificDates) {
   if (!slotKey || !specificDates?.length) return 0;
@@ -462,6 +533,37 @@ export default function HistoryPage() {
 
   const handleApprove = useCallback(async (changeId, form, addTreat, treatDate, weeklyOpts, specificOpts) => {
     const { changeDescription, finalSlotKey } = await applySlotChange(form);
+
+    // 퇴원 예정일 설정 시 이후 치료 계획 삭제
+    if (form.dischargeDate && form.dischargeDate !== "미정") {
+      await deleteTreatmentsAfterDate(finalSlotKey, form.dischargeDate);
+    }
+
+    // 해당 치료 취소 처리
+    if (form.cancelTreatments?.length) {
+      await cancelFutureTreatments(finalSlotKey, form.cancelTreatments);
+    }
+
+    // 이전 스케쥴 유지: weeklyPlans에 저장된 계획을 새 기간에 적용
+    if (form.keepSchedule && weeklyOpts?.startDate && weeklyOpts?.endDate) {
+      const wpSnap = await get(ref(db, `weeklyPlans/${finalSlotKey}`));
+      const wp = wpSnap.val();
+      if (wp && Object.keys(wp).length > 0) {
+        // weeklyPlans는 {itemId: {count, price}} 형식 → weeklySchedule 문자열로 변환
+        const N_TO_DAYS = { 1: "주1회", 2: "주2회", 3: "주3회", 4: "주4회", 5: "주5회" };
+        const schedParts = Object.entries(wp).map(([itemId, plan]) => {
+          const name = Object.keys(TREATMENT_NAME_TO_ID).find(k => TREATMENT_NAME_TO_ID[k] === itemId);
+          if (!name) return null;
+          return `${name} ${N_TO_DAYS[plan.count] || `주${plan.count}회`}`;
+        }).filter(Boolean);
+        if (schedParts.length > 0) {
+          const parsed = parseWeeklySchedule(schedParts.join(", "));
+          if (parsed.length) {
+            await addWeeklyTreatmentPlan(finalSlotKey, parsed, weeklyOpts.startDate, weeklyOpts.endDate);
+          }
+        }
+      }
+    }
 
     // 치료일정 등록 (단일 날짜)
     if (addTreat && form.treatments?.length) {
@@ -702,6 +804,8 @@ function PendingCard({ change, onApprove, onReject }) {
     roomFeeType: p.roomFeeType || "",
     note: p.note || "",
     scheduleAlert: p.scheduleAlert || false,
+    keepSchedule: p.keepSchedule || false,
+    cancelTreatments: p.cancelTreatments || [],
   });
   const [newTreat, setNewTreat] = useState("");
   const [addTreat, setAddTreat] = useState((p.treatments || []).length > 0);
@@ -736,7 +840,7 @@ function PendingCard({ change, onApprove, onReject }) {
       const weeklyOpts = {
         enabled: addWeekly && !!form.weeklySchedule && !!weeklyStartDate && !!weeklyEndDate,
         startDate: weeklyStartDate,
-        endDate: weeklyEndDate,
+        endDate: weeklyEndDate || parseMMDD(form.dischargeDate) || "",
       };
 
       // specificDates + 퇴원약 + 잔여횟수를 하나로 합산
@@ -1188,6 +1292,46 @@ function PendingCard({ change, onApprove, onReject }) {
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* 이전 스케쥴 유지 */}
+        {form.keepSchedule && (
+          <div style={{ ...H.treatBox, marginTop: 8, borderColor: "#86efac", background: "#f0fdf4" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#15803d" }}>
+              🔄 이전 스케쥴 유지 — 기존 주간 계획(weeklyPlans)을 새 기간에 적용
+            </div>
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+              적용 기간: {weeklyStartDate || "오늘"} ~ {weeklyEndDate || parseMMDD(form.dischargeDate) || "퇴원일"}
+              {(!weeklyEndDate && !form.dischargeDate) && <span style={{ color: "#ef4444" }}> — 퇴원일을 입력하거나 종료일을 지정하세요</span>}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: "#64748b" }}>시작:</span>
+              <input type="date" value={weeklyStartDate} onChange={e => setWeeklyStartDate(e.target.value)} style={{ ...H.input, width: "auto" }} />
+              <span style={{ fontSize: 12, color: "#64748b" }}>종료:</span>
+              <input type="date" value={weeklyEndDate} onChange={e => setWeeklyEndDate(e.target.value)} style={{ ...H.input, width: "auto" }} />
+            </div>
+          </div>
+        )}
+
+        {/* 해당 치료 취소 */}
+        {form.cancelTreatments?.length > 0 && (
+          <div style={{ ...H.treatBox, marginTop: 8, borderColor: "#fca5a5", background: "#fff1f2" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#991b1b" }}>
+              ❌ 해당 치료 취소 — 오늘 이후 치료계획에서 삭제
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+              {form.cancelTreatments.map((t, i) => {
+                const k = t.toLowerCase().replace(/\s/g, "");
+                const mapped = TREATMENT_NAME_TO_ID[k];
+                return (
+                  <span key={i} style={{ background: "#fee2e2", color: "#991b1b", borderRadius: 8, padding: "2px 8px", fontSize: 12, fontWeight: 600 }}>
+                    {t} → {mapped || <span style={{ color: "#ef4444" }}>⚠미매핑</span>}
+                    <button onClick={() => setF("cancelTreatments", form.cancelTreatments.filter((_, j) => j !== i))} style={{ ...H.chipDel, marginLeft: 4 }}>✕</button>
+                  </span>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

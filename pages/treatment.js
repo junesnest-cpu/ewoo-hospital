@@ -161,6 +161,10 @@ export default function TreatmentPage() {
     if (!slotKey) return;
     const unsub1 = onValue(ref(db, `treatmentPlans/${slotKey}`), snap => setPlan(snap.val() || {}));
     const unsub2 = onValue(ref(db, `weeklyPlans/${slotKey}`), snap => setWeeklyPlan(snap.val() || {}));
+    const unsub3 = onValue(ref(db, `treatmentSettings/${slotKey}`), snap => {
+      const s = snap.val();
+      if (s?.roomFree !== undefined) setRoomFree(s.roomFree);
+    });
     // patientId가 URL에 없으면 슬롯 데이터에서 조회
     if (patientId) {
       setResolvedPatientId(patientId);
@@ -170,12 +174,17 @@ export default function TreatmentPage() {
         if (pid) setResolvedPatientId(pid);
       });
     }
-    return () => { unsub1(); unsub2(); };
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, [slotKey, patientId]);
 
   const saveWeeklyPlan = useCallback(async (newPlan) => {
     setWeeklyPlan(newPlan);
     await set(ref(db, `weeklyPlans/${slotKey}`), newPlan);
+  }, [slotKey]);
+
+  const handleRoomFreeChange = useCallback(async (checked) => {
+    setRoomFree(checked);
+    await set(ref(db, `treatmentSettings/${slotKey}/roomFree`), checked);
   }, [slotKey]);
 
   const monthKey  = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -376,7 +385,7 @@ export default function TreatmentPage() {
           background: roomFree?"#fef9c3":"#f1f5f9", borderRadius:7,
           padding:"3px 10px", border:`1px solid ${roomFree?"#fbbf24":"#e2e8f0"}`, fontWeight:700,
           color: roomFree?"#92400e":"#64748b", flexShrink:0 }}>
-          <input type="checkbox" checked={roomFree} onChange={e=>setRoomFree(e.target.checked)}/>
+          <input type="checkbox" checked={roomFree} onChange={e=>handleRoomFreeChange(e.target.checked)}/>
           🎁 병실료 Free
           {roomFree && <span style={{ fontSize:11, color:"#059669", marginLeft:4 }}>
             (치료 기준 {(weekBase/10000).toFixed(0)}만원/주)
