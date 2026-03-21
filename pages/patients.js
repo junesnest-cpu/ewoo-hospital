@@ -127,7 +127,7 @@ export default function PatientsPage() {
         if (slot.current?.patientId === p.internalId ||
             (slot.current?.name === p.name && !slot.current?.patientId))
           curSlot = { slotKey, data: slot.current };
-        (slot.reservations || []).filter(Boolean).forEach(r => {
+        (Array.isArray(slot.reservations) ? slot.reservations : Object.values(slot.reservations || {})).filter(Boolean).forEach(r => {
           if (r.patientId === p.internalId || (r.name === p.name && !r.patientId))
             resList.push({ slotKey, data: r });
         });
@@ -277,7 +277,7 @@ export default function PatientsPage() {
               count++;
             }
           }
-          (slot.reservations || []).forEach((r, i) => {
+          (Array.isArray(slot.reservations) ? slot.reservations : Object.values(slot.reservations || {})).forEach((r, i) => {
             if (r?.name && !r?.patientId) {
               const found = diagResults.pByName[r.name];
               if (found?.internalId) {
@@ -500,7 +500,7 @@ export default function PatientsPage() {
                           { label:"수술",   value:c.surgery ? `✓ ${c.surgeryDate||""}` : "" },
                           { label:"항암",   value:c.chemo   ? `✓ ${c.chemoDate||""}`   : "" },
                           { label:"방사선", value:c.radiation ? `✓ ${c.radiationDate||""}` : "" },
-                          { label:"희망 병실", value:c.roomTypes?.join("·") },
+                          { label:"희망 병실", value:Array.isArray(c.roomTypes) ? c.roomTypes.join("·") : (c.roomTypes || "") },
                         ]} />
                         {c.memo && <div style={{ marginTop:6, fontSize:13, color:"#475569", background:"#f8fafc", borderRadius:6, padding:"6px 8px" }}>{c.memo}</div>}
                       </div>
