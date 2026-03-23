@@ -707,7 +707,7 @@ export default function TherapyPage() {
                                       {cell.memo&&<div style={{fontSize:isMobile?10:9,color:"#475569",lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",maxWidth:"100%",marginTop:1}}>💬 {cell.memo}</div>}
                                       {cell.isPending&&<div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>예정</div>}
                                       {isConflict&&<div style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:"#dc2626"}}/>}
-                                      <button onClick={e=>{e.stopPropagation();doPhysRemove(r.id,dayIdx,time);}}
+                                      <button onClick={e=>{e.stopPropagation();r.id==="hyperthermia"?(!confirm("삭제하시겠습니까?")||saveHyper("hyperthermia",dayIdx,time,null)):doPhysRemove(r.id,dayIdx,time);}}
                                         style={{position:"absolute",bottom:1,right:1,background:"rgba(220,38,38,0.15)",border:"none",color:"#dc2626",borderRadius:2,width:13,height:13,cursor:"pointer",fontSize:8,lineHeight:"13px",textAlign:"center",padding:0}}>✕</button>
                                     </>
                                     );
@@ -1006,7 +1006,7 @@ function PhysPrint({patients,selected,weekDates,therapists}){
             <div style={{fontWeight:900,fontSize:32,borderBottom:"2px solid #ccc",paddingBottom:6,marginBottom:8,display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
               <span>{p.name}님</span>
               {p.isOuter&&<span style={{fontSize:22,color:"#d97706"}}>(외래)</span>}
-              {p.slotKey&&!p.slotKey.startsWith("__")&&!p.slotKey.startsWith("pending_")&&(
+              {p.slotKey&&!p.slotKey.startsWith("__")&&!p.slotKey.startsWith("pending_")&&!p.slotKey.startsWith("db_")&&(
                 <span style={{fontSize:24,fontWeight:700,color:"#64748b"}}>
                   {p.slotKey.split("-")[0]} - {p.slotKey.split("-")[1]}
                 </span>
@@ -1023,7 +1023,6 @@ function PhysPrint({patients,selected,weekDates,therapists}){
                 <td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center",fontWeight:700}}>{e.time.slice(0,5)}</td>
               </tr>)}</tbody>
             </table>
-            {p.entries.some(e=>e.memo)&&<div style={{marginTop:6,fontSize:22,color:"#555"}}>💬 {p.entries.filter(e=>e.memo).map(e=>e.memo).join(" / ")}</div>}
             <div style={{marginTop:8,paddingTop:6,borderTop:"1px dashed #ccc",fontSize:20,color:"#666",textAlign:"center"}}>치료 시간에 맞춰 지하 1층 통합치료실로 방문해 주세요.</div>
           </div>
         );})}
@@ -1045,7 +1044,7 @@ function HyperPrint({patients,selected,weekDates}){
             <div style={{fontWeight:900,fontSize:32,borderBottom:"2px solid #ccc",paddingBottom:6,marginBottom:8,display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
               <span>{p.name}님</span>
               {p.isOuter&&<span style={{fontSize:22,color:"#d97706"}}>(외래)</span>}
-              {p.slotKey&&!p.slotKey.startsWith("__")&&!p.slotKey.startsWith("pending_")&&(
+              {p.slotKey&&!p.slotKey.startsWith("__")&&!p.slotKey.startsWith("pending_")&&!p.slotKey.startsWith("db_")&&(
                 <span style={{fontSize:24,fontWeight:700,color:"#64748b"}}>
                   {p.slotKey.split("-")[0]} - {p.slotKey.split("-")[1]}
                 </span>
@@ -1061,7 +1060,6 @@ function HyperPrint({patients,selected,weekDates}){
                 <td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center",fontWeight:700}}>{e.time.slice(0,5)}</td>
               </tr>)}</tbody>
             </table>
-            {p.entries.some(e=>e.memo)&&<div style={{marginTop:6,fontSize:22,color:"#555"}}>💬 {p.entries.filter(e=>e.memo).map(e=>e.memo).join(" / ")}</div>}
             <div style={{marginTop:8,paddingTop:6,borderTop:"1px dashed #ccc",fontSize:20,color:"#666",textAlign:"center"}}>치료 시간에 맞춰 지하 1층 통합치료실로 방문해 주세요.</div>
           </div>
         );})}
