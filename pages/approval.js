@@ -775,6 +775,11 @@ function makeTaxGroups() {
   return PRESET_GROUPS.map(g => ({ name:g.name, items:g.items.map(makeTaxItem) }));
 }
 
+// 청구(미지급) 행 스타일
+const BILLED_ROW_BG  = "#fefce8"; // 연한 노란색 배경
+const BILLED_AMT_CLR = "#b45309"; // 황갈색 (청구 금액)
+const PAID_AMT_CLR   = "#dc2626"; // 빨간색 (실지출 금액)
+
 function TaxForm({ data, onChange, readonly }) {
   const f = (data && data.groups) ? data : { reportMonth:todayStr().slice(0,7), groups:makeTaxGroups() };
   const upd = (k,v) => onChange({...f,[k]:v});
@@ -784,11 +789,37 @@ function TaxForm({ data, onChange, readonly }) {
   const delItem  = (gi,ii) => { const gs=[...f.groups]; gs[gi]={...gs[gi],items:gs[gi].items.filter((_,i)=>i!==ii)}; upd("groups",gs); };
   const addGroup = () => { const name=window.prompt("구분명을 입력하세요:"); if(!name) return; upd("groups",[...f.groups,{name,items:[makeTaxItem()]}]); };
   const delGroup = (gi) => { if(!window.confirm("이 구분을 삭제하시겠습니까?")) return; upd("groups",f.groups.filter((_,i)=>i!==gi)); };
-  const groupTotal = (g) => (g.items||[]).reduce((s,it)=>s+(Number(it.amount)||0),0);
-  const grandTotal = (f.groups||[]).reduce((s,g)=>s+groupTotal(g),0);
+
+  // 실지출(청구 제외) 합계 / 청구(미지급) 합계 분리
+  const groupPaid   = (g) => (g.items||[]).filter(it=>it.method!=="청구").reduce((s,it)=>s+(Number(it.amount)||0),0);
+  const groupBilled = (g) => (g.items||[]).filter(it=>it.method==="청구").reduce((s,it)=>s+(Number(it.amount)||0),0);
+  const grandPaid   = (f.groups||[]).reduce((s,g)=>s+groupPaid(g),0);
+  const grandBilled = (f.groups||[]).reduce((s,g)=>s+groupBilled(g),0);
 
   const TH = S.th;
   const TD = S.td;
+
+  // 그룹 소계 행 렌더링 헬퍼 (readonly/edit 공용)
+  const SubtotalRow = ({ g, colSpanLeft, colSpanRight }) => {
+    const paid   = groupPaid(g);
+    const billed = groupBilled(g);
+    return (
+      <>
+        {billed > 0 && (
+          <tr>
+            <td colSpan={colSpanLeft} style={{...TH,textAlign:"right",color:BILLED_AMT_CLR,background:BILLED_ROW_BG}}>청구(미지급) 소계</td>
+            <td style={{...TH,textAlign:"right",color:BILLED_AMT_CLR,background:BILLED_ROW_BG}}>{fmtNum(billed)}</td>
+            <td colSpan={colSpanRight} style={{...TH,background:BILLED_ROW_BG}}></td>
+          </tr>
+        )}
+        <tr>
+          <td colSpan={colSpanLeft} style={{...TH,textAlign:"right"}}>실지출 소계</td>
+          <td style={{...TH,textAlign:"right",color:PAID_AMT_CLR}}>{fmtNum(paid)}</td>
+          <td colSpan={colSpanRight} style={TH}></td>
+        </tr>
+      </>
+    );
+  };
 
   if (readonly) return (
     <div>
@@ -803,28 +834,44 @@ function TaxForm({ data, onChange, readonly }) {
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead><tr>{["분류","업체","내용","금액(원)","처리","발행일","건수","비고"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
               <tbody>
-                {g.items.filter(it=>it.amount||it.vendor||it.content).map((it,ii)=>(
-                  <tr key={ii}>
-                    <td style={TD}>{it.category}</td><td style={TD}>{it.vendor}</td><td style={TD}>{it.content}</td>
-                    <td style={{...TD,textAlign:"right"}}>{it.amount?fmtNum(it.amount):"-"}</td>
-                    <td style={{...TD,textAlign:"center"}}>{it.method}</td>
-                    <td style={{...TD,textAlign:"center"}}>{it.issueDate}</td>
-                    <td style={{...TD,textAlign:"center"}}>{it.count?`${it.count}건`:""}</td>
-                    <td style={TD}>{it.note}</td>
-                  </tr>
-                ))}
-                <tr><td colSpan={3} style={{...TH,textAlign:"right"}}>소계</td>
-                  <td style={{...TH,textAlign:"right",color:"#dc2626"}}>{fmtNum(groupTotal(g))}</td>
-                  <td colSpan={4} style={TH}></td>
-                </tr>
+                {g.items.filter(it=>it.amount||it.vendor||it.content).map((it,ii)=>{
+                  const isBilled = it.method === "청구";
+                  const rowStyle = isBilled ? { background:BILLED_ROW_BG } : {};
+                  return (
+                    <tr key={ii} style={rowStyle}>
+                      <td style={{...TD,...rowStyle}}>{it.category}</td>
+                      <td style={{...TD,...rowStyle}}>{it.vendor}</td>
+                      <td style={{...TD,...rowStyle}}>{it.content}</td>
+                      <td style={{...TD,...rowStyle,textAlign:"right",color:isBilled?BILLED_AMT_CLR:"inherit"}}>
+                        {it.amount?fmtNum(it.amount):"-"}
+                      </td>
+                      <td style={{...TD,...rowStyle,textAlign:"center"}}>
+                        {isBilled
+                          ? <span style={{background:"#fde68a",color:"#92400e",borderRadius:4,padding:"1px 6px",fontSize:11,fontWeight:700}}>청구</span>
+                          : it.method}
+                      </td>
+                      <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.issueDate}</td>
+                      <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.count?`${it.count}건`:""}</td>
+                      <td style={{...TD,...rowStyle}}>{it.note}</td>
+                    </tr>
+                  );
+                })}
+                <SubtotalRow g={g} colSpanLeft={3} colSpanRight={4} />
               </tbody>
             </table>
             </div>
           </div>
         );
       })}
-      <div style={{textAlign:"right",fontWeight:800,fontSize:15,color:"#dc2626",padding:"10px 0",borderTop:"2px solid #e2e8f0"}}>
-        총 합계: {fmtNum(grandTotal)} 원
+      <div style={{textAlign:"right",padding:"10px 0",borderTop:"2px solid #e2e8f0"}}>
+        {grandBilled > 0 && (
+          <div style={{fontSize:13,fontWeight:700,color:BILLED_AMT_CLR,marginBottom:4}}>
+            총 청구(미지급): {fmtNum(grandBilled)} 원
+          </div>
+        )}
+        <div style={{fontSize:15,fontWeight:800,color:PAID_AMT_CLR}}>
+          총 실지출: {fmtNum(grandPaid)} 원
+        </div>
       </div>
     </div>
   );
@@ -846,26 +893,35 @@ function TaxForm({ data, onChange, readonly }) {
           <div style={{background:"#fff1f2",padding:"8px 14px",display:"flex",alignItems:"center",gap:10}}>
             <input style={{...S.input,fontWeight:800,fontSize:14,color:"#dc2626",border:"none",background:"transparent",padding:0,width:"auto"}}
               value={g.name} onChange={e=>updGroup(gi,"name",e.target.value)} />
-            <span style={{marginLeft:"auto",fontWeight:700,fontSize:13,color:"#dc2626"}}>소계: {fmtNum(groupTotal(g))} 원</span>
+            <span style={{marginLeft:"auto",display:"flex",gap:12,alignItems:"center"}}>
+              {groupBilled(g) > 0 && (
+                <span style={{fontSize:12,fontWeight:600,color:BILLED_AMT_CLR}}>청구: {fmtNum(groupBilled(g))} 원</span>
+              )}
+              <span style={{fontSize:13,fontWeight:700,color:PAID_AMT_CLR}}>실지출: {fmtNum(groupPaid(g))} 원</span>
+            </span>
             <button onClick={()=>delGroup(gi)} style={{border:"none",background:"none",cursor:"pointer",color:"#94a3b8",fontSize:18,padding:0}}>×</button>
           </div>
           <div style={{overflowX:"auto",padding:"0 0 8px"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:780}}>
             <thead><tr>{["분류","업체","내용","금액(원)","처리","발행일","건수","비고",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
             <tbody>
-              {(g.items||[]).map((it,ii)=>(
-                <tr key={it.id}>
-                  <td style={{...TD,width:90}}><input style={{...S.input,padding:"3px 6px",fontSize:11}} value={it.category} onChange={e=>updItem(gi,ii,"category",e.target.value)} /></td>
-                  <td style={{...TD,minWidth:120}}><input style={{...S.input,padding:"3px 6px",fontSize:11}} value={it.vendor} onChange={e=>updItem(gi,ii,"vendor",e.target.value)} /></td>
-                  <td style={{...TD,minWidth:140}}><input style={{...S.input,padding:"3px 6px",fontSize:11}} value={it.content} onChange={e=>updItem(gi,ii,"content",e.target.value)} /></td>
-                  <td style={{...TD,width:100}}><input type="number" style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"right"}} value={it.amount} onChange={e=>updItem(gi,ii,"amount",e.target.value)} /></td>
-                  <td style={{...TD,width:70}}><select style={{...S.select,padding:"3px 5px",fontSize:11}} value={it.method} onChange={e=>updItem(gi,ii,"method",e.target.value)}>{PAYMENT_METHODS.map(m=><option key={m}>{m}</option>)}</select></td>
-                  <td style={{...TD,width:100}}><input style={{...S.input,padding:"3px 6px",fontSize:11}} value={it.issueDate} onChange={e=>updItem(gi,ii,"issueDate",e.target.value)} placeholder="예: 1/15" /></td>
-                  <td style={{...TD,width:55}}><input style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"center"}} value={it.count} onChange={e=>updItem(gi,ii,"count",e.target.value)} /></td>
-                  <td style={{...TD,minWidth:80}}><input style={{...S.input,padding:"3px 6px",fontSize:11}} value={it.note} onChange={e=>updItem(gi,ii,"note",e.target.value)} /></td>
-                  <td style={{...TD,width:26}}><button onClick={()=>delItem(gi,ii)} style={{border:"none",background:"none",cursor:"pointer",color:"#dc2626",fontSize:15}}>✕</button></td>
-                </tr>
-              ))}
+              {(g.items||[]).map((it,ii)=>{
+                const isBilled = it.method === "청구";
+                const rowBg = isBilled ? BILLED_ROW_BG : "transparent";
+                return (
+                  <tr key={it.id} style={{background:rowBg}}>
+                    <td style={{...TD,width:90,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,background:"transparent"}} value={it.category} onChange={e=>updItem(gi,ii,"category",e.target.value)} /></td>
+                    <td style={{...TD,minWidth:120,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,background:"transparent"}} value={it.vendor} onChange={e=>updItem(gi,ii,"vendor",e.target.value)} /></td>
+                    <td style={{...TD,minWidth:140,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,background:"transparent"}} value={it.content} onChange={e=>updItem(gi,ii,"content",e.target.value)} /></td>
+                    <td style={{...TD,width:100,background:rowBg}}><input type="number" style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"right",background:"transparent",color:isBilled?BILLED_AMT_CLR:"inherit"}} value={it.amount} onChange={e=>updItem(gi,ii,"amount",e.target.value)} /></td>
+                    <td style={{...TD,width:70,background:rowBg}}><select style={{...S.select,padding:"3px 5px",fontSize:11,background:isBilled?"#fde68a":"",fontWeight:isBilled?700:400,color:isBilled?"#92400e":""}} value={it.method} onChange={e=>updItem(gi,ii,"method",e.target.value)}>{PAYMENT_METHODS.map(m=><option key={m}>{m}</option>)}</select></td>
+                    <td style={{...TD,width:100,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,background:"transparent"}} value={it.issueDate} onChange={e=>updItem(gi,ii,"issueDate",e.target.value)} placeholder="예: 1/15" /></td>
+                    <td style={{...TD,width:55,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"center",background:"transparent"}} value={it.count} onChange={e=>updItem(gi,ii,"count",e.target.value)} /></td>
+                    <td style={{...TD,minWidth:80,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,background:"transparent"}} value={it.note} onChange={e=>updItem(gi,ii,"note",e.target.value)} /></td>
+                    <td style={{...TD,width:26,background:rowBg}}><button onClick={()=>delItem(gi,ii)} style={{border:"none",background:"none",cursor:"pointer",color:"#dc2626",fontSize:15}}>✕</button></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           </div>
@@ -876,7 +932,12 @@ function TaxForm({ data, onChange, readonly }) {
       ))}
       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:16}}>
         <button style={{...S.btnSec,fontSize:12}} onClick={addGroup}>+ 구분 추가</button>
-        <span style={{marginLeft:"auto",fontWeight:800,fontSize:15,color:"#dc2626"}}>총 합계: {fmtNum(grandTotal)} 원</span>
+        <span style={{marginLeft:"auto",display:"flex",gap:16,alignItems:"center"}}>
+          {grandBilled > 0 && (
+            <span style={{fontSize:13,fontWeight:700,color:BILLED_AMT_CLR}}>청구(미지급): {fmtNum(grandBilled)} 원</span>
+          )}
+          <span style={{fontSize:15,fontWeight:800,color:PAID_AMT_CLR}}>총 실지출: {fmtNum(grandPaid)} 원</span>
+        </span>
       </div>
     </div>
   );
@@ -1011,6 +1072,65 @@ export default function ApprovalPage() {
     setSaving(false);
   };
 
+  // 물품청구서 승인 시 해당 월 세금계산서에 자동 반영
+  const addSupplyToTax = async (supplyDoc) => {
+    const now = new Date();
+    const approvalMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+    const approvalDateStr = `${now.getMonth()+1}/${now.getDate()}`;
+    const dept = supplyDoc.formData?.department || "";
+    const docNum = supplyDoc.docNumber || "";
+
+    const newItems = (supplyDoc.formData?.items||[])
+      .filter(it => it.name)
+      .map(it => ({
+        id: uid7(),
+        category: "물품비",
+        vendor: "",
+        content: `${it.name}${it.unit ? ` (${it.unit})` : ""}`,
+        amount: String((Number(it.qty)||0) * (Number(it.price)||0)),
+        method: "계좌",
+        issueDate: approvalDateStr,
+        count: String(it.qty||1),
+        note: [dept && `[${dept}]`, it.note].filter(Boolean).join(" "),
+      }));
+
+    if (newItems.length === 0) return;
+
+    const groupMeta = [dept, docNum].filter(Boolean).join(" · ");
+    const groupName = groupMeta ? `물품청구서 (${groupMeta})` : "물품청구서";
+    const newGroup = { name: groupName, items: newItems };
+
+    // 해당 월 세금계산서 탐색 (draft 우선, 없으면 최신)
+    const taxEntries = Object.entries(docs)
+      .filter(([,d]) => d.type === "tax" && d.formData?.reportMonth === approvalMonth)
+      .sort((a,b) => b[1].updatedAt - a[1].updatedAt);
+
+    if (taxEntries.length > 0) {
+      const [taxId, taxDoc] = taxEntries.find(([,d]) => d.status === "draft") || taxEntries[0];
+      const updatedGroups = [...(taxDoc.formData?.groups||[]), newGroup];
+      await update(ref(db, `approvals/${taxId}`), {
+        "formData/groups": updatedGroups,
+        updatedAt: Date.now(),
+      });
+      const statusLabel = taxDoc.status === "draft" ? "임시저장" : taxDoc.status === "approved" ? "승인됨" : taxDoc.status === "final" ? "전결" : "진행중";
+      alert(`✅ ${approvalMonth} 세금계산서(${statusLabel})에 물품청구 항목 ${newItems.length}건이 추가되었습니다.`);
+    } else {
+      // 해당 월 세금계산서 없으면 draft로 신규 생성
+      const docNumber = await getNextDocNumber("tax");
+      const newDocRef = push(ref(db, "approvals"));
+      await set(newDocRef, {
+        docNumber, type: "tax", title: DOC_TYPES.tax.label,
+        authorUid: user.uid, authorName: profile.name, authorDept: profile.department,
+        createdAt: Date.now(), updatedAt: Date.now(),
+        status: "draft", currentApproverUid: null,
+        formData: { reportMonth: approvalMonth, groups: [newGroup] },
+        fileUrls: [],
+        history: [{ action:"auto_created", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:`물품청구서(${docNum}) 승인으로 자동 생성` }],
+      });
+      alert(`✅ ${approvalMonth} 세금계산서가 없어 임시저장 문서를 새로 생성하고 물품청구 항목 ${newItems.length}건을 추가했습니다.`);
+    }
+  };
+
   const handleApprove = async (docId, isFinal = false) => {
     setActionLoading(true);
     const doc = docs[docId];
@@ -1026,6 +1146,10 @@ export default function ApprovalPage() {
       status: newStatus, currentApproverUid: nextApproverUid, updatedAt: Date.now(),
       history: [...(doc.history||[]), { action: isFinal?"final":"approved", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:"" }],
     });
+    // 물품청구서가 최종 승인(approved/final)된 경우 세금계산서에 자동 반영
+    if (doc.type === "supply" && (newStatus === "approved" || newStatus === "final")) {
+      await addSupplyToTax(doc);
+    }
     setActionLoading(false);
     alert(isFinal ? "전결 처리 완료" : "승인 완료");
   };

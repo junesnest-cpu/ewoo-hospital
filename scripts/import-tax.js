@@ -49,6 +49,19 @@ function parseCount(val) {
   return m ? m[1] : "1";
 }
 
+function countRealDates(issd) {
+  if (!issd) return 1;
+  const clean = String(issd).replace(/\([^)]*\)/g, " ");
+  const m = clean.match(/\b\d{1,2}\/\d{1,2}\b/g);
+  return m ? m.length : 1;
+}
+
+function resolveCount(cntRaw, issd) {
+  if (cntRaw !== "1" || !issd) return cntRaw;
+  const dateCount = countRealDates(issd);
+  return dateCount > 1 ? String(dateCount) : cntRaw;
+}
+
 function cleanGroupName(raw) {
   return String(raw || "").replace(/\r\n/g, " ").trim();
 }
@@ -123,7 +136,7 @@ function parseNewFormat(ws) {
     const meth  = String(row[5] || "").trim();
     const issd  = String(row[6] || "").trim();
     const note  = String(row[7] || "").trim();
-    const cnt   = parseCount(row[8]);
+    const cnt   = resolveCount(parseCount(row[8]), issd);
 
     // 새 그룹 시작
     if (c0 !== null && c0 !== "") {
