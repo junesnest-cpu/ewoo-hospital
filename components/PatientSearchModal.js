@@ -9,8 +9,7 @@
 
 import { useState } from "react";
 import {
-  findPatientByPhone,
-  searchPatientsByName,
+  searchPatients,
   registerNewPatient,
   normalizePhone,
 } from "../lib/patientSearch";
@@ -55,12 +54,11 @@ const S = {
 };
 
 export default function PatientSearchModal({ onSelect, onClose }) {
-  const [tab,       setTab]       = useState("search"); // "search" | "new"
-  const [query,     setQuery]     = useState("");
-  const [queryType, setQueryType] = useState("phone"); // "phone" | "name"
-  const [results,   setResults]   = useState(null); // null=미검색
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState("");
+  const [tab,     setTab]     = useState("search"); // "search" | "new"
+  const [query,   setQuery]   = useState("");
+  const [results, setResults] = useState(null); // null=미검색
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
 
   // 신규 등록 폼
   const [form, setForm] = useState({
@@ -75,13 +73,8 @@ export default function PatientSearchModal({ onSelect, onClose }) {
     if (!query.trim()) return;
     setLoading(true); setError(""); setResults(null);
     try {
-      if (queryType === "phone") {
-        const p = await findPatientByPhone(query.trim());
-        setResults(p ? [p] : []);
-      } else {
-        const list = await searchPatientsByName(query.trim());
-        setResults(list);
-      }
+      const list = await searchPatients(query.trim());
+      setResults(list);
     } catch(e) {
       setError("검색 오류: " + e.message);
     }
@@ -132,24 +125,10 @@ export default function PatientSearchModal({ onSelect, onClose }) {
           {/* ── 검색 탭 ────────────────────────────────────────────────── */}
           {tab === "search" && (
             <>
-              {/* 검색 유형 선택 */}
-              <div style={{ display:"flex", gap:6, marginBottom:8 }}>
-                {[["phone","📱 전화번호"],["name","👤 이름"]].map(([t,l])=>(
-                  <button key={t} onClick={()=>{setQueryType(t);setQuery("");setResults(null);}}
-                    style={{ padding:"5px 14px", borderRadius:6, border:"1.5px solid",
-                      cursor:"pointer", fontSize:13, fontWeight:700,
-                      borderColor: queryType===t ? "#0f2744":"#e2e8f0",
-                      background:  queryType===t ? "#0f2744":"#f8fafc",
-                      color:       queryType===t ? "#fff":"#64748b" }}>
-                    {l}
-                  </button>
-                ))}
-              </div>
-
               <div style={{ display:"flex", gap:6 }}>
                 <input
                   style={{ ...S.input, flex:1 }}
-                  placeholder={queryType==="phone" ? "010-0000-0000" : "환자 이름"}
+                  placeholder="이름 또는 전화번호 입력"
                   value={query}
                   onChange={e=>setQuery(e.target.value)}
                   onKeyDown={e=>e.key==="Enter"&&doSearch()}
@@ -169,10 +148,9 @@ export default function PatientSearchModal({ onSelect, onClose }) {
                       <div style={{ marginTop:8 }}>
                         <button style={{ ...S.btn("#7c3aed"), fontSize:12 }}
                           onClick={()=>{
-                            setTab("new");
-                            setError("");
-                            // 전화번호 검색이었으면 폼에 자동 입력
-                            if(queryType==="phone") setF("phone", query);
+                            setTab("new"); setError("");
+                            // 숫자만이면 전화번호, 아니면 이름으로 자동 입력
+                            if (/^\d[\d\-]+$/.test(query.trim())) setF("phone", query);
                             else setF("name", query);
                           }}>
                           ➕ 신규 환자로 등록

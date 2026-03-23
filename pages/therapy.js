@@ -647,7 +647,7 @@ export default function TherapyPage() {
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
                                       {ca?(()=>{const {roomId:caR,bedNum:caB}=getRoomFromCell(ca);const caNL=(ca.patientName||"").length;return(
                                         <>
-                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:caNL>5?"ellipsis":"clip"}}>
+                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:caNL>5?"ellipsis":"clip"}}>
                                             {ca.patientName}
                                           </div>
                                           {ca.isOuter
@@ -668,7 +668,7 @@ export default function TherapyPage() {
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
                                       {cb?(()=>{const {roomId:cbR,bedNum:cbB}=getRoomFromCell(cb);const cbNL=(cb.patientName||"").length;return(
                                         <>
-                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:cbNL>5?"ellipsis":"clip"}}>
+                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:cbNL>5?"ellipsis":"clip"}}>
                                             {cb.patientName}
                                           </div>
                                           {cb.isOuter
@@ -708,7 +708,7 @@ export default function TherapyPage() {
                                     const nameLen=(cell.patientName||"").length;
                                     return (
                                     <>
-                                      <div style={{fontSize:isMobile?14:13,fontWeight:800,color:col,lineHeight:1.4,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip"}}>
+                                      <div style={{fontSize:isMobile?14:13,fontWeight:800,color:"#1e293b",lineHeight:1.4,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip"}}>
                                         {cell.patientName}
                                       </div>
                                       {cell.isOuter
