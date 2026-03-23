@@ -552,7 +552,7 @@ export default function TherapyPage() {
                 const date=weekDates[di]; const isWe=di>=5;
                 const isToday=isThisWeek&&new Date().getDay()===(di===6?0:di+1);
                 return (
-                  <th key={di} style={{...S.thDay,background:isToday?"#fef3c7":isWe?"#dbeafe":"#f1f5f9",color:isToday?"#92400e":isWe?"#1d4ed8":"#0f2744",padding:"7px 4px"}}>
+                  <th key={di} style={{...S.thDay,background:isToday?"#fef3c7":isWe?"#dbeafe":"#f1f5f9",color:isToday?"#92400e":isWe?"#1d4ed8":"#0f2744",padding:"7px 4px",borderLeft:"2px solid #94a3b8"}}>
                     <div style={{fontSize:14,fontWeight:800}}>{DAYS[di]}</div>
                     <div style={{fontSize:12,color:isToday?"#b45309":isWe?"#3b82f6":"#64748b"}}>{date?fmtDate(date):""}</div>
                   </th>
@@ -561,7 +561,7 @@ export default function TherapyPage() {
             </tr>
             <tr>
               {dayCols.map(di=>(
-                <th key={di} style={{padding:"5px 4px",background:"#fff",borderBottom:"2px solid #e2e8f0"}}>
+                <th key={di} style={{padding:"5px 4px",background:"#fff",borderBottom:"2px solid #e2e8f0",borderLeft:"2px solid #94a3b8"}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:3}}>
                     {ROOMS.map(r=>(
                       <div key={r.id} style={{background:r.color,color:"#fff",borderRadius:4,padding:"5px 0",
@@ -582,8 +582,19 @@ export default function TherapyPage() {
                 return Array.from(s).sort((a,b)=>timeVal(a)-timeVal(b));
               })();
 
+              // 점심시간은 해당 주에 데이터가 하나라도 있을 때만 표시
+              const lunchHasData=(()=>{
+                for(let di=0;di<7;di++){
+                  const dis=String(di);
+                  if(physSched[wk]?.th1?.[dis]?.[LUNCH]||physSched[wk]?.th2?.[dis]?.[LUNCH]) return true;
+                  if(hyperSched[wk]?.hyperthermia?.[dis]?.[LUNCH]||hyperSched[wk]?.hyperbaric?.[dis]?.[LUNCH]) return true;
+                }
+                return false;
+              })();
+
               return allTimesUnion.map(time=>{
                 const isLunch=time===LUNCH;
+                if(isLunch&&!lunchHasData) return null;
                 const isCustom=!TIMES.includes(time);
                 return (
                   <tr key={time} style={{borderBottom:"1px solid #e2e8f0"}}>
@@ -598,7 +609,7 @@ export default function TherapyPage() {
                       if(isLunch) return <td key={dayIdx} style={{background:"#f8fafc",textAlign:"center",color:"#cbd5e1",fontSize:12}}>—</td>;
                       const conflicts=getConflicts(dayIdx,time);
                       return (
-                        <td key={dayIdx} style={{padding:"3px 4px",verticalAlign:"top",background:isCustom?"#fefce8":"#fff"}}>
+                        <td key={dayIdx} style={{padding:"3px 4px",verticalAlign:"top",background:isCustom?"#fefce8":"#fff",borderLeft:"2px solid #cbd5e1"}}>
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:3,height:90}}>
                             {ROOMS.map(r=>{
                               // ── 고압산소 칸: A(정시)/B(+30분) ────────────────
@@ -627,14 +638,15 @@ export default function TherapyPage() {
                                       background:ca?"#bae6fd":"#f0f9ff",
                                       border:icA?"1.5px solid #dc2626":"1px solid #7dd3fc",
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
-                                      {ca?(()=>{const {roomId:caR,bedNum:caB}=getRoomFromCell(ca);return(
+                                      {ca?(()=>{const {roomId:caR,bedNum:caB}=getRoomFromCell(ca);const caNL=(ca.patientName||"").length;return(
                                         <>
-                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:caNL>5?"ellipsis":"clip"}}>
                                             {ca.patientName}
                                           </div>
-                                          {caR&&<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{caR}-{caB}</div>}
+                                          {ca.isOuter
+                                            ?<div style={{fontSize:8,fontWeight:700}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px"}}>외래</span></div>
+                                            :caR?<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{caR}-{caB}</div>:null}
                                           <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1}}>
-                                            {ca.isOuter&&<span style={{fontSize:8,color:"#d97706",fontWeight:700,background:"#fef3c7",borderRadius:3,padding:"0 3px"}}>외래</span>}
                                             {ca.isPending&&<span style={{fontSize:8,color:"#f59e0b",fontWeight:700,background:"#fff7ed",borderRadius:3,padding:"0 3px"}}>예정</span>}
                                           </div>
                                           <button onClick={e=>{e.stopPropagation();if(!confirm("삭제?"))return;saveHyper("hyperbaric",dayIdx,time,null,"a");}}
@@ -647,14 +659,15 @@ export default function TherapyPage() {
                                       background:cb?"#e0f2fe":"#f0f9ff",
                                       border:icB?"1.5px solid #dc2626":"1px solid #7dd3fc",
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
-                                      {cb?(()=>{const {roomId:cbR,bedNum:cbB}=getRoomFromCell(cb);return(
+                                      {cb?(()=>{const {roomId:cbR,bedNum:cbB}=getRoomFromCell(cb);const cbNL=(cb.patientName||"").length;return(
                                         <>
-                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#075985",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:cbNL>5?"ellipsis":"clip"}}>
                                             {cb.patientName}
                                           </div>
-                                          {cbR&&<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{cbR}-{cbB}</div>}
+                                          {cb.isOuter
+                                            ?<div style={{fontSize:8,fontWeight:700}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px"}}>외래</span></div>
+                                            :cbR?<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{cbR}-{cbB}</div>:null}
                                           <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1}}>
-                                            {cb.isOuter&&<span style={{fontSize:8,color:"#d97706",fontWeight:700,background:"#fef3c7",borderRadius:3,padding:"0 3px"}}>외래</span>}
                                             {cb.isPending&&<span style={{fontSize:8,color:"#f59e0b",fontWeight:700,background:"#fff7ed",borderRadius:3,padding:"0 3px"}}>예정</span>}
                                           </div>
                                           <button onClick={e=>{e.stopPropagation();if(!confirm("삭제?"))return;saveHyper("hyperbaric",dayIdx,time,null,"b");}}
@@ -696,13 +709,15 @@ export default function TherapyPage() {
                                     position:"relative",overflow:"hidden",boxSizing:"border-box"}}>
                                   {cell?(()=>{
                                     const {roomId:cRoomId,bedNum:cBedNum}=getRoomFromCell(cell);
+                                    const nameLen=(cell.patientName||"").length;
                                     return (
                                     <>
-                                      <div style={{fontSize:isMobile?14:13,fontWeight:800,color:col,lineHeight:1.4,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                                      <div style={{fontSize:isMobile?14:13,fontWeight:800,color:col,lineHeight:1.4,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip"}}>
                                         {cell.patientName}
-                                        {cell.isOuter&&<span style={{color:"#d97706",fontSize:9,fontWeight:700}}> 외</span>}
                                       </div>
-                                      {cRoomId&&<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600}}>{cRoomId}-{cBedNum}</div>}
+                                      {cell.isOuter
+                                        ?<div style={{fontSize:isMobile?11:10,lineHeight:1.2,fontWeight:700}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px",fontSize:isMobile?10:9}}>외래</span></div>
+                                        :cRoomId?<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600}}>{cRoomId}-{cBedNum}</div>:null}
                                       {tr2&&<div style={{fontSize:isMobile?12:11,color:tr2.color,fontWeight:800,lineHeight:1.3}}>{tr2.short}</div>}
                                       {cell.memo&&<div style={{fontSize:isMobile?10:9,color:"#475569",lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",maxWidth:"100%",marginTop:1}}>💬 {cell.memo}</div>}
                                       {cell.isPending&&<div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>예정</div>}
