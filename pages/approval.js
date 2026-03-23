@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ref, onValue, set, get, push, runTransaction, update } from "firebase/database";
+import { ref, onValue, set, get, push, runTransaction, update, remove } from "firebase/database";
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { db, auth, storage } from "../lib/firebaseConfig";
 import { parseRefundExcel, parseWeeklyExcel, parseTaxExcel } from "../lib/excelParsers";
@@ -967,11 +967,12 @@ export default function ApprovalPage() {
   const [rejectMemo,  setRejectMemo]  = useState("");
   const [actionLoading, setActionLoading] = useState(false);
 
-  // 새 문서 작성
+  // 새 문서 작성 / 임시저장 편집
   const [formData,   setFormData]   = useState({});
   const [files,      setFiles]      = useState([]);
   const [tempDocId]                 = useState(uid7());
   const [saving,     setSaving]     = useState(false);
+  const [editDocId,  setEditDocId]  = useState(null); // 임시저장 편집 중인 docId
 
   // Auth 감지
   useEffect(() => {
@@ -1184,6 +1185,47 @@ export default function ApprovalPage() {
     alert("제출 완료");
   };
 
+  // 임시저장 문서 수정 저장 (draft 유지)
+  const handleUpdateDraft = async () => {
+    if (!editDocId) return;
+    setSaving(true);
+    try {
+      await update(ref(db, `approvals/${editDocId}`), { formData, fileUrls: files, updatedAt: Date.now() });
+      alert("임시저장 완료");
+      setView("detail");
+    } catch(e) { alert("오류: " + e.message); }
+    setSaving(false);
+  };
+
+  // 임시저장 문서 수정 후 제출
+  const handleUpdateAndSubmit = async () => {
+    if (!editDocId) return;
+    setSaving(true);
+    try {
+      const doc = docs[editDocId];
+      const docNumber = await getNextDocNumber(doc.type);
+      const next = findNextApprover(doc.type, profile.role, profile.department);
+      await update(ref(db, `approvals/${editDocId}`), {
+        formData, fileUrls: files, updatedAt: Date.now(),
+        docNumber, status: next?.status||"approved", currentApproverUid: next?.uid||null,
+        history: [{ action:"submitted", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:"" }],
+      });
+      setView("list"); setEditDocId(null); setFormData({}); setFiles([]);
+      alert("제출 완료");
+    } catch(e) { alert("오류: " + e.message); }
+    setSaving(false);
+  };
+
+  // 임시저장 문서 삭제
+  const handleDeleteDraft = async (docId) => {
+    if (!window.confirm("이 임시저장 문서를 삭제하시겠습니까?\n삭제 후 복구할 수 없습니다.")) return;
+    try {
+      await remove(ref(db, `approvals/${docId}`));
+      setView("list"); setSelectedId(null); setEditDocId(null);
+      alert("삭제 완료");
+    } catch(e) { alert("오류: " + e.message); }
+  };
+
   // 로딩/미로그인
   if (loading) return <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", fontSize:16 }}>로딩 중...</div>;
   if (!user)   return <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", fontSize:16 }}>로그인이 필요합니다.</div>;
@@ -1278,12 +1320,71 @@ export default function ApprovalPage() {
               <button style={S.btnPri} onClick={()=>handleResubmit(selectedId)}>↩ 수정 후 재제출</button>
             </div>
           )}
-          {/* 임시저장 내 문서: 제출 */}
+          {/* 임시저장 내 문서: 수정 / 제출 / 삭제 */}
           {isMine && doc.status==="draft" && (
-            <div style={{ ...S.card, display:"flex", gap:12, justifyContent:"center" }}>
+            <div style={{ ...S.card, display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
+              <button style={{ ...S.btnSec, background:"#f0f9ff", color:"#0369a1", border:"1.5px solid #7dd3fc" }}
+                onClick={()=>{
+                  setEditDocId(selectedId);
+                  setFormData(doc.formData || {});
+                  setFiles(doc.fileUrls || []);
+                  setView("edit");
+                }}>
+                ✏️ 수정
+              </button>
               <button style={S.btnPri} onClick={()=>handleDraftSubmit(selectedId)}>→ 제출하기</button>
+              <button style={{ ...S.btnRed, background:"#fff1f2" }}
+                onClick={()=>handleDeleteDraft(selectedId)}>
+                🗑 삭제
+              </button>
             </div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── 임시저장 편집 뷰 ─────────────────────────────────────────────────────────
+  if (view === "edit" && editDocId) {
+    const editDoc = docs[editDocId];
+    if (!editDoc) { setView("list"); return null; }
+    const typeInfo = DOC_TYPES[editDoc.type] || DOC_TYPES.vacation;
+    const cancelEdit = () => { setView("detail"); setEditDocId(null); };
+    return (
+      <div style={S.page}>
+        <header style={S.header}>
+          <button onClick={cancelEdit}
+            style={{ border:"none", background:"rgba(255,255,255,0.15)", color:"#fff", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:13 }}>
+            ← 취소
+          </button>
+          <img src="/favicon.png" style={{ width:30, height:30, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
+          <div style={{ flex:1, fontWeight:800, fontSize:16 }}>{typeInfo.label} 수정</div>
+          <div style={{ fontSize:12, color:"#94a3b8" }}>
+            {editDoc.docNumber || "임시저장"} · {editDoc.authorName}
+          </div>
+        </header>
+        <div style={S.main}>
+          <div style={{ background:"#fef9c3", border:"1.5px solid #fde047", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#713f12" }}>
+            ✏️ 임시저장 문서를 수정 중입니다. 저장 후에도 임시저장 상태가 유지됩니다.
+          </div>
+          <div style={S.card}>
+            <div style={{ ...S.sectionTit, color: typeInfo.color }}>{typeInfo.label}</div>
+            {renderDocForm(editDoc.type, formData, setFormData, editDocId, files, setFiles, false)}
+          </div>
+          <div style={{ display:"flex", gap:10, justifyContent:"space-between", flexWrap:"wrap" }}>
+            <button style={{ ...S.btnRed, background:"#fff1f2", fontSize:13 }}
+              onClick={()=>handleDeleteDraft(editDocId)} disabled={saving}>
+              🗑 삭제
+            </button>
+            <div style={{ display:"flex", gap:10 }}>
+              <button style={S.btnSec} onClick={handleUpdateDraft} disabled={saving}>
+                {saving ? "저장 중..." : "💾 임시저장"}
+              </button>
+              <button style={S.btnPri} onClick={handleUpdateAndSubmit} disabled={saving}>
+                {saving ? "처리 중..." : "→ 제출하기"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1582,16 +1683,42 @@ export default function ApprovalPage() {
           )}
           {displayDocs.map(([id, doc]) => {
             const t = DOC_TYPES[doc.type] || DOC_TYPES.vacation;
+            const isDraft = doc.status === "draft";
+            const isMineDoc = doc.authorUid === user.uid;
             return (
-              <div key={id} style={S.docRow}
+              <div key={id}
+                style={{ ...S.docRow, ...(isDraft ? { background:"#fefce8", borderLeft:"3px solid #fde047" } : {}) }}
                 onClick={()=>{setSelectedId(id);setView("detail");}}
-                onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
-                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                <span style={{ fontFamily:"monospace", fontSize:12, color:"#64748b", flexShrink:0, minWidth:110 }}>{doc.docNumber||"임시저장"}</span>
+                onMouseEnter={e=>e.currentTarget.style.background=isDraft?"#fef9c3":"#f8fafc"}
+                onMouseLeave={e=>e.currentTarget.style.background=isDraft?"#fefce8":"transparent"}>
+                <span style={{ fontFamily:"monospace", fontSize:12, color: isDraft?"#92400e":"#64748b", flexShrink:0, minWidth:110, fontStyle: isDraft?"italic":"normal" }}>
+                  {doc.docNumber || "임시저장"}
+                </span>
                 <span style={S.badge(t.color, t.bg)}>{t.label}</span>
                 <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{doc.authorName}</span>
-                <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{fmtTs(doc.createdAt).slice(0,10)}</span>
+                <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{fmtTs(doc.updatedAt||doc.createdAt).slice(0,10)}</span>
                 <StatusBadge status={doc.status} />
+                {/* 내 임시저장 문서: 빠른 수정/삭제 버튼 */}
+                {isDraft && isMineDoc && (
+                  <div style={{ display:"flex", gap:4, flexShrink:0, marginLeft:4 }} onClick={e=>e.stopPropagation()}>
+                    <button
+                      style={{ border:"1px solid #7dd3fc", background:"#f0f9ff", color:"#0369a1", borderRadius:6, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:700 }}
+                      onClick={()=>{
+                        setSelectedId(id);
+                        setEditDocId(id);
+                        setFormData(doc.formData || {});
+                        setFiles(doc.fileUrls || []);
+                        setView("edit");
+                      }}>
+                      수정
+                    </button>
+                    <button
+                      style={{ border:"1px solid #fca5a5", background:"#fff1f2", color:"#dc2626", borderRadius:6, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:700 }}
+                      onClick={()=>handleDeleteDraft(id)}>
+                      삭제
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
