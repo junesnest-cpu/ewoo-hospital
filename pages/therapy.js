@@ -200,18 +200,30 @@ export default function TherapyPage() {
   const openModal=(roomId,dayIdx,time)=>{
     if(roomId==="th1"||roomId==="th2"){
       const ex=getCell(roomId,dayIdx,time);
-      setPhysSlot(ex?.slotKey||""); setPhysTreat(ex?.treatmentId||"");
-      setPhysMemo(ex?.memo||""); setPhysOuter(ex?.isOuter||false); setPhysPend("");
-      setPhysDbName(ex?.slotKey?.startsWith("db_") ? (ex.patientName||"") : "");
+      const isPend=ex?.isPending||ex?.slotKey?.startsWith("pending_");
+      setPhysSlot(isPend?"__pending__":(ex?.slotKey||""));
+      setPhysTreat(ex?.treatmentId||"");
+      setPhysMemo(ex?.memo||""); setPhysOuter(ex?.isOuter||false);
+      setPhysPend(isPend?(ex?.patientName||"):"");
+      setPhysDbName((!isPend&&ex?.slotKey?.startsWith("db_"))?(ex.patientName||""):"");
     } else {
       const exH=getCell("hyperthermia",dayIdx,time);
       const exHBa=getHBCell(dayIdx,time,"a"), exHBb=getHBCell(dayIdx,time,"b");
-      setSelHyper(exH?.slotKey||""); setHyperMemo(exH?.memo||""); setHyperOuter(exH?.isOuter||false); setPendH("");
-      setSelHBa(exHBa?.slotKey||""); setPendHBa(""); setSelHBb(exHBb?.slotKey||""); setPendHBb(""); setHyperBMemo("");
+      const isHPend=exH?.isPending||exH?.slotKey?.startsWith("pending_");
+      const isHBaPend=exHBa?.isPending||exHBa?.slotKey?.startsWith("pending_");
+      const isHBbPend=exHBb?.isPending||exHBb?.slotKey?.startsWith("pending_");
+      setSelHyper(isHPend?"__pending__":(exH?.slotKey||""));
+      setHyperMemo(exH?.memo||""); setHyperOuter(exH?.isOuter||false);
+      setPendH(isHPend?(exH?.patientName||"):"");
+      setSelHBa(isHBaPend?"__pending__":(exHBa?.slotKey||""));
+      setPendHBa(isHBaPend?(exHBa?.patientName||"):"");
+      setSelHBb(isHBbPend?"__pending__":(exHBb?.slotKey||""));
+      setPendHBb(isHBbPend?(exHBb?.patientName||"):"");
+      setHyperBMemo("");
       setHyperDbNames({
-        hyper: exH?.slotKey?.startsWith("db_") ? (exH.patientName||"") : "",
-        hba:   exHBa?.slotKey?.startsWith("db_") ? (exHBa.patientName||"") : "",
-        hbb:   exHBb?.slotKey?.startsWith("db_") ? (exHBb.patientName||"") : "",
+        hyper: (!isHPend&&exH?.slotKey?.startsWith("db_"))?(exH.patientName||""):"",
+        hba:   (!isHBaPend&&exHBa?.slotKey?.startsWith("db_"))?(exHBa.patientName||""):"",
+        hbb:   (!isHBbPend&&exHBb?.slotKey?.startsWith("db_"))?(exHBb.patientName||""):"",
       });
     }
     setShowExtra(false); setExtraTime(""); setModal({roomId,dayIdx,time});
@@ -620,17 +632,12 @@ export default function TherapyPage() {
                                 return (
                                   <div key={r.id}
                                     onClick={()=>{
-                                      if(moveMode){
-                                        const srcIsHB=moveMode.roomId==="hyperbaric";
-                                        if(srcIsHB) doMoveOrCopy("hyperbaric",dayIdx,time);
-                                        else window.alert("같은 종류의 칸으로만 이동/복사할 수 있습니다.");
-                                        return;
-                                      }
+                                      if(moveMode){ doMoveOrCopy("hyperbaric",dayIdx,time); return; }
                                       openModal(r.id,dayIdx,time);
                                     }}
-                                    style={{background:moveMode&&moveMode.roomId==="hyperbaric"?"#e0f2fe":r.bg,
+                                    style={{background:moveMode?"#e0f2fe":r.bg,
                                       borderRadius:5,cursor:moveMode?"crosshair":"pointer",padding:"2px",
-                                      border:moveMode&&moveMode.roomId==="hyperbaric"?"2px dashed #f59e0b":`1px solid ${r.color}33`,
+                                      border:moveMode?"2px dashed #f59e0b":`1px solid ${r.color}33`,
                                       display:"flex",flexDirection:"column",gap:2,
                                       overflow:"hidden",boxSizing:"border-box"}}>
                                     {/* A슬롯 정시 */}
@@ -688,23 +695,12 @@ export default function TherapyPage() {
                               return (
                                 <div key={r.id}
                                   onClick={()=>{
-                                    if(moveMode){
-                                      const srcIsPhys=moveMode.roomId==="th1"||moveMode.roomId==="th2";
-                                      const dstIsPhys=r.id==="th1"||r.id==="th2";
-                                      const srcIsHyper=moveMode.roomId==="hyperthermia";
-                                      const dstIsHyper=r.id==="hyperthermia";
-                                      if(srcIsPhys&&dstIsPhys) doMoveOrCopy(r.id,dayIdx,time);
-                                      else if(srcIsHyper&&dstIsHyper) doMoveOrCopy(r.id,dayIdx,time);
-                                      else window.alert("같은 종류의 칸으로만 이동/복사할 수 있습니다.");
-                                      return;
-                                    }
+                                    if(moveMode){ doMoveOrCopy(r.id,dayIdx,time); return; }
                                     openModal(r.id,dayIdx,time);
                                   }}
-                                  style={{background:moveMode&&(r.id==="th1"||r.id==="th2"||(r.id==="hyperthermia"&&moveMode.roomId==="hyperthermia"))?
-                                    (moveMode.roomId===r.id&&moveMode.dayIdx===dayIdx&&moveMode.time===time?"#fef3c7":"#fff7ed"):bg,
+                                  style={{background:moveMode?(moveMode.roomId===r.id&&moveMode.dayIdx===dayIdx&&moveMode.time===time?"#fef3c7":"#fff7ed"):bg,
                                     borderRadius:5,cursor:moveMode?"crosshair":"pointer",padding:"5px 6px",
-                                    border:moveMode&&(r.id==="th1"||r.id==="th2"||(r.id==="hyperthermia"&&moveMode.roomId==="hyperthermia"))?"2px dashed #f59e0b":
-                                      isConflict?"2px solid #dc2626":`1px solid ${col}44`,
+                                    border:moveMode?"2px dashed #f59e0b":isConflict?"2px solid #dc2626":`1px solid ${col}44`,
                                     display:"flex",flexDirection:"column",justifyContent:"center",
                                     position:"relative",overflow:"hidden",boxSizing:"border-box"}}>
                                   {cell?(()=>{
