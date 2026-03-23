@@ -714,7 +714,7 @@ export default function TherapyPage() {
                                       {cell.isOuter
                                         ?<div style={{fontSize:isMobile?11:10,lineHeight:1.2,fontWeight:700}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px",fontSize:isMobile?10:9}}>외래</span></div>
                                         :cRoomId?<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600}}>{cRoomId}-{cBedNum}</div>:null}
-                                      {tr2&&<div style={{fontSize:isMobile?12:11,color:tr2.color,fontWeight:800,lineHeight:1.3}}>{tr2.short}</div>}
+                                      {tr2&&<div style={{fontSize:isMobile?12:11,fontWeight:800,lineHeight:1.3}}><span style={{background:tr2.color,color:"#fff",borderRadius:3,padding:"0 3px",fontSize:isMobile?11:9}}>{tr2.short}</span></div>}
                                       {cell.memo&&<div style={{fontSize:isMobile?10:9,color:"#475569",lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",maxWidth:"100%",marginTop:1}}>💬 {cell.memo}</div>}
                                       {cell.isPending&&<div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>예정</div>}
                                       {isConflict&&<div style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:"#dc2626"}}/>}
