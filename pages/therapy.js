@@ -214,11 +214,11 @@ export default function TherapyPage() {
       const isHBbPend=exHBb?.isPending||exHBb?.slotKey?.startsWith("pending_");
       setSelHyper(isHPend?"__pending__":(exH?.slotKey||""));
       setHyperMemo(exH?.memo||""); setHyperOuter(exH?.isOuter||false);
-      setPendH(isHPend?(exH?.patientName||"):"");
+      setPendH(isHPend?(exH?.patientName||""):"");
       setSelHBa(isHBaPend?"__pending__":(exHBa?.slotKey||""));
-      setPendHBa(isHBaPend?(exHBa?.patientName||"):"");
+      setPendHBa(isHBaPend?(exHBa?.patientName||""):"");
       setSelHBb(isHBbPend?"__pending__":(exHBb?.slotKey||""));
-      setPendHBb(isHBbPend?(exHBb?.patientName||"):"");
+      setPendHBb(isHBbPend?(exHBb?.patientName||""):"");
       setHyperBMemo("");
       setHyperDbNames({
         hyper: (!isHPend&&exH?.slotKey?.startsWith("db_"))?(exH.patientName||""):"",
