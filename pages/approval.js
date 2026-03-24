@@ -1127,6 +1127,204 @@ function TaxForm({ data, onChange, readonly }) {
   );
 }
 
+// ─── 연차 현황 패널 ────────────────────────────────────────────────────────────
+function VacationSummaryPanel({ docs, onOpenDoc }) {
+  const nowY = new Date().getFullYear();
+  const nowYMstr = `${nowY}-${String(new Date().getMonth()+1).padStart(2,"0")}`;
+  const [year, setYear] = useState(nowY);
+  const [mode, setMode] = useState("yearly"); // "yearly" | "monthly"
+  const [selMonth, setSelMonth] = useState(nowYMstr);
+
+  const approved = docs.filter(([,d]) => ["approved","final"].includes(d.status));
+
+  const calcLeave = (fd) => {
+    if (!fd) return 0;
+    if (fd.leaveType === "반차휴가") {
+      if (fd.halfFrom && fd.halfTo) {
+        const [fh, fm] = fd.halfFrom.split(":").map(Number);
+        const [th, tm] = fd.halfTo.split(":").map(Number);
+        return ((th * 60 + tm) - (fh * 60 + fm)) / 60;
+      }
+      return 4;
+    }
+    return daysBetween(fd.fromDate, fd.toDate);
+  };
+
+  const LEAVE_COLS = ["연차휴가","반차휴가","생리휴가","병가","기타"];
+  const MONTHS_12 = Array.from({length:12}, (_,i) => `${year}-${String(i+1).padStart(2,"0")}`);
+
+  // 연도별 summary: { name: { dept, months: { ym: { 연차휴가:n, ... } } } }
+  const yearSummary = {};
+  for (const [, doc] of approved) {
+    const fd = doc.formData || {};
+    const name = fd.name || doc.authorName || "?";
+    const dept = fd.department || "";
+    const ym = (fd.fromDate || "").slice(0, 7);
+    if (!ym || ym.slice(0,4) !== String(year)) continue;
+    const ltype = fd.leaveType || "기타";
+    const amt = calcLeave(fd);
+    if (!yearSummary[name]) yearSummary[name] = { dept, months: {} };
+    if (!yearSummary[name].months[ym]) yearSummary[name].months[ym] = {};
+    yearSummary[name].months[ym][ltype] = (yearSummary[name].months[ym][ltype] || 0) + amt;
+  }
+
+  const sTH = { border:"1px solid #e2e8f0", background:"#f0f9ff", padding:"6px 8px", fontWeight:700, fontSize:12, textAlign:"center", whiteSpace:"nowrap" };
+  const sTD = { border:"1px solid #e2e8f0", padding:"5px 8px", fontSize:12, textAlign:"center" };
+  const sTDL = { ...sTD, textAlign:"left" };
+
+  const NavBar = () => {
+    if (mode === "yearly") {
+      return (
+        <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:14, flexWrap:"wrap" }}>
+          <button onClick={()=>setYear(y=>y-1)} style={{ border:"1.5px solid #bae6fd", background:"#e0f2fe", color:"#0369a1", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}>← 이전년</button>
+          <span style={{ fontWeight:800, fontSize:16, color:"#0369a1" }}>{year}년</span>
+          <button onClick={()=>setYear(y=>y+1)} disabled={year>=nowY} style={{ border:"1.5px solid #bae6fd", background:"#e0f2fe", color:"#0369a1", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}>다음년 →</button>
+          <button onClick={()=>setMode("monthly")} style={{ marginLeft:"auto", border:"1.5px solid #7dd3fc", background:"#f0f9ff", color:"#0369a1", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontSize:13 }}>월별 상세 보기 →</button>
+        </div>
+      );
+    }
+    const [ymY, ymM] = selMonth.split("-").map(Number);
+    const prev = ymM===1?`${ymY-1}-12`:`${ymY}-${String(ymM-1).padStart(2,"0")}`;
+    const next = ymM===12?`${ymY+1}-01`:`${ymY}-${String(ymM+1).padStart(2,"0")}`;
+    return (
+      <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:14, flexWrap:"wrap" }}>
+        <button onClick={()=>setSelMonth(prev)} style={{ border:"1.5px solid #bae6fd", background:"#e0f2fe", color:"#0369a1", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}>← 이전달</button>
+        <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{ border:"1.5px solid #bae6fd", borderRadius:8, padding:"6px 10px", fontWeight:700, fontSize:15, color:"#0369a1", outline:"none" }} />
+        <button onClick={()=>setSelMonth(next)} style={{ border:"1.5px solid #bae6fd", background:"#e0f2fe", color:"#0369a1", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}>다음달 →</button>
+        <button onClick={()=>{setYear(Number(selMonth.slice(0,4)));setMode("yearly");}} style={{ marginLeft:"auto", border:"1.5px solid #7dd3fc", background:"#f0f9ff", color:"#0369a1", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontSize:13 }}>← 연도별 보기</button>
+      </div>
+    );
+  };
+
+  if (mode === "yearly") {
+    const names = Object.keys(yearSummary).sort();
+    return (
+      <div>
+        <NavBar />
+        {names.length === 0 ? (
+          <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>{year}년 승인된 휴가 신청이 없습니다.</div>
+        ) : (
+          <div style={{ overflowX:"auto" }}>
+          <table style={{ borderCollapse:"collapse", fontSize:12 }}>
+            <thead>
+              <tr>
+                <th style={{...sTH, textAlign:"left", minWidth:70}}>이름</th>
+                <th style={{...sTH, minWidth:55}}>부서</th>
+                {MONTHS_12.map(m=><th key={m} style={{...sTH, minWidth:44}}>{m.slice(5)}월</th>)}
+                <th style={{...sTH}}>연간 합계</th>
+              </tr>
+            </thead>
+            <tbody>
+              {names.map(name => {
+                const p = yearSummary[name];
+                const mVals = MONTHS_12.map(m => {
+                  const md = p.months[m] || {};
+                  const days = LEAVE_COLS.filter(t=>t!=="반차휴가").reduce((s,t)=>s+(md[t]||0),0);
+                  const hours = md["반차휴가"]||0;
+                  return { days, hours, m };
+                });
+                const totalDays = mVals.reduce((s,v)=>s+v.days,0);
+                const totalHours = mVals.reduce((s,v)=>s+v.hours,0);
+                return (
+                  <tr key={name}>
+                    <td style={{...sTDL, fontWeight:700}}>{name}</td>
+                    <td style={{...sTD, color:"#64748b", fontSize:11}}>{p.dept}</td>
+                    {mVals.map(({days,hours,m})=>(
+                      <td key={m} style={{...sTD, color:days>0||hours>0?"#0369a1":"#e2e8f0", cursor:days>0||hours>0?"pointer":"default"}}
+                        onClick={()=>{if(days>0||hours>0){setSelMonth(m);setMode("monthly");}}}>
+                        {days>0&&<span>{days}일</span>}
+                        {hours>0&&<span style={{color:"#7c3aed"}}>{days>0?" ":""}{hours}h</span>}
+                        {days===0&&hours===0&&<span>-</span>}
+                      </td>
+                    ))}
+                    <td style={{...sTD, fontWeight:800, color:"#dc2626", minWidth:70}}>
+                      {totalDays>0&&<span>{totalDays}일</span>}
+                      {totalHours>0&&<span style={{color:"#7c3aed"}}>{totalDays>0?" ":""}{totalHours}h</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 월별 상세 뷰
+  const mDocs = approved.filter(([,d]) => (d.formData?.fromDate||"").startsWith(selMonth));
+  const mSummary = {};
+  for (const [id, doc] of mDocs) {
+    const fd = doc.formData || {};
+    const name = fd.name || doc.authorName || "?";
+    const dept = fd.department || "";
+    const ltype = fd.leaveType || "기타";
+    const amt = calcLeave(fd);
+    if (!mSummary[name]) mSummary[name] = { dept, types:{}, docs:[] };
+    mSummary[name].types[ltype] = (mSummary[name].types[ltype]||0) + amt;
+    mSummary[name].docs.push([id, doc]);
+  }
+  const mNames = Object.keys(mSummary).sort();
+  return (
+    <div>
+      <NavBar />
+      {mNames.length === 0 ? (
+        <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8" }}>{selMonth} 승인된 휴가 신청이 없습니다.</div>
+      ) : (
+        <div style={{ overflowX:"auto" }}>
+        <table style={{ borderCollapse:"collapse", fontSize:12, width:"100%" }}>
+          <thead>
+            <tr>
+              <th style={{...sTH, textAlign:"left", minWidth:70}}>이름</th>
+              <th style={{...sTH, minWidth:55}}>부서</th>
+              {LEAVE_COLS.map(t=><th key={t} style={sTH}>{t==="연차휴가"?"연차":t==="반차휴가"?"반차(h)":t==="생리휴가"?"생리":t==="병가"?"병가":"기타"}</th>)}
+              <th style={sTH}>합계</th>
+              <th style={{...sTH, minWidth:120}}>신청 내역</th>
+            </tr>
+          </thead>
+          <tbody>
+            {mNames.map(name => {
+              const p = mSummary[name];
+              const totalDays = LEAVE_COLS.filter(t=>t!=="반차휴가").reduce((s,t)=>s+(p.types[t]||0),0);
+              const totalHours = p.types["반차휴가"]||0;
+              return (
+                <tr key={name}>
+                  <td style={{...sTDL, fontWeight:700}}>{name}</td>
+                  <td style={{...sTD, color:"#64748b", fontSize:11}}>{p.dept}</td>
+                  {LEAVE_COLS.map(t=>{
+                    const v = p.types[t]||0;
+                    const isHalf = t==="반차휴가";
+                    return <td key={t} style={{...sTD, color:v>0?"#0369a1":"#94a3b8"}}>{v>0?`${v}${isHalf?"h":"일"}`:"-"}</td>;
+                  })}
+                  <td style={{...sTD, fontWeight:800, color:"#dc2626"}}>
+                    {totalDays>0&&<span>{totalDays}일</span>}
+                    {totalHours>0&&<span style={{color:"#7c3aed"}}>{totalDays>0?" ":""}{totalHours}h</span>}
+                  </td>
+                  <td style={sTD}>
+                    {p.docs.map(([id,doc])=>{
+                      const fd = doc.formData||{};
+                      const label = fd.fromDate && fd.toDate && fd.fromDate!==fd.toDate
+                        ? `${fd.fromDate}~${fd.toDate.slice(5)}`
+                        : fd.fromDate||"-";
+                      return (
+                        <button key={id} onClick={()=>onOpenDoc(id)} style={{border:"1px solid #bae6fd",background:"#f0f9ff",color:"#0369a1",borderRadius:5,padding:"2px 7px",fontSize:11,cursor:"pointer",margin:"1px",display:"block",width:"max-content"}}>
+                          {label} ({fd.leaveType||"-"})
+                        </button>
+                      );
+                    })}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
 export default function ApprovalPage() {
   const [user,       setUser]       = useState(null);
@@ -1743,6 +1941,7 @@ export default function ApprovalPage() {
     { key:"mine",     label:`내 문서함 (${myDocs.length})` },
     { key:"pending",  label:`결재 대기 (${pendingDocs.length})` },
     { key:"vacation", label:`휴가신청서 (${vacationDisplay.length})` },
+    ...(canSeeAllVacation ? [{ key:"vacation_summary", label:"📊 연차 현황" }] : []),
     { key:"supply",   label:`물품청구서 (${supplyDisplay.length})` },
     ...(canAccessRefund  ? [{ key:"refund",  label:`위탁진료 환불금 (${refundDisplay.length})` }] : []),
     ...(canAccessWeekly  ? [{ key:"weekly",  label:`영양팀 월간보고` }] : []),
@@ -1778,6 +1977,17 @@ export default function ApprovalPage() {
             <button key={t.key} style={S.tab(activeTab===t.key)} onClick={()=>setActiveTab(t.key)}>{t.label}</button>
           ))}
         </div>
+        {/* 연차 현황 탭 */}
+        {activeTab === "vacation_summary" && canSeeAllVacation && (
+          <div style={S.card}>
+            <div style={{ fontWeight:800, fontSize:15, color:"#0369a1", marginBottom:16 }}>휴가 사용 현황 (승인 완료 기준)</div>
+            <VacationSummaryPanel
+              docs={vacationDocs}
+              onOpenDoc={(id)=>{ setSelectedId(id); setView("detail"); }}
+            />
+          </div>
+        )}
+
         {/* 위탁진료 환불금 탭: 월 네비게이터 + 인라인 표시 */}
         {activeTab === "refund" && (
           <div style={S.card}>
@@ -1912,7 +2122,7 @@ export default function ApprovalPage() {
           </div>
         )}
 
-        {activeTab !== "weekly" && activeTab !== "refund" && activeTab !== "tax" && (
+        {activeTab !== "weekly" && activeTab !== "refund" && activeTab !== "tax" && activeTab !== "vacation_summary" && (
         <div style={S.card}>
           {displayDocs.length === 0 && (
             <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8", fontSize:14 }}>
