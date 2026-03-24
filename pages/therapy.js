@@ -204,7 +204,7 @@ export default function TherapyPage() {
       setPhysSlot(isPend?"__pending__":(ex?.slotKey||""));
       setPhysTreat(ex?.treatmentId||"");
       setPhysMemo(ex?.memo||""); setPhysOuter(ex?.isOuter||false);
-      setPhysPend(isPend?(ex?.patientName||"):"");
+      setPhysPend(isPend?(ex?.patientName||""):"");
       setPhysDbName((!isPend&&ex?.slotKey?.startsWith("db_"))?(ex.patientName||""):"");
     } else {
       const exH=getCell("hyperthermia",dayIdx,time);
