@@ -790,6 +790,48 @@ function TaxForm({ data, onChange, readonly }) {
   const addGroup = () => { const name=window.prompt("구분명을 입력하세요:"); if(!name) return; upd("groups",[...f.groups,{name,items:[makeTaxItem()]}]); };
   const delGroup = (gi) => { if(!window.confirm("이 구분을 삭제하시겠습니까?")) return; upd("groups",f.groups.filter((_,i)=>i!==gi)); };
 
+  // 금액 포맷 헬퍼 (3자리 콤마 표시, 저장은 숫자 문자열)
+  const formatAmt = (v) => v !== "" && v != null ? Number(String(v).replace(/[^0-9]/g,"")).toLocaleString("ko-KR") : "";
+  const parseAmt  = (v) => String(v).replace(/[^0-9]/g,"");
+
+  // 새 문서 임시저장 오류 방지: 폼 마운트 시 부모 formData 초기화
+  useEffect(() => {
+    if (onChange && !readonly && !(data && data.groups)) {
+      onChange({ reportMonth: todayStr().slice(0,7), groups: makeTaxGroups() });
+    }
+  }, []); // eslint-disable-line
+
+  // Enter 키 → 해당 그룹 마지막 행이면 새 항목 추가
+  const handleKeyDown = (e, gi, ii) => {
+    if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+    e.preventDefault();
+    if (ii === (f.groups[gi]?.items||[]).length - 1) addItem(gi);
+  };
+
+  // 엑셀 다중행 붙여넣기: 탭/줄바꿈 포함 시 여러 행 생성
+  const PASTE_FIELDS = ["category","vendor","content","amount","method","issueDate","count","note"];
+  const handlePaste = (e, gi, ii) => {
+    const text = e.clipboardData.getData("text");
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length <= 1 && !text.includes("\t")) return;
+    e.preventDefault();
+    const newItems = lines.map(line => {
+      const cols = line.split("\t");
+      const item = makeTaxItem();
+      cols.forEach((val, ci) => {
+        const field = PASTE_FIELDS[ci];
+        if (!field) return;
+        item[field] = field === "amount" ? parseAmt(val.trim()) : val.trim();
+      });
+      return item;
+    });
+    const gs = [...f.groups];
+    const curItems = [...(gs[gi].items||[])];
+    curItems.splice(ii + 1, 0, ...newItems);
+    gs[gi] = { ...gs[gi], items: curItems };
+    upd("groups", gs);
+  };
+
   // 실지출(청구 제외) 합계 / 청구(미지급) 합계 분리
   const groupPaid   = (g) => (g.items||[]).filter(it=>it.method!=="청구").reduce((s,it)=>s+(Number(it.amount)||0),0);
   const groupBilled = (g) => (g.items||[]).filter(it=>it.method==="청구").reduce((s,it)=>s+(Number(it.amount)||0),0);
@@ -908,16 +950,18 @@ function TaxForm({ data, onChange, readonly }) {
               {(g.items||[]).map((it,ii)=>{
                 const isBilled = it.method === "청구";
                 const rowBg = isBilled ? BILLED_ROW_BG : "transparent";
+                const kd = e=>handleKeyDown(e,gi,ii);
+                const inp = (extra={}) => ({...S.input,padding:"3px 6px",fontSize:11,background:"transparent",...extra});
                 return (
                   <tr key={it.id} style={{background:rowBg}}>
-                    <td style={{...TD,width:90,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,background:"transparent"}} value={it.category} onChange={e=>updItem(gi,ii,"category",e.target.value)} /></td>
-                    <td style={{...TD,minWidth:120,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,background:"transparent"}} value={it.vendor} onChange={e=>updItem(gi,ii,"vendor",e.target.value)} /></td>
-                    <td style={{...TD,minWidth:140,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,background:"transparent"}} value={it.content} onChange={e=>updItem(gi,ii,"content",e.target.value)} /></td>
-                    <td style={{...TD,width:100,background:rowBg}}><input type="number" style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"right",background:"transparent",color:isBilled?BILLED_AMT_CLR:"inherit"}} value={it.amount} onChange={e=>updItem(gi,ii,"amount",e.target.value)} /></td>
+                    <td style={{...TD,width:90,background:rowBg}}><input style={inp()} value={it.category} onChange={e=>updItem(gi,ii,"category",e.target.value)} onKeyDown={kd} onPaste={e=>handlePaste(e,gi,ii)} /></td>
+                    <td style={{...TD,minWidth:120,background:rowBg}}><input style={inp()} value={it.vendor} onChange={e=>updItem(gi,ii,"vendor",e.target.value)} onKeyDown={kd} /></td>
+                    <td style={{...TD,minWidth:140,background:rowBg}}><input style={inp()} value={it.content} onChange={e=>updItem(gi,ii,"content",e.target.value)} onKeyDown={kd} /></td>
+                    <td style={{...TD,width:100,background:rowBg}}><input type="text" inputMode="numeric" style={inp({textAlign:"right",color:isBilled?BILLED_AMT_CLR:"inherit"})} value={formatAmt(it.amount)} onChange={e=>updItem(gi,ii,"amount",parseAmt(e.target.value))} onKeyDown={kd} /></td>
                     <td style={{...TD,width:70,background:rowBg}}><select style={{...S.select,padding:"3px 5px",fontSize:11,background:isBilled?"#fde68a":"",fontWeight:isBilled?700:400,color:isBilled?"#92400e":""}} value={it.method} onChange={e=>updItem(gi,ii,"method",e.target.value)}>{PAYMENT_METHODS.map(m=><option key={m}>{m}</option>)}</select></td>
-                    <td style={{...TD,width:100,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,background:"transparent"}} value={it.issueDate} onChange={e=>updItem(gi,ii,"issueDate",e.target.value)} placeholder="예: 1/15" /></td>
-                    <td style={{...TD,width:55,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"center",background:"transparent"}} value={it.count} onChange={e=>updItem(gi,ii,"count",e.target.value)} /></td>
-                    <td style={{...TD,minWidth:80,background:rowBg}}><input style={{...S.input,padding:"3px 6px",fontSize:11,background:"transparent"}} value={it.note} onChange={e=>updItem(gi,ii,"note",e.target.value)} /></td>
+                    <td style={{...TD,width:100,background:rowBg}}><input style={inp()} value={it.issueDate} onChange={e=>updItem(gi,ii,"issueDate",e.target.value)} onKeyDown={kd} placeholder="예: 1/15" /></td>
+                    <td style={{...TD,width:55,background:rowBg}}><input style={inp({textAlign:"center"})} value={it.count} onChange={e=>updItem(gi,ii,"count",e.target.value)} onKeyDown={kd} /></td>
+                    <td style={{...TD,minWidth:80,background:rowBg}}><input style={inp()} value={it.note} onChange={e=>updItem(gi,ii,"note",e.target.value)} onKeyDown={kd} /></td>
                     <td style={{...TD,width:26,background:rowBg}}><button onClick={()=>delItem(gi,ii)} style={{border:"none",background:"none",cursor:"pointer",color:"#dc2626",fontSize:15}}>✕</button></td>
                   </tr>
                 );
