@@ -352,8 +352,9 @@ export default function HospitalWardManager() {
       if (!d || dateOnly(d) >= fromD) return false;
     }
     for (const r of (slot.reservations || [])) {
+      if (!r?.name) continue;
       const rA = parseDateStr(r.admitDate);
-      if (!rA) continue;
+      if (!rA) { return false; }  // 입원일 불명 예약 → 가용 불가
       const rD = parseDateStr(r.discharge);
       const rEnd = rD ? dateOnly(rD) : null;
       if (rEnd && toD) { if (dateOnly(rA) <= toD && rEnd >= fromD) return false; }
