@@ -84,6 +84,7 @@ function Field({ label, children, style }) {
 function ExcelImportButton({ onParsed, parserFn, accept=".xlsx,.xls", color="#0f2744", bg="#e0f2fe", label="엑셀 자동입력" }) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
+  const [pending, setPending] = useState(null); // { results } — 시트 선택 대기
   const inputRef = useRef(null);
 
   const handleFile = async (e) => {
@@ -93,7 +94,11 @@ function ExcelImportButton({ onParsed, parserFn, accept=".xlsx,.xls", color="#0f
     try {
       const results = await parserFn(file);
       if (!results || results.length === 0) { setError("파싱된 데이터가 없습니다. 파일 형식을 확인하세요."); return; }
-      onParsed(results);
+      if (results.length === 1) {
+        onParsed(results);
+      } else {
+        setPending({ results }); // 시트가 여러 개면 선택 UI 표시
+      }
     } catch (err) {
       setError("파싱 오류: " + err.message);
     } finally {
@@ -112,6 +117,35 @@ function ExcelImportButton({ onParsed, parserFn, accept=".xlsx,.xls", color="#0f
         {loading ? "분석 중..." : label}
       </button>
       {error && <div style={{ fontSize:12, color:"#dc2626", marginTop:4 }}>{error}</div>}
+
+      {/* 시트 선택 모달 */}
+      {pending && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
+          onClick={e=>{ if(e.target===e.currentTarget) setPending(null); }}>
+          <div style={{ background:"#fff", borderRadius:14, padding:24, maxWidth:420, width:"100%", boxShadow:"0 8px 32px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontWeight:800, fontSize:15, color:"#1e3a5f", marginBottom:4 }}>불러올 시트를 선택하세요</div>
+            <div style={{ fontSize:12, color:"#94a3b8", marginBottom:16 }}>
+              Excel 파일에서 {pending.results.length}개의 시트가 발견되었습니다.
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {pending.results.map((r, idx) => (
+                <button key={idx}
+                  style={{ padding:"11px 16px", textAlign:"left", cursor:"pointer", border:`1.5px solid ${color}44`, borderRadius:9, background:bg, fontSize:13, fontWeight:600, color, display:"flex", alignItems:"center", gap:10 }}
+                  onClick={() => { onParsed([r]); setPending(null); }}>
+                  <span style={{ fontSize:15 }}>📄</span>
+                  <span style={{ flex:1 }}>
+                    {r.sheetName || `시트 ${idx+1}`}
+                    {r.reportMonth && (
+                      <span style={{ marginLeft:8, fontSize:12, fontWeight:400, color:"#64748b" }}>({r.reportMonth})</span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button style={{ ...S.btnSec, width:"100%", marginTop:12, fontSize:13 }} onClick={()=>setPending(null)}>취소</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
