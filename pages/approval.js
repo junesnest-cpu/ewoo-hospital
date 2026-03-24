@@ -19,6 +19,7 @@ const STATUS = {
   approved:     { label: "승인완료",         color: "#059669", bg: "#d1fae5" },
   final:        { label: "전결완료",         color: "#7c3aed", bg: "#ede9fe" },
   rejected:     { label: "반려",            color: "#dc2626", bg: "#fee2e2" },
+  superseded:   { label: "대체됨",           color: "#94a3b8", bg: "#f1f5f9" },
 };
 const DEPTS    = ["원무과", "간호과", "영양팀", "기타"];
 const BANKS    = ["국민은행","신한은행","우리은행","하나은행","농협은행","IBK기업은행","카카오뱅크","토스뱅크","기타"];
@@ -1058,14 +1059,6 @@ export default function ApprovalPage() {
         formData, fileUrls: files,
         history: asDraft ? [] : [{ action:"submitted", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:"" }],
       });
-      // 위탁진료: 환자 계좌정보 DB 저장
-      if (newType === "refund" && !asDraft) {
-        for (const p of (formData.patients||[])) {
-          if (p.patientDbId && (p.bankHolder||p.bank||p.accountNo)) {
-            await update(ref(db, `patients/${p.patientDbId}`), { bankHolder:p.bankHolder||"", bank:p.bank||"", accountNo:p.accountNo||"" });
-          }
-        }
-      }
       setView("list"); setNewType(null); setFormData({}); setFiles([]);
       alert(asDraft ? "임시저장 완료" : "제출 완료");
     } catch(e) { alert("오류: "+e.message); }
@@ -1131,6 +1124,47 @@ export default function ApprovalPage() {
     }
   };
 
+  // 위탁진료 환자 계좌정보를 환자 DB에 동기화 (기존 정보 없을 때만)
+  const syncRefundPatientAccounts = async (formData) => {
+    for (const p of (formData?.patients || [])) {
+      if (!p.bankHolder && !p.accountNo) continue;
+      if (p.patientDbId) {
+        const snap = await get(ref(db, `patients/${p.patientDbId}`));
+        const existing = snap.val() || {};
+        if (!existing.bankHolder && !existing.accountNo) {
+          await update(ref(db, `patients/${p.patientDbId}`), {
+            bankHolder: p.bankHolder || "", bank: p.bank || "", accountNo: p.accountNo || "",
+          });
+        }
+      } else if (p.name || p.chartNo) {
+        const snap = await get(ref(db, "patients"));
+        const all = snap.val() || {};
+        const match = Object.entries(all).find(([, v]) =>
+          (p.chartNo && v.internalId === p.chartNo) ||
+          (p.name && v.name === p.name && !v.bankHolder && !v.accountNo)
+        );
+        if (match) {
+          await update(ref(db, `patients/${match[0]}`), {
+            bankHolder: p.bankHolder || "", bank: p.bank || "", accountNo: p.accountNo || "",
+          });
+        }
+      }
+    }
+  };
+
+  // 동월 동타입 기존 승인 문서를 "대체됨" 상태로 변경
+  const supersedePreviousApproved = async (type, reportMonth, newDocId) => {
+    const toSupersede = Object.entries(docs).filter(([id, d]) =>
+      id !== newDocId &&
+      d.type === type &&
+      d.formData?.reportMonth === reportMonth &&
+      ["approved", "final"].includes(d.status)
+    );
+    for (const [id] of toSupersede) {
+      await update(ref(db, `approvals/${id}`), { status: "superseded", updatedAt: Date.now() });
+    }
+  };
+
   const handleApprove = async (docId, isFinal = false) => {
     setActionLoading(true);
     const doc = docs[docId];
@@ -1149,6 +1183,16 @@ export default function ApprovalPage() {
     // 물품청구서가 최종 승인(approved/final)된 경우 세금계산서에 자동 반영
     if (doc.type === "supply" && (newStatus === "approved" || newStatus === "final")) {
       await addSupplyToTax(doc);
+    }
+    // 위탁진료/월간보고/세금계산서: 동월 기존 승인 문서 대체 + 계좌정보 DB 동기화
+    if (["approved", "final"].includes(newStatus) && ["refund", "weekly", "tax"].includes(doc.type)) {
+      const reportMonth = doc.formData?.reportMonth;
+      if (reportMonth) {
+        await supersedePreviousApproved(doc.type, reportMonth, docId);
+      }
+      if (doc.type === "refund") {
+        await syncRefundPatientAccounts(doc.formData);
+      }
     }
     setActionLoading(false);
     alert(isFinal ? "전결 처리 완료" : "승인 완료");
@@ -1489,11 +1533,18 @@ export default function ApprovalPage() {
     const [y, m] = ym.split("-").map(Number);
     return m === 12 ? `${y+1}-01` : `${y}-${String(m+1).padStart(2,"0")}`;
   };
-  const weeklyDocForMonth  = weeklyDocs.find(([,d]) => d.formData?.reportMonth === weeklyNavMonth);
+  // 해당 월 문서 중 승인/전결 우선, 없으면 대체됨 제외한 최신, 그래도 없으면 첫 번째
+  const findActiveDocForMonth = (typeDocs, month) => {
+    const matching = typeDocs.filter(([,d]) => d.formData?.reportMonth === month);
+    return matching.find(([,d]) => ["approved","final"].includes(d.status))
+      || matching.find(([,d]) => d.status !== "superseded")
+      || matching[0] || null;
+  };
+  const weeklyDocForMonth  = findActiveDocForMonth(weeklyDocs, weeklyNavMonth);
   const weeklyAllMonths    = [...new Set(weeklyDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
-  const refundDocForMonth  = refundDocs.find(([,d]) => d.formData?.reportMonth === refundNavMonth);
+  const refundDocForMonth  = findActiveDocForMonth(refundDocs, refundNavMonth);
   const refundAllMonths    = [...new Set(refundDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
-  const taxDocForMonth     = taxDocs.find(([,d]) => d.formData?.reportMonth === taxNavMonth);
+  const taxDocForMonth     = findActiveDocForMonth(taxDocs, taxNavMonth);
   const taxAllMonths       = [...new Set(taxDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
 
   const displayDocs = activeTab === "mine"     ? sortedDocs(myDocs)
