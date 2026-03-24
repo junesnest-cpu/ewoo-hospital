@@ -116,8 +116,12 @@ specificDates 형식:
 - "고주파3회" (날짜/요일 없이 횟수만) → sessionCount: [{"name":"고주파","count":"3"}]
 - 스케줄/일정 확인 필요 → scheduleAlert: true
 - "이전 스케쥴 유지" / "기존 스케쥴 유지" / "이전과 동일" 등 → keepSchedule: true (이전에 기록된 치료 계획을 이어서 적용한다는 의미)
-- "자닥신 취소" / "이뮤알파 취소" / "해당 치료 취소" / "(치료명) 중단" 등 → cancelTreatments 배열에 해당 치료의 정규 명칭 기재
+- "자닥신 취소" / "이뮤알파 취소" / "해당 치료 취소" / "(치료명) 중단" / "(치료명) d/c" / "(치료명) dc" / "(치료명) D/C" 등 → cancelTreatments 배열에 해당 치료의 정규 명칭 기재
+  (d/c = discontinue = 처방 취소를 의미)
   예: "자닥신 취소" → cancelTreatments: ["자닥신"]
+  예: "자닥신 d/c" → cancelTreatments: ["자닥신"]
+  예: "고주파 dc" → cancelTreatments: ["고주파"]
+  예: "이뮤알파, 이스카도 d/c" → cancelTreatments: ["이뮤알파", "이스카도M"]
   예: "이뮤알파, 이스카도 치료 취소" → cancelTreatments: ["이뮤알파", "이스카도M"]`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {

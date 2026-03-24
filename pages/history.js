@@ -450,27 +450,96 @@ async function cancelFutureTreatments(slotKey, cancelTreatments) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // 1. treatmentPlans에서 삭제
   const snap = await get(ref(db, `treatmentPlans/${slotKey}`));
   const plan = snap.val();
-  if (!plan) return;
-
-  let changed = false;
-  const newPlan = JSON.parse(JSON.stringify(plan));
-  for (const [mk, monthData] of Object.entries(newPlan)) {
-    const [y, m] = mk.split("-").map(Number);
-    for (const [dk, items] of Object.entries(monthData)) {
-      const d = new Date(y, m - 1, parseInt(dk));
-      if (d >= today && Array.isArray(items)) {
-        const filtered = items.filter(e => !cancelIds.includes(e.id));
-        if (filtered.length !== items.length) {
-          newPlan[mk][dk] = filtered;
-          changed = true;
+  if (plan) {
+    let changed = false;
+    const newPlan = JSON.parse(JSON.stringify(plan));
+    for (const [mk, monthData] of Object.entries(newPlan)) {
+      const [y, m] = mk.split("-").map(Number);
+      for (const [dk, items] of Object.entries(monthData)) {
+        const d = new Date(y, m - 1, parseInt(dk));
+        if (d >= today && Array.isArray(items)) {
+          const filtered = items.filter(e => !cancelIds.includes(e.id));
+          if (filtered.length !== items.length) {
+            newPlan[mk][dk] = filtered;
+            changed = true;
+          }
         }
       }
     }
+    if (changed) await set(ref(db, `treatmentPlans/${slotKey}`), newPlan);
   }
 
-  if (changed) await set(ref(db, `treatmentPlans/${slotKey}`), newPlan);
+  // 2. physicalSchedule에서 삭제 (물리치료 시간표)
+  const PHYS_IDS = new Set(["manip1", "manip2", "pain"]);
+  const physCancelIds = cancelIds.filter(id => PHYS_IDS.has(id));
+  if (physCancelIds.length) {
+    const physSnap = await get(ref(db, "physicalSchedule"));
+    const physAll = physSnap.val() || {};
+    for (const [wk, wkData] of Object.entries(physAll)) {
+      const [wy, wm, wd] = wk.split("-").map(Number);
+      const weekStart = new Date(wy, wm - 1, wd);
+      let wkChanged = false;
+      const newWk = JSON.parse(JSON.stringify(wkData));
+      for (const [th, thData] of Object.entries(newWk)) {
+        for (const [di, diData] of Object.entries(thData)) {
+          const date = new Date(weekStart);
+          date.setDate(date.getDate() + parseInt(di));
+          if (date < today) continue;
+          for (const [time, entry] of Object.entries(diData)) {
+            if (entry?.slotKey === slotKey && physCancelIds.includes(entry.treatmentId)) {
+              delete newWk[th][di][time];
+              wkChanged = true;
+            }
+          }
+          if (!Object.keys(newWk[th]?.[di] || {}).length) delete newWk[th][di];
+        }
+        if (!Object.keys(newWk[th] || {}).length) delete newWk[th];
+      }
+      if (wkChanged) await set(ref(db, `physicalSchedule/${wk}`), newWk);
+    }
+  }
+
+  // 3. hyperthermiaSchedule에서 삭제 (고주파/고압산소 시간표)
+  const HYPER_IDS = new Set(["hyperthermia", "hyperbaric"]);
+  const hyperCancelTypes = cancelIds.filter(id => HYPER_IDS.has(id));
+  if (hyperCancelTypes.length) {
+    const hyperSnap = await get(ref(db, "hyperthermiaSchedule"));
+    const hyperAll = hyperSnap.val() || {};
+    for (const [wk, wkData] of Object.entries(hyperAll)) {
+      const [wy, wm, wd] = wk.split("-").map(Number);
+      const weekStart = new Date(wy, wm - 1, wd);
+      let wkChanged = false;
+      const newWk = JSON.parse(JSON.stringify(wkData));
+      for (const [roomType, rtData] of Object.entries(newWk)) {
+        if (!hyperCancelTypes.includes(roomType)) continue;
+        for (const [di, diData] of Object.entries(rtData)) {
+          const date = new Date(weekStart);
+          date.setDate(date.getDate() + parseInt(di));
+          if (date < today) continue;
+          for (const [time, entry] of Object.entries(diData)) {
+            if (roomType === "hyperbaric" && entry && typeof entry === "object") {
+              // hyperbaric: entry = { a: { slotKey, ... }, b: { slotKey, ... } }
+              for (const subSlot of Object.keys(entry)) {
+                if (entry[subSlot]?.slotKey === slotKey) {
+                  delete newWk[roomType][di][time][subSlot];
+                  wkChanged = true;
+                }
+              }
+              if (!Object.keys(newWk[roomType][di][time] || {}).length) delete newWk[roomType][di][time];
+            } else if (entry?.slotKey === slotKey) {
+              delete newWk[roomType][di][time];
+              wkChanged = true;
+            }
+          }
+          if (!Object.keys(newWk[roomType]?.[di] || {}).length) delete newWk[roomType][di];
+        }
+      }
+      if (wkChanged) await set(ref(db, `hyperthermiaSchedule/${wk}`), newWk);
+    }
+  }
 }
 
 // specificDates: [{treatments:["자닥신","이뮤알파"], qty:"1", dates:["3/11","3/24"]}]
