@@ -762,7 +762,7 @@ function WeeklyForm({ data, onChange, readonly }) {
 }
 
 // ─── 세금계산서 보고 ──────────────────────────────────────────────────────────
-const PAYMENT_METHODS = ["청구","계좌","카드","영수","기타"];
+const PAYMENT_METHODS = ["청구","계좌","카드","현금","영수","기타"];
 const PRESET_GROUPS = [
   { name:"주요공과금", items:[
     { category:"보험료",   vendor:"국민건강보험공단",             content:"월 건강보험료" },
@@ -835,11 +835,84 @@ function TaxForm({ data, onChange, readonly }) {
     }
   }, []); // eslint-disable-line
 
-  // Enter 키 → 해당 그룹 마지막 행이면 새 항목 추가
-  const handleKeyDown = (e, gi, ii) => {
-    if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
-    e.preventDefault();
-    if (ii === (f.groups[gi]?.items||[]).length - 1) addItem(gi);
+  // 행 이동/복제
+  const moveItem = (gi, ii, dir) => {
+    const gs = [...f.groups]; const items = [...gs[gi].items]; const t = ii + dir;
+    if (t < 0 || t >= items.length) return;
+    [items[ii], items[t]] = [items[t], items[ii]];
+    gs[gi] = { ...gs[gi], items }; upd("groups", gs);
+  };
+  const dupItem = (gi, ii) => {
+    const gs = [...f.groups]; const items = [...gs[gi].items];
+    items.splice(ii + 1, 0, { ...items[ii], id: uid7() });
+    gs[gi] = { ...gs[gi], items }; upd("groups", gs);
+  };
+  // 드래그 이동 (그룹 간 이동 포함)
+  const reorderItem = (fromGi, fromIi, toGi, toIi) => {
+    if (fromGi === toGi && fromIi === toIi) return;
+    const gs = [...f.groups];
+    if (fromGi === toGi) {
+      const items = [...gs[fromGi].items];
+      const [removed] = items.splice(fromIi, 1);
+      items.splice(toIi, 0, removed);
+      gs[fromGi] = { ...gs[fromGi], items };
+    } else {
+      const srcItems = [...gs[fromGi].items];
+      const dstItems = [...gs[toGi].items];
+      const [removed] = srcItems.splice(fromIi, 1);
+      dstItems.splice(toIi, 0, removed);
+      gs[fromGi] = { ...gs[fromGi], items: srcItems };
+      gs[toGi] = { ...gs[toGi], items: dstItems };
+    }
+    upd("groups", gs);
+  };
+  // 클립보드 복사 (탭 구분 텍스트 → 다른 셀에 Ctrl+V로 붙여넣기 가능)
+  const copyItem = (gi, ii) => {
+    const it = f.groups[gi].items[ii];
+    const text = PASTE_FIELDS.map(k => it[k] ?? "").join("\t");
+    navigator.clipboard.writeText(text).catch(()=>{});
+  };
+  const dragSrc = useRef(null);
+  const [dragOverKey, setDragOverKey] = useState(null);
+
+  // 셀 포커스 이동 헬퍼
+  const focusCell = (gi, ii, fi) => {
+    setTimeout(() => {
+      const el = document.querySelector(`[data-gi="${gi}"][data-ii="${ii}"][data-fi="${fi}"]`);
+      if (el) { el.focus(); if (el.select) el.select(); }
+    }, 0);
+  };
+
+  // 방향키/Enter 셀 이동 (엑셀형)
+  const handleKeyDown = (e, gi, ii, fi) => {
+    if (e.isComposing) return;
+    const itemCount = (f.groups[gi]?.items||[]).length;
+    const FIELD_COUNT = 8;
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (ii === itemCount - 1) addItem(gi);
+      focusCell(gi, ii + 1, fi);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      if (ii < itemCount - 1) { e.preventDefault(); focusCell(gi, ii + 1, fi); }
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      if (ii > 0) { e.preventDefault(); focusCell(gi, ii - 1, fi); }
+      return;
+    }
+    if (e.key === "ArrowLeft") {
+      if ((e.target.selectionStart ?? 0) === 0 && fi > 0) { e.preventDefault(); focusCell(gi, ii, fi - 1); }
+      return;
+    }
+    if (e.key === "ArrowRight") {
+      const val = e.target.value ?? "";
+      if ((e.target.selectionStart ?? val.length) === val.length && fi < FIELD_COUNT - 1) {
+        e.preventDefault(); focusCell(gi, ii, fi + 1);
+      }
+      return;
+    }
   };
 
   // 엑셀 다중행 붙여넣기: 탭/줄바꿈 포함 시 여러 행 생성
@@ -910,28 +983,43 @@ function TaxForm({ data, onChange, readonly }) {
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
               <thead><tr>{["분류","업체","내용","금액(원)","처리","발행일","건수","비고"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
               <tbody>
-                {g.items.filter(it=>it.amount||it.vendor||it.content).map((it,ii)=>{
-                  const isBilled = it.method === "청구";
-                  const rowStyle = isBilled ? { background:BILLED_ROW_BG } : {};
-                  return (
-                    <tr key={ii} style={rowStyle}>
-                      <td style={{...TD,...rowStyle}}>{it.category}</td>
-                      <td style={{...TD,...rowStyle}}>{it.vendor}</td>
-                      <td style={{...TD,...rowStyle}}>{it.content}</td>
-                      <td style={{...TD,...rowStyle,textAlign:"right",color:isBilled?BILLED_AMT_CLR:"inherit"}}>
-                        {it.amount?fmtNum(it.amount):"-"}
-                      </td>
-                      <td style={{...TD,...rowStyle,textAlign:"center"}}>
-                        {isBilled
-                          ? <span style={{background:"#fde68a",color:"#92400e",borderRadius:4,padding:"1px 6px",fontSize:11,fontWeight:700}}>청구</span>
-                          : it.method}
-                      </td>
-                      <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.issueDate}</td>
-                      <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.count?`${it.count}건`:""}</td>
-                      <td style={{...TD,...rowStyle}}>{it.note}</td>
-                    </tr>
-                  );
-                })}
+                {(() => {
+                  const vis = g.items.filter(it=>it.amount||it.vendor||it.content);
+                  // 같은 분류 연속행 rowspan 계산
+                  const spans = vis.map((it, idx) => {
+                    if (idx > 0 && vis[idx-1].category === it.category) return 0;
+                    let s = 1;
+                    while (idx + s < vis.length && vis[idx+s].category === it.category) s++;
+                    return s;
+                  });
+                  return vis.map((it, ii) => {
+                    const isBilled = it.method === "청구";
+                    const rowStyle = isBilled ? { background:BILLED_ROW_BG } : {};
+                    const span = spans[ii];
+                    return (
+                      <tr key={ii} style={rowStyle}>
+                        {span > 0 && (
+                          <td rowSpan={span} style={{...TD,verticalAlign:"middle",fontWeight:span>1?700:400,background:span>1?"#f8fafc":""}}>
+                            {it.category}
+                          </td>
+                        )}
+                        <td style={{...TD,...rowStyle}}>{it.vendor}</td>
+                        <td style={{...TD,...rowStyle}}>{it.content}</td>
+                        <td style={{...TD,...rowStyle,textAlign:"right",color:isBilled?BILLED_AMT_CLR:"inherit"}}>
+                          {it.amount?fmtNum(it.amount):"-"}
+                        </td>
+                        <td style={{...TD,...rowStyle,textAlign:"center"}}>
+                          {isBilled
+                            ? <span style={{background:"#fde68a",color:"#92400e",borderRadius:4,padding:"1px 6px",fontSize:11,fontWeight:700}}>청구</span>
+                            : it.method}
+                        </td>
+                        <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.issueDate}</td>
+                        <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.count?`${it.count}건`:""}</td>
+                        <td style={{...TD,...rowStyle}}>{it.note}</td>
+                      </tr>
+                    );
+                  });
+                })()}
                 <SubtotalRow g={g} colSpanLeft={3} colSpanRight={4} />
               </tbody>
             </table>
@@ -978,25 +1066,43 @@ function TaxForm({ data, onChange, readonly }) {
             <button onClick={()=>delGroup(gi)} style={{border:"none",background:"none",cursor:"pointer",color:"#94a3b8",fontSize:18,padding:0}}>×</button>
           </div>
           <div style={{overflowX:"auto",padding:"0 0 8px"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:780}}>
-            <thead><tr>{["분류","업체","내용","금액(원)","처리","발행일","건수","비고",""].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:820}}>
+            <thead><tr>{["","분류","업체","내용","금액(원)","처리","발행일","건수","비고",""].map((h,i)=><th key={i} style={TH}>{h}</th>)}</tr></thead>
             <tbody>
               {(g.items||[]).map((it,ii)=>{
                 const isBilled = it.method === "청구";
                 const rowBg = isBilled ? BILLED_ROW_BG : "transparent";
-                const kd = e=>handleKeyDown(e,gi,ii);
+                const kd = (fi) => e => handleKeyDown(e,gi,ii,fi);
                 const inp = (extra={}) => ({...S.input,padding:"3px 6px",fontSize:11,background:"transparent",...extra});
+                const itemCount = (g.items||[]).length;
+                const dKey = `${gi}-${ii}`;
+                const isDragOver = dragOverKey === dKey;
                 return (
-                  <tr key={it.id} style={{background:rowBg}}>
-                    <td style={{...TD,width:90,background:rowBg}}><input style={inp()} value={it.category} onChange={e=>updItem(gi,ii,"category",e.target.value)} onKeyDown={kd} onPaste={e=>handlePaste(e,gi,ii)} /></td>
-                    <td style={{...TD,minWidth:120,background:rowBg}}><input style={inp()} value={it.vendor} onChange={e=>updItem(gi,ii,"vendor",e.target.value)} onKeyDown={kd} /></td>
-                    <td style={{...TD,minWidth:140,background:rowBg}}><input style={inp()} value={it.content} onChange={e=>updItem(gi,ii,"content",e.target.value)} onKeyDown={kd} /></td>
-                    <td style={{...TD,width:100,background:rowBg}}><input type="text" inputMode="numeric" style={inp({textAlign:"right",color:isBilled?BILLED_AMT_CLR:"inherit"})} value={formatAmt(it.amount)} onChange={e=>updItem(gi,ii,"amount",parseAmt(e.target.value))} onKeyDown={kd} /></td>
-                    <td style={{...TD,width:70,background:rowBg}}><select style={{...S.select,padding:"3px 5px",fontSize:11,background:isBilled?"#fde68a":"",fontWeight:isBilled?700:400,color:isBilled?"#92400e":""}} value={it.method} onChange={e=>updItem(gi,ii,"method",e.target.value)}>{PAYMENT_METHODS.map(m=><option key={m}>{m}</option>)}</select></td>
-                    <td style={{...TD,width:100,background:rowBg}}><input style={inp()} value={it.issueDate} onChange={e=>updItem(gi,ii,"issueDate",e.target.value)} onKeyDown={kd} placeholder="예: 1/15" /></td>
-                    <td style={{...TD,width:55,background:rowBg}}><input style={inp({textAlign:"center"})} value={it.count} onChange={e=>updItem(gi,ii,"count",e.target.value)} onKeyDown={kd} /></td>
-                    <td style={{...TD,minWidth:80,background:rowBg}}><input style={inp()} value={it.note} onChange={e=>updItem(gi,ii,"note",e.target.value)} onKeyDown={kd} /></td>
-                    <td style={{...TD,width:26,background:rowBg}}><button onClick={()=>delItem(gi,ii)} style={{border:"none",background:"none",cursor:"pointer",color:"#dc2626",fontSize:15}}>✕</button></td>
+                  <tr key={it.id}
+                    draggable
+                    onDragStart={()=>{ dragSrc.current={gi,ii}; }}
+                    onDragOver={e=>{ e.preventDefault(); setDragOverKey(dKey); }}
+                    onDragLeave={()=>setDragOverKey(null)}
+                    onDrop={e=>{ e.preventDefault(); setDragOverKey(null); if(dragSrc.current) reorderItem(dragSrc.current.gi,dragSrc.current.ii,gi,ii); dragSrc.current=null; }}
+                    onDragEnd={()=>{ setDragOverKey(null); dragSrc.current=null; }}
+                    style={{background:rowBg, outline:isDragOver?"2px solid #2563eb":"none", outlineOffset:-1}}
+                  >
+                    <td style={{...TD,width:18,background:rowBg,textAlign:"center",cursor:"grab",color:"#94a3b8",fontSize:14,userSelect:"none"}}>⠿</td>
+                    <td style={{...TD,width:90,background:rowBg}}><input data-gi={gi} data-ii={ii} data-fi={0} style={inp()} value={it.category} onChange={e=>updItem(gi,ii,"category",e.target.value)} onKeyDown={kd(0)} onPaste={e=>handlePaste(e,gi,ii)} /></td>
+                    <td style={{...TD,minWidth:120,background:rowBg}}><input data-gi={gi} data-ii={ii} data-fi={1} style={inp()} value={it.vendor} onChange={e=>updItem(gi,ii,"vendor",e.target.value)} onKeyDown={kd(1)} onPaste={e=>handlePaste(e,gi,ii)} /></td>
+                    <td style={{...TD,minWidth:140,background:rowBg}}><input data-gi={gi} data-ii={ii} data-fi={2} style={inp()} value={it.content} onChange={e=>updItem(gi,ii,"content",e.target.value)} onKeyDown={kd(2)} onPaste={e=>handlePaste(e,gi,ii)} /></td>
+                    <td style={{...TD,width:100,background:rowBg}}><input data-gi={gi} data-ii={ii} data-fi={3} type="text" inputMode="numeric" style={inp({textAlign:"right",color:isBilled?BILLED_AMT_CLR:"inherit"})} value={formatAmt(it.amount)} onChange={e=>updItem(gi,ii,"amount",parseAmt(e.target.value))} onKeyDown={kd(3)} onPaste={e=>handlePaste(e,gi,ii)} /></td>
+                    <td style={{...TD,width:70,background:rowBg}}><select data-gi={gi} data-ii={ii} data-fi={4} style={{...S.select,padding:"3px 5px",fontSize:11,background:isBilled?"#fde68a":"",fontWeight:isBilled?700:400,color:isBilled?"#92400e":""}} value={it.method} onChange={e=>updItem(gi,ii,"method",e.target.value)}>{PAYMENT_METHODS.map(m=><option key={m}>{m}</option>)}</select></td>
+                    <td style={{...TD,width:100,background:rowBg}}><input data-gi={gi} data-ii={ii} data-fi={5} style={inp()} value={it.issueDate} onChange={e=>updItem(gi,ii,"issueDate",e.target.value)} onKeyDown={kd(5)} onPaste={e=>handlePaste(e,gi,ii)} placeholder="예: 1/15" /></td>
+                    <td style={{...TD,width:55,background:rowBg}}><input data-gi={gi} data-ii={ii} data-fi={6} style={inp({textAlign:"center"})} value={it.count} onChange={e=>updItem(gi,ii,"count",e.target.value)} onKeyDown={kd(6)} onPaste={e=>handlePaste(e,gi,ii)} /></td>
+                    <td style={{...TD,minWidth:80,background:rowBg}}><input data-gi={gi} data-ii={ii} data-fi={7} style={inp()} value={it.note} onChange={e=>updItem(gi,ii,"note",e.target.value)} onKeyDown={kd(7)} onPaste={e=>handlePaste(e,gi,ii)} /></td>
+                    <td style={{...TD,width:90,background:rowBg,textAlign:"center",whiteSpace:"nowrap"}}>
+                      <button title="위로" onClick={()=>moveItem(gi,ii,-1)} disabled={ii===0} style={{border:"none",background:"none",cursor:ii===0?"default":"pointer",color:ii===0?"#cbd5e1":"#64748b",fontSize:13,padding:"0 2px"}}>↑</button>
+                      <button title="아래로" onClick={()=>moveItem(gi,ii,1)} disabled={ii===itemCount-1} style={{border:"none",background:"none",cursor:ii===itemCount-1?"default":"pointer",color:ii===itemCount-1?"#cbd5e1":"#64748b",fontSize:13,padding:"0 2px"}}>↓</button>
+                      <button title="행 복제" onClick={()=>dupItem(gi,ii)} style={{border:"none",background:"none",cursor:"pointer",color:"#2563eb",fontSize:13,padding:"0 2px"}}>⧉</button>
+                      <button title="클립보드 복사" onClick={()=>copyItem(gi,ii)} style={{border:"none",background:"none",cursor:"pointer",color:"#059669",fontSize:13,padding:"0 2px"}}>📋</button>
+                      <button title="삭제" onClick={()=>delItem(gi,ii)} style={{border:"none",background:"none",cursor:"pointer",color:"#dc2626",fontSize:13,padding:"0 2px"}}>✕</button>
+                    </td>
                   </tr>
                 );
               })}
