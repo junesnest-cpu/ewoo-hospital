@@ -329,7 +329,7 @@ export default function ConsultationPage() {
     }
     if (search) {
       const q = search.toLowerCase();
-      const all = [c.name,c.phone,c.phoneNote,c.diagnosis,c.hospital,c.birthYear,
+      const all = [c.name,c.phone,c.phoneNote,c.phone2,c.phone2Note,c.diagnosis,c.hospital,c.birthYear,
                    c.age,c.memo,c.recontactMemo,c.route,c.reservedSlot,
                    c.surgeryDate,c.chemoDate,c.admitDate]
         .filter(Boolean).join(" ").toLowerCase();
