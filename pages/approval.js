@@ -90,7 +90,8 @@ function ExcelImportButton({ onParsed, parserFn, accept=".xlsx,.xls", color="#0f
     if (!file) return;
     setLoading(true); setError("");
     try {
-      const XLSX = (await import("xlsx")).default;
+      const mod = await import("xlsx");
+      const XLSX = mod.default || mod;
       const results = await parserFn(file, XLSX);
       if (!results || results.length === 0) { setError("파싱된 데이터가 없습니다. 파일 형식을 확인하세요."); return; }
       onParsed(results);
