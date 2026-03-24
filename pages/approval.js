@@ -3,7 +3,7 @@ import { ref, onValue, set, get, push, runTransaction, update, remove } from "fi
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { db, auth, storage } from "../lib/firebaseConfig";
 import { parseRefundExcel, parseWeeklyExcel, parseTaxExcel } from "../lib/excelParsers";
-import * as XLSX from "xlsx";
+import XLSX from "xlsx";
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
 const DOC_TYPES = {
@@ -91,7 +91,8 @@ function ExcelImportButton({ onParsed, parserFn, accept=".xlsx,.xls", color="#0f
     if (!file) return;
     setLoading(true); setError("");
     try {
-      const results = await parserFn(file, XLSX);
+      const XLSXLib = (XLSX && XLSX.read) ? XLSX : (XLSX?.default || XLSX);
+      const results = await parserFn(file, XLSXLib);
       if (!results || results.length === 0) { setError("파싱된 데이터가 없습니다. 파일 형식을 확인하세요."); return; }
       onParsed(results);
     } catch (err) {
