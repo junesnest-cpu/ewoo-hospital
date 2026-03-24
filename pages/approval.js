@@ -232,9 +232,9 @@ function FileUpload({ files, onChange, docId }) {
       });
       const url = await getDownloadURL(uploadRef);
       onChange([...(files||[]), { name:f.name, url, path, size:f.size }]);
-    } catch { alert("파일 업로드 실패. Firebase Storage가 활성화되어 있는지 확인하세요."); }
+    } catch(err) { alert("파일 업로드 실패: " + (err?.message || String(err))); }
     setUploading(false);
-    fileRef.current.value = "";
+    if (fileRef.current) fileRef.current.value = "";
   };
   const remove = async (idx) => {
     try { await deleteObject(sRef(storage, files[idx].path)); } catch {}
@@ -1170,7 +1170,11 @@ export default function ApprovalPage() {
   // 반려된 문서 재제출
   const handleResubmit = async (docId) => {
     await update(ref(db, `approvals/${docId}`), { status:"draft", currentApproverUid:null, updatedAt:Date.now() });
-    setView("list");
+    const doc = docs[docId];
+    setEditDocId(docId);
+    setFormData(doc?.formData || {});
+    setFiles(doc?.fileUrls || []);
+    setView("edit");
   };
 
   // 임시저장 문서 제출
