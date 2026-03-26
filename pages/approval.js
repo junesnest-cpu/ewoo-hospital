@@ -1900,8 +1900,8 @@ export default function ApprovalPage() {
     ? vacationDocs
     : vacationDocs.filter(([,d]) => d.authorUid === user.uid);
 
-  // 물품청구서: 모든 직원 전체 열람
-  const supplyDisplay = supplyDocs;
+  // 물품청구서: draft(임시저장)는 본인 것만, 결재 중/승인은 전체
+  const supplyDisplay = supplyDocs.filter(([,d]) => d.status !== "draft" || d.authorUid === user.uid);
 
   // 위탁진료: 권한자만 전체, 나머지는 본인것 (탭 자체는 권한자만 표시)
   const refundDisplay = refundDocs;
@@ -1931,6 +1931,7 @@ export default function ApprovalPage() {
   const refundAllMonths    = [...new Set(refundDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
   const taxDocForMonth     = findActiveDocForMonth(taxDocs, taxNavMonth);
   const taxAllMonths       = [...new Set(taxDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
+  const supplyAllMonths    = [...new Set(supplyDocs.filter(([,d]) => ["approved","final"].includes(d.status)).map(([,d]) => d.formData?.requestDate?.slice(0,7)).filter(Boolean))].sort();
 
   const displayDocs = activeTab === "mine"     ? sortedDocs(myDocs)
     : activeTab === "pending"   ? sortedDocs(pendingDocs)
@@ -2072,6 +2073,84 @@ export default function ApprovalPage() {
           );
         })()}
 
+        {/* 물품청구서 탭: 진행 중 + 월별 승인 목록 */}
+        {activeTab === "supply" && (() => {
+          const activeSupplyDocs = sortedDocs(supplyDisplay.filter(([,d]) => !["approved","final","rejected","superseded"].includes(d.status)));
+          const approvedForMonth = supplyDocs
+            .filter(([,d]) => ["approved","final"].includes(d.status) && d.formData?.requestDate?.slice(0,7) === supplyNavMonth)
+            .sort(([,a],[,b]) => (a.formData?.requestDate||"").localeCompare(b.formData?.requestDate||""));
+          return (<>
+            {activeSupplyDocs.length > 0 && (
+              <div style={S.card}>
+                <div style={{ fontWeight:700, fontSize:13, color:"#0369a1", marginBottom:10 }}>진행 중인 문서</div>
+                {activeSupplyDocs.map(([id, doc]) => {
+                  const isDraft = doc.status === "draft";
+                  const isMineDoc = doc.authorUid === user.uid;
+                  return (
+                    <div key={id}
+                      style={{ ...S.docRow, ...(isDraft ? { background:"#fefce8", borderLeft:"3px solid #fde047" } : {}) }}
+                      onClick={()=>{setSelectedId(id);setView("detail");}}
+                      onMouseEnter={e=>e.currentTarget.style.background=isDraft?"#fef9c3":"#f8fafc"}
+                      onMouseLeave={e=>e.currentTarget.style.background=isDraft?"#fefce8":"transparent"}>
+                      <span style={{ fontFamily:"monospace", fontSize:12, color:isDraft?"#92400e":"#64748b", flexShrink:0, minWidth:110, fontStyle:isDraft?"italic":"normal" }}>
+                        {doc.docNumber || "임시저장"}
+                      </span>
+                      <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{doc.formData?.department || doc.authorName}</span>
+                      <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{doc.formData?.requestDate || fmtTs(doc.updatedAt||doc.createdAt).slice(0,10)}</span>
+                      <StatusBadge status={doc.status} />
+                      {isDraft && isMineDoc && (
+                        <div style={{ display:"flex", gap:4, flexShrink:0, marginLeft:4 }} onClick={e=>e.stopPropagation()}>
+                          <button style={{ border:"1px solid #7dd3fc", background:"#f0f9ff", color:"#0369a1", borderRadius:6, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:700 }}
+                            onClick={()=>{setSelectedId(id);setEditDocId(id);setFormData(doc.formData||{});setFiles(doc.fileUrls||[]);setView("edit");}}>수정</button>
+                          <button style={{ border:"1px solid #fca5a5", background:"#fff1f2", color:"#dc2626", borderRadius:6, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:700 }}
+                            onClick={()=>handleDeleteDraft(id)}>삭제</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div style={S.card}>
+              <div style={{ fontWeight:700, fontSize:13, color:"#065f46", marginBottom:12 }}>승인 완료 문서</div>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+                <button style={{ border:"1.5px solid #6ee7b7", background:"#ecfdf5", color:"#065f46", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                  onClick={()=>setSupplyNavMonth(prevMonth(supplyNavMonth))}>← 이전달</button>
+                <input type="month" style={{ ...S.input, maxWidth:180, textAlign:"center", fontWeight:700, color:"#065f46", fontSize:15 }}
+                  value={supplyNavMonth} onChange={e=>setSupplyNavMonth(e.target.value)} />
+                <button style={{ border:"1.5px solid #6ee7b7", background:"#ecfdf5", color:"#065f46", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                  onClick={()=>setSupplyNavMonth(nextMonth(supplyNavMonth))} disabled={supplyNavMonth >= nowYM}>다음달 →</button>
+              </div>
+              {approvedForMonth.length === 0 ? (
+                <div style={{ textAlign:"center", padding:"24px 0", color:"#94a3b8", fontSize:14 }}>
+                  {supplyNavMonth} 승인된 물품청구서가 없습니다.
+                  {supplyAllMonths.length > 0 && (
+                    <div style={{ fontSize:12, color:"#6ee7b7", marginTop:6 }}>
+                      자료 있는 월: {supplyAllMonths.slice(-6).join(", ")}{supplyAllMonths.length>6?" 외 "+String(supplyAllMonths.length-6)+"건":""}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                approvedForMonth.map(([id, doc]) => {
+                  const total = (doc.formData?.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.price)||0),0);
+                  return (
+                    <div key={id} style={S.docRow}
+                      onClick={()=>{setSelectedId(id);setView("detail");}}
+                      onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <span style={{ fontFamily:"monospace", fontSize:12, color:"#64748b", flexShrink:0, minWidth:110 }}>{doc.docNumber}</span>
+                      <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{doc.formData?.department || doc.authorName}</span>
+                      <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{doc.formData?.requestDate}</span>
+                      {total > 0 && <span style={{ fontSize:13, color:"#065f46", fontWeight:700, flexShrink:0 }}>{fmtNum(total)}원</span>}
+                      <StatusBadge status={doc.status} />
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </>);
+        })()}
+
         {/* 위탁진료 환불금 탭: 월 네비게이터 + 인라인 표시 */}
         {activeTab === "refund" && (
           <div style={S.card}>
@@ -2206,7 +2285,7 @@ export default function ApprovalPage() {
           </div>
         )}
 
-        {activeTab !== "weekly" && activeTab !== "refund" && activeTab !== "tax" && activeTab !== "vacation_summary" && (
+        {activeTab !== "weekly" && activeTab !== "refund" && activeTab !== "tax" && activeTab !== "vacation_summary" && activeTab !== "supply_summary" && activeTab !== "supply" && (
         <div style={S.card}>
           {displayDocs.length === 0 && (
             <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8", fontSize:14 }}>
