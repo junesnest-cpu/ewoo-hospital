@@ -1014,7 +1014,7 @@ function TaxForm({ data, onChange, readonly }) {
                             : it.method}
                         </td>
                         <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.issueDate}</td>
-                        <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.count?`${it.count}건`:""}</td>
+                        <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.count && it.amount?`${it.count}건`:""}</td>
                         <td style={{...TD,...rowStyle}}>{it.note}</td>
                       </tr>
                     );
