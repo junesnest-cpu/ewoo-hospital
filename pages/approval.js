@@ -1995,7 +1995,7 @@ export default function ApprovalPage() {
 
         {/* 물품 월간 합산 탭 */}
         {activeTab === "supply_summary" && canSeeSupplySummary && (() => {
-          const TH2 = { ...TH, padding:"7px 10px", fontSize:12 };
+          const TH2 = { ...S.th, padding:"7px 10px", fontSize:12 };
           const TD2 = { ...S.td, fontSize:12, padding:"5px 10px" };
           const approvedSupplyDocs = supplyDocs
             .filter(([,d]) => ["approved","final"].includes(d.status) && d.formData?.requestDate?.slice(0,7) === supplyNavMonth)
