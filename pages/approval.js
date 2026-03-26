@@ -803,7 +803,7 @@ const PRESET_GROUPS = [
 ];
 
 function makeTaxItem(p={}) {
-  return { id:uid7(), category:p.category||"", vendor:p.vendor||"", content:p.content||"", amount:"", method:"청구", issueDate:"", count:"1", note:"" };
+  return { id:uid7(), category:p.category||"", vendor:p.vendor||"", content:p.content||"", amount:"", method:"청구", issueDate:"", count:"", note:"" };
 }
 function makeTaxGroups() {
   return PRESET_GROUPS.map(g => ({ name:g.name, items:g.items.map(makeTaxItem) }));
