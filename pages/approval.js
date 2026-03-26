@@ -1340,9 +1340,10 @@ export default function ApprovalPage() {
   const [newType,    setNewType]    = useState(null);
   // 탭 월 네비게이션
   const nowYM = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; })();
-  const [weeklyNavMonth, setWeeklyNavMonth] = useState(nowYM);
-  const [refundNavMonth, setRefundNavMonth] = useState(nowYM);
-  const [taxNavMonth,    setTaxNavMonth]    = useState(nowYM);
+  const [weeklyNavMonth,  setWeeklyNavMonth]  = useState(nowYM);
+  const [refundNavMonth,  setRefundNavMonth]  = useState(nowYM);
+  const [taxNavMonth,     setTaxNavMonth]     = useState(nowYM);
+  const [supplyNavMonth,  setSupplyNavMonth]  = useState(nowYM);
 
   // 결재 액션
   const [rejectModal, setRejectModal] = useState(null); // { docId }
@@ -1882,7 +1883,9 @@ export default function ApprovalPage() {
   // weekly: 영양팀·병원장만 탭 접근
   const canAccessWeekly   = isDirector || isNutrition;
   // tax: 병원장·원무과장·손정아만 탭 접근
-  const canAccessTax      = isDirector || isWonmuHead || profile.name === "손정아";
+  const canAccessTax          = isDirector || isWonmuHead || profile.name === "손정아";
+  // supply_summary: 병원장·원무과장·손정아만 탭 접근
+  const canSeeSupplySummary   = isDirector || isWonmuHead || profile.name === "손정아";
 
   // 타입별 문서 목록
   const allDocEntries  = Object.entries(docs);
@@ -1943,6 +1946,7 @@ export default function ApprovalPage() {
     { key:"vacation", label:`휴가신청서 (${vacationDisplay.length})` },
     ...(canSeeAllVacation ? [{ key:"vacation_summary", label:"📊 연차 현황" }] : []),
     { key:"supply",   label:`물품청구서 (${supplyDisplay.length})` },
+    ...(canSeeSupplySummary ? [{ key:"supply_summary", label:"📊 물품 월간 합산" }] : []),
     ...(canAccessRefund  ? [{ key:"refund",  label:`위탁진료 환불금 (${refundDisplay.length})` }] : []),
     ...(canAccessWeekly  ? [{ key:"weekly",  label:`영양팀 월간보고` }] : []),
     ...(canAccessTax     ? [{ key:"tax",     label:`세금계산서` }] : []),
@@ -1987,6 +1991,86 @@ export default function ApprovalPage() {
             />
           </div>
         )}
+
+        {/* 물품 월간 합산 탭 */}
+        {activeTab === "supply_summary" && canSeeSupplySummary && (() => {
+          const TH2 = { ...TH, padding:"7px 10px", fontSize:12 };
+          const TD2 = { ...S.td, fontSize:12, padding:"5px 10px" };
+          const approvedSupplyDocs = supplyDocs
+            .filter(([,d]) => ["approved","final"].includes(d.status) && d.formData?.requestDate?.slice(0,7) === supplyNavMonth)
+            .sort(([,a],[,b]) => (a.formData?.requestDate||"").localeCompare(b.formData?.requestDate||""));
+          const docGroups = approvedSupplyDocs.map(([id, d]) => {
+            const items = (d.formData?.items||[]).filter(it => it.name);
+            const total = items.reduce((s,it) => s + (Number(it.qty)||0)*(Number(it.price)||0), 0);
+            return { docId:id, docNumber:d.docNumber||"", date:d.formData?.requestDate||"", department:d.formData?.department||"미입력", items, total };
+          });
+          const grandTotal = docGroups.reduce((s,g) => s + g.total, 0);
+          const deptTotals = {};
+          docGroups.forEach(g => { deptTotals[g.department] = (deptTotals[g.department]||0) + g.total; });
+          return (
+            <div style={S.card}>
+              <div style={{ fontWeight:800, fontSize:15, color:"#10b981", marginBottom:16 }}>물품청구서 월간 합산 (승인 완료 기준)</div>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+                <button style={{ border:"1.5px solid #6ee7b7", background:"#ecfdf5", color:"#065f46", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                  onClick={()=>setSupplyNavMonth(prevMonth(supplyNavMonth))}>← 이전달</button>
+                <input type="month" style={{ ...S.input, maxWidth:180, textAlign:"center", fontWeight:700, color:"#065f46", fontSize:15 }}
+                  value={supplyNavMonth} onChange={e=>setSupplyNavMonth(e.target.value)} />
+                <button style={{ border:"1.5px solid #6ee7b7", background:"#ecfdf5", color:"#065f46", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                  onClick={()=>setSupplyNavMonth(nextMonth(supplyNavMonth))} disabled={supplyNavMonth >= nowYM}>다음달 →</button>
+              </div>
+              {docGroups.length === 0 ? (
+                <div style={{ textAlign:"center", color:"#94a3b8", padding:"32px 0", fontSize:14 }}>{supplyNavMonth} 승인된 물품청구서가 없습니다.</div>
+              ) : (<>
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, marginBottom:24 }}>
+                  <thead>
+                    <tr>{["일자","부서","문서번호","품명","단위","수량","금액(원)"].map(h=><th key={h} style={TH2}>{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {docGroups.map(g => g.items.length === 0
+                      ? (<tr key={g.docId}>
+                          <td style={{...TD2,textAlign:"center"}}>{g.date.slice(5).replace("-","/")}</td>
+                          <td style={TD2}>{g.department}</td>
+                          <td style={{...TD2,color:"#2563eb",cursor:"pointer",textDecoration:"underline"}} onClick={()=>{setSelectedId(g.docId);setView("detail");}}>{g.docNumber}</td>
+                          <td colSpan={4} style={{...TD2,color:"#94a3b8"}}>품목 없음</td>
+                        </tr>)
+                      : g.items.map((it, idx) => {
+                          const amt = (Number(it.qty)||0)*(Number(it.price)||0);
+                          return (
+                            <tr key={`${g.docId}-${idx}`} style={{ background: idx%2===0?"#f8fafc":"#fff" }}>
+                              {idx===0 && <td rowSpan={g.items.length} style={{...TD2,verticalAlign:"middle",textAlign:"center",fontWeight:700,background:"#f0fdf4"}}>{g.date.slice(5).replace("-","/")}</td>}
+                              {idx===0 && <td rowSpan={g.items.length} style={{...TD2,verticalAlign:"middle",textAlign:"center",background:"#f0fdf4"}}>{g.department}</td>}
+                              {idx===0 && <td rowSpan={g.items.length} style={{...TD2,verticalAlign:"middle",textAlign:"center",color:"#2563eb",cursor:"pointer",textDecoration:"underline",background:"#f0fdf4"}} onClick={()=>{setSelectedId(g.docId);setView("detail");}}>{g.docNumber}</td>}
+                              <td style={TD2}>{it.name}</td>
+                              <td style={{...TD2,textAlign:"center"}}>{it.unit}</td>
+                              <td style={{...TD2,textAlign:"center"}}>{it.qty}</td>
+                              <td style={{...TD2,textAlign:"right"}}>{amt>0?fmtNum(amt):""}</td>
+                            </tr>
+                          );
+                        })
+                    )}
+                  </tbody>
+                </table>
+                <div style={{ display:"flex", gap:24, flexWrap:"wrap" }}>
+                  <div style={{ flex:1, minWidth:260 }}>
+                    <div style={{ fontWeight:700, fontSize:13, color:"#374151", marginBottom:8 }}>부서별 합계</div>
+                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                      <thead><tr><th style={TH2}>부서</th><th style={{...TH2,textAlign:"right"}}>합계(원)</th></tr></thead>
+                      <tbody>
+                        {Object.entries(deptTotals).sort(([,a],[,b])=>b-a).map(([dept,tot])=>(
+                          <tr key={dept}><td style={TD2}>{dept}</td><td style={{...TD2,textAlign:"right",fontWeight:600}}>{fmtNum(tot)}</td></tr>
+                        ))}
+                        <tr style={{background:"#ecfdf5"}}>
+                          <td style={{...TD2,fontWeight:800,color:"#065f46"}}>월 합계</td>
+                          <td style={{...TD2,textAlign:"right",fontWeight:800,color:"#065f46",fontSize:14}}>{fmtNum(grandTotal)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>)}
+            </div>
+          );
+        })()}
 
         {/* 위탁진료 환불금 탭: 월 네비게이터 + 인라인 표시 */}
         {activeTab === "refund" && (
