@@ -262,7 +262,12 @@ function FileUpload({ files, onChange, docId }) {
       const uploadRef = sRef(storage, path);
       await new Promise((res, rej) => {
         const task = uploadBytesResumable(uploadRef, f);
-        task.on("state_changed", null, rej, () => res());
+        const timeout = setTimeout(() => rej(new Error("업로드 시간 초과 (30초). Firebase Storage 버킷이 초기화되지 않았거나 네트워크 오류입니다.")), 30000);
+        task.on("state_changed",
+          (snap) => console.log(`업로드 진행: ${Math.round(snap.bytesTransferred/snap.totalBytes*100)}%`),
+          (err) => { clearTimeout(timeout); console.error("Storage 오류:", err.code, err.message); rej(err); },
+          () => { clearTimeout(timeout); res(); }
+        );
       });
       const url = await getDownloadURL(uploadRef);
       onChange([...(files||[]), { name:f.name, url, path, size:f.size }]);
