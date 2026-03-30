@@ -623,6 +623,9 @@ export default function WardTimeline() {
                                     {/* 1줄: 이름 + 퇴원일 */}
                                     <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden" }}>
                                       {bar.overflowLeft && <span style={{ color:"rgba(255,255,255,0.7)", fontSize:11, flexShrink:0 }}>‹</span>}
+                                      {admitToday && bar.type==="current" && (
+                                        <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }}>★신</span>
+                                      )}
                                       <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
                                         {p.name}
                                       </span>
@@ -647,6 +650,8 @@ export default function WardTimeline() {
                               {/* ── 텍스트 오버레이 (빗금 위, z-index 7) ── */}
                               {bars.map((bar, bi2) => {
                                 const p = bar.person;
+                                const admitD2   = parseDateStr(p.admitDate);
+                                const admitToday2 = admitD2 && dateOnly(admitD2).getTime() === today.getTime();
                                 const barLeft  = bar.startDay * DAY_W + (bar.overflowLeft  ? 0 : 3);
                                 const barWidth = Math.max(20, (bar.endDay - bar.startDay + 1) * DAY_W - (bar.overflowLeft?0:3) - (bar.overflowRight?0:3));
                                 const BAR_H    = ROW_H - 16;
@@ -658,6 +663,9 @@ export default function WardTimeline() {
                                   }}>
                                     <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden" }}>
                                       {bar.overflowLeft && <span style={{ color:"rgba(255,255,255,0.7)", fontSize:11, flexShrink:0 }}>‹</span>}
+                                      {admitToday2 && bar.type==="current" && (
+                                        <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }}>★신</span>
+                                      )}
                                       <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
                                         {p.name}
                                       </span>
