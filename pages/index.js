@@ -760,6 +760,7 @@ export default function HospitalWardManager() {
                       {[
                         { label:"🏠 홈", action:() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); } },
                         { label:`🔔 웹훅 승인${pendingCount > 0 ? ` (${pendingCount})` : ""}`, action:() => router.push("/history") },
+                        { label:"📊 타임라인", action:() => router.push("/ward-timeline") },
                         { label:"📅 월간 예정표", action:() => router.push("/monthly") },
                         { label:"🏥 치료실", action:() => router.push("/therapy") },
                         { label:"📋 상담일지", action:() => router.push("/consultation") },
@@ -818,6 +819,7 @@ export default function HospitalWardManager() {
             <button style={{ ...S.navBtn, background:"#431407", color:"#fed7aa" }} onClick={() => router.push("/history")}>
               🔔 웹훅 승인{pendingCount > 0 && <span style={{ marginLeft:4, background:"#dc2626", color:"#fff", borderRadius:9, padding:"0 5px", fontSize:11, fontWeight:800 }}>{pendingCount}</span>}
             </button>
+            <button style={{ ...S.navBtn, background:"#312e81", color:"#c4b5fd" }} onClick={() => router.push("/ward-timeline")}>📊 타임라인</button>
             <button style={{ ...S.navBtn, background:"#1e3a5f", color:"#a5f3fc" }} onClick={() => router.push("/monthly")}>📅 월간 예정표</button>
             <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/therapy")}>🏥 치료실</button>
             <button style={{ ...S.navBtn, background:"#713f12", color:"#fef08a" }} onClick={() => router.push("/consultation")}>📋 상담일지</button>
