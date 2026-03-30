@@ -236,12 +236,14 @@ export default function WardTimeline() {
     return () => unsub();
   }, []);
 
-  // 신환 이름 집합 (consultations 기준, 취소/입원완료 제외)
+  // 신환 이름 집합 (consultations 기준, patientId 없음=신규, 취소/입원완료 제외)
   const newPatientNames = useMemo(() => {
-    const normName = n => (n || "").replace(/\s/g, "").toLowerCase();
+    // "신)이름" 같은 접두사 제거 후 비교
+    const normName = n => (n || "").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
     const set = new Set();
     Object.values(consultations).forEach(c => {
       if (!c?.name) return;
+      if (c.patientId) return;                              // patientId 있으면 재입원 → 제외
       if (c.status === "취소" || c.status === "입원완료") return;
       set.add(normName(c.name));
     });
@@ -643,7 +645,7 @@ export default function WardTimeline() {
                                     {/* 1줄: 이름 + 퇴원일 */}
                                     <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden" }}>
                                       {bar.overflowLeft && <span style={{ color:"rgba(255,255,255,0.7)", fontSize:11, flexShrink:0 }}>‹</span>}
-                                      {(() => { const ad = parseDateStr(p.admitDate); return bar.type !== "current" && newPatientNames.has((p.name||"").replace(/\s/g,"").toLowerCase()) && !(ad && dateOnly(ad).getTime() < today.getTime()); })() && (
+                                      {(() => { const ad = parseDateStr(p.admitDate); return bar.type !== "current" && newPatientNames.has((p.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && !(ad && dateOnly(ad).getTime() < today.getTime()); })() && (
                                         <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }}>★신</span>
                                       )}
                                       <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
@@ -681,7 +683,7 @@ export default function WardTimeline() {
                                   }}>
                                     <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden" }}>
                                       {bar.overflowLeft && <span style={{ color:"rgba(255,255,255,0.7)", fontSize:11, flexShrink:0 }}>‹</span>}
-                                      {(() => { const ad = parseDateStr(p.admitDate); return bar.type !== "current" && newPatientNames.has((p.name||"").replace(/\s/g,"").toLowerCase()) && !(ad && dateOnly(ad).getTime() < today.getTime()); })() && (
+                                      {(() => { const ad = parseDateStr(p.admitDate); return bar.type !== "current" && newPatientNames.has((p.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && !(ad && dateOnly(ad).getTime() < today.getTime()); })() && (
                                         <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }}>★신</span>
                                       )}
                                       <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
