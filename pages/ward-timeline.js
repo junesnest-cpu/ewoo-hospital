@@ -79,11 +79,12 @@ function getOverlaps(bars) {
 // ── 편집 모달 ─────────────────────────────────────────────────────────────────
 function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving }) {
   const [form, setForm] = useState({
-    name:          modal.data.name          || "",
-    admitDate:     modal.data.admitDate     || "",
-    discharge:     modal.data.discharge     || "미정",
-    note:          modal.data.note          || "",
-    scheduleAlert: modal.data.scheduleAlert || false,
+    name:           modal.data.name           || "",
+    admitDate:      modal.data.admitDate      || "",
+    discharge:      modal.data.discharge      || "미정",
+    note:           modal.data.note           || "",
+    scheduleAlert:  modal.data.scheduleAlert  || false,
+    isNewPatient:   modal.data.isNewPatient   || false,
   });
   const isNew         = modal.resIndex === -1;
   const isReservation = modal.mode === "reservation";
@@ -114,6 +115,13 @@ function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving }) {
           <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>메모</label>
           <textarea style={{...inpStyle, resize:"vertical", minHeight:72, lineHeight:1.6}} value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="치료 내용, 특이사항 등" />
         </div>
+
+        {isReservation && (
+          <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, cursor:"pointer", fontSize:13, color:"#713f12", fontWeight:700 }}>
+            <input type="checkbox" checked={form.isNewPatient} onChange={e=>setForm(p=>({...p,isNewPatient:e.target.checked}))} />
+            ★신 신규 환자
+          </label>
+        )}
 
         <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20, cursor:"pointer", fontSize:13, color:"#64748b" }}>
           <input type="checkbox" checked={form.scheduleAlert} onChange={e=>setForm(p=>({...p,scheduleAlert:e.target.checked}))} />
@@ -623,7 +631,7 @@ export default function WardTimeline() {
                                     {/* 1줄: 이름 + 퇴원일 */}
                                     <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden" }}>
                                       {bar.overflowLeft && <span style={{ color:"rgba(255,255,255,0.7)", fontSize:11, flexShrink:0 }}>‹</span>}
-                                      {admitToday && bar.type==="current" && (
+                                      {p.isNewPatient && bar.type==="reservation" && (
                                         <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }}>★신</span>
                                       )}
                                       <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
@@ -650,8 +658,6 @@ export default function WardTimeline() {
                               {/* ── 텍스트 오버레이 (빗금 위, z-index 7) ── */}
                               {bars.map((bar, bi2) => {
                                 const p = bar.person;
-                                const admitD2   = parseDateStr(p.admitDate);
-                                const admitToday2 = admitD2 && dateOnly(admitD2).getTime() === today.getTime();
                                 const barLeft  = bar.startDay * DAY_W + (bar.overflowLeft  ? 0 : 3);
                                 const barWidth = Math.max(20, (bar.endDay - bar.startDay + 1) * DAY_W - (bar.overflowLeft?0:3) - (bar.overflowRight?0:3));
                                 const BAR_H    = ROW_H - 16;
@@ -663,7 +669,7 @@ export default function WardTimeline() {
                                   }}>
                                     <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden" }}>
                                       {bar.overflowLeft && <span style={{ color:"rgba(255,255,255,0.7)", fontSize:11, flexShrink:0 }}>‹</span>}
-                                      {admitToday2 && bar.type==="current" && (
+                                      {p.isNewPatient && bar.type==="reservation" && (
                                         <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }}>★신</span>
                                       )}
                                       <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
