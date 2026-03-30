@@ -576,9 +576,8 @@ export default function WardTimeline() {
                                   backgroundImage:"repeating-linear-gradient(45deg, rgba(239,68,68,0.55) 0px, rgba(239,68,68,0.55) 3px, transparent 3px, transparent 10px)",
                                   borderLeft:"2px solid #ef4444",
                                   borderRight:"2px solid #ef4444",
-                                }}>
-                                  <div style={{ position:"absolute", top:2, left:4, fontSize:10, fontWeight:800, color:"#dc2626", background:"rgba(255,255,255,0.85)", borderRadius:3, padding:"1px 4px" }}>⚠ 겹침</div>
-                                </div>
+                                }}/>
+
                               ))}
 
                               {/* ── 환자 바 ── */}
