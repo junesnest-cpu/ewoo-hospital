@@ -269,33 +269,6 @@ export default function WardTimeline() {
     setDragOver(null);
   }, [dragging, slots, saveSlots]);
 
-  // 요약 통계
-  const stats = useMemo(() => {
-    let total=0, occupied=0, empty=0, todayDis=0, todayAdm=0, reservations=0;
-    Object.values(WARD_STRUCTURE).forEach(ward =>
-      ward.rooms.forEach(room => {
-        for (let b=1; b<=room.capacity; b++) {
-          total++;
-          const slot = slots[`${room.id}-${b}`];
-          if (slot?.current?.name) {
-            occupied++;
-            const dd = parseDateStr(slot.current.discharge);
-            if (dd && dateOnly(dd).getTime() === today.getTime()) todayDis++;
-            const ad = parseDateStr(slot.current.admitDate);
-            if (ad && dateOnly(ad).getTime() === today.getTime()) todayAdm++;
-          } else { empty++; }
-          (slot?.reservations||[]).forEach(r => {
-            if (r?.name) {
-              reservations++;
-              const ad = parseDateStr(r.admitDate);
-              if (ad && dateOnly(ad).getTime() === today.getTime()) todayAdm++;
-            }
-          });
-        }
-      })
-    );
-    return { total, occupied, empty, todayDis, todayAdm, reservations };
-  }, [slots, today]);
 
   // 저장 처리
   const handleSave = useCallback(async form => {
@@ -403,36 +376,24 @@ export default function WardTimeline() {
         </div>
       </header>
 
-      {/* ── 요약 바 ── */}
-      <div style={{ background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"10px 20px", display:"flex", flexShrink:0, flexWrap:"wrap", alignItems:"center" }}>
+      {/* ── 범례 바 ── */}
+      <div style={{ background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"8px 20px", display:"flex", flexShrink:0, flexWrap:"wrap", alignItems:"center", gap:16 }}>
         {[
-          { label:"전체 병상", value:stats.total,        color:"#334155" },
-          { label:"입원 중",   value:stats.occupied,     color:"#059669" },
-          { label:"빈 병상",   value:stats.empty,        color:"#0ea5e9" },
-          { label:"오늘 퇴원", value:stats.todayDis,     color:"#d97706" },
-          { label:"오늘 입원", value:stats.todayAdm,     color:"#7c3aed" },
-          { label:"예약 대기", value:stats.reservations, color:"#6366f1" },
-        ].map((s, i) => (
-          <div key={s.label} style={{ display:"flex", flexDirection:"column", alignItems:"center", minWidth:80, padding:"4px 10px", borderRight:i<5?"1px solid #f1f5f9":"none" }}>
-            <span style={{ fontSize:22, fontWeight:900, color:s.color, lineHeight:1.1 }}>{s.value}</span>
-            <span style={{ fontSize:11, color:"#94a3b8", fontWeight:600, marginTop:2 }}>{s.label}</span>
+          { color:"#10b981", label:"입원 중" },
+          { color:"#3b82f6", label:"당일 입원" },
+          { color:"#f59e0b", label:"당일 퇴원" },
+          { color:"#8b5cf6", label:"예약" },
+          { color:"#ef4444", label:"일정 겹침", hatching:true },
+        ].map(l => (
+          <div key={l.label} style={{ display:"flex", alignItems:"center", gap:5 }}>
+            <div style={{ width:14, height:14, borderRadius:3,
+              background: l.hatching ? "transparent" : l.color,
+              backgroundImage: l.hatching ? "repeating-linear-gradient(45deg, rgba(239,68,68,0.55) 0px, rgba(239,68,68,0.55) 3px, transparent 3px, transparent 10px)" : "none",
+              border: l.hatching ? "2px solid #ef4444" : "none" }}/>
+            <span style={{ fontSize:12, color:"#64748b" }}>{l.label}</span>
           </div>
         ))}
-        <div style={{ marginLeft:"auto", display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
-          {[
-            { color:"#10b981", label:"입원 중" },
-            { color:"#3b82f6", label:"당일 입원" },
-            { color:"#f59e0b", label:"당일 퇴원" },
-            { color:"#8b5cf6", label:"예약" },
-            { color:"#ef4444", label:"일정 겹침", border:true },
-          ].map(l => (
-            <div key={l.label} style={{ display:"flex", alignItems:"center", gap:5 }}>
-              <div style={{ width:13, height:13, borderRadius:3, background:l.color, border:l.border?"2px solid #dc2626":"none" }}/>
-              <span style={{ fontSize:12, color:"#64748b" }}>{l.label}</span>
-            </div>
-          ))}
-          <span style={{ fontSize:11, color:"#94a3b8", marginLeft:4 }}>빈 칸 클릭=예약 · 바 드래그=이동</span>
-        </div>
+        <span style={{ fontSize:11, color:"#cbd5e1", marginLeft:"auto" }}>빈 칸 클릭=예약 · 바 드래그=이동</span>
       </div>
 
       {/* ── 병실 타입 필터 버튼 ── */}
@@ -593,7 +554,7 @@ export default function WardTimeline() {
                                 <div key={di}
                                   style={{ position:"absolute", left:di*DAY_W, top:0, width:DAY_W, height:"100%",
                                     background:day.getTime()===today.getTime()?"rgba(59,130,246,0.04)":"transparent",
-                                    borderRight:"1px solid #f8fafc", cursor:"pointer" }}
+                                    borderRight:"1px solid #d1d5db", cursor:"pointer" }}
                                   title={`${toDateStr(day)} 예약 추가`}
                                   onClick={() => setEditModal({ slotKey, mode:"reservation", resIndex:-1,
                                     data:{ name:"", admitDate:toDateStr(day), discharge:"미정", note:"", scheduleAlert:false } })}
@@ -605,18 +566,18 @@ export default function WardTimeline() {
                                 <div style={{ position:"absolute", left:todayIdx*DAY_W+DAY_W/2-1, top:0, width:2, height:"100%", background:"rgba(59,130,246,0.25)", pointerEvents:"none", zIndex:1 }}/>
                               )}
 
-                              {/* ── 겹침 구간 (빨간 오버레이) ── */}
+                              {/* ── 겹침 구간 (빗금 오버레이) ── */}
                               {overlaps.map((ov, oi) => (
-                                <div key={oi} style={{ position:"absolute", zIndex:3, pointerEvents:"none",
+                                <div key={oi} style={{ position:"absolute", zIndex:6, pointerEvents:"none",
                                   left: ov.startDay * DAY_W,
                                   top: 0,
                                   width: (ov.endDay - ov.startDay + 1) * DAY_W,
                                   height: "100%",
-                                  background:"rgba(239,68,68,0.18)",
+                                  backgroundImage:"repeating-linear-gradient(45deg, rgba(239,68,68,0.55) 0px, rgba(239,68,68,0.55) 3px, transparent 3px, transparent 10px)",
                                   borderLeft:"2px solid #ef4444",
                                   borderRight:"2px solid #ef4444",
                                 }}>
-                                  <div style={{ position:"absolute", top:2, left:4, fontSize:10, fontWeight:800, color:"#dc2626" }}>⚠ 겹침</div>
+                                  <div style={{ position:"absolute", top:2, left:4, fontSize:10, fontWeight:800, color:"#dc2626", background:"rgba(255,255,255,0.85)", borderRadius:3, padding:"1px 4px" }}>⚠ 겹침</div>
                                 </div>
                               ))}
 
@@ -647,7 +608,7 @@ export default function WardTimeline() {
                                     }}
                                     onDragEnd={() => { setDragging(null); setDragOver(null); }}
                                     style={{ position:"absolute", left:barLeft, top:8, height:BAR_H, width:barWidth,
-                                      background:bg, zIndex:4,
+                                      background:bg, zIndex:5,
                                       borderRadius:`${bar.overflowLeft?0:7}px ${bar.overflowRight?0:7}px ${bar.overflowRight?0:7}px ${bar.overflowLeft?0:7}px`,
                                       cursor:"grab", overflow:"hidden",
                                       display:"flex", flexDirection:"column", justifyContent:"center", padding:"0 8px",
@@ -667,7 +628,7 @@ export default function WardTimeline() {
                                         {p.name}
                                       </span>
                                       {p.discharge && p.discharge !== "미정" && (
-                                        <span style={{ color:"rgba(255,255,255,0.8)", fontSize:11, flexShrink:0, whiteSpace:"nowrap" }}>
+                                        <span style={{ color:"rgba(255,255,255,0.85)", fontSize:11, flexShrink:0, whiteSpace:"nowrap" }}>
                                           ~{p.discharge}
                                         </span>
                                       )}
@@ -676,7 +637,40 @@ export default function WardTimeline() {
 
                                     {/* 2줄: 메모 (바 너비가 충분할 때만) */}
                                     {p.note && barWidth > 80 && (
-                                      <div style={{ color:"rgba(255,255,255,0.82)", fontSize:11, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", marginTop:2, lineHeight:1.3 }}>
+                                      <div style={{ color:"rgba(255,255,255,0.85)", fontSize:11, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", marginTop:2, lineHeight:1.3 }}>
+                                        {p.note}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+
+                              {/* ── 텍스트 오버레이 (빗금 위, z-index 7) ── */}
+                              {bars.map((bar, bi2) => {
+                                const p = bar.person;
+                                const barLeft  = bar.startDay * DAY_W + (bar.overflowLeft  ? 0 : 3);
+                                const barWidth = Math.max(20, (bar.endDay - bar.startDay + 1) * DAY_W - (bar.overflowLeft?0:3) - (bar.overflowRight?0:3));
+                                const BAR_H    = ROW_H - 16;
+                                return (
+                                  <div key={`txt-${bi2}`} style={{
+                                    position:"absolute", left:barLeft, top:8, height:BAR_H, width:barWidth,
+                                    zIndex:7, pointerEvents:"none", overflow:"hidden",
+                                    display:"flex", flexDirection:"column", justifyContent:"center", padding:"0 8px",
+                                  }}>
+                                    <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden" }}>
+                                      {bar.overflowLeft && <span style={{ color:"rgba(255,255,255,0.7)", fontSize:11, flexShrink:0 }}>‹</span>}
+                                      <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
+                                        {p.name}
+                                      </span>
+                                      {p.discharge && p.discharge !== "미정" && (
+                                        <span style={{ color:"rgba(255,255,255,0.9)", fontSize:11, flexShrink:0, whiteSpace:"nowrap" }}>
+                                          ~{p.discharge}
+                                        </span>
+                                      )}
+                                      {bar.overflowRight && <span style={{ color:"rgba(255,255,255,0.7)", fontSize:11, marginLeft:"auto", flexShrink:0 }}>›</span>}
+                                    </div>
+                                    {p.note && barWidth > 80 && (
+                                      <div style={{ color:"rgba(255,255,255,0.9)", fontSize:11, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", marginTop:2, lineHeight:1.3 }}>
                                         {p.note}
                                       </div>
                                     )}
