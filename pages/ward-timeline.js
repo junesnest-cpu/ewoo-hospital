@@ -643,7 +643,7 @@ export default function WardTimeline() {
                                     {/* 1줄: 이름 + 퇴원일 */}
                                     <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden" }}>
                                       {bar.overflowLeft && <span style={{ color:"rgba(255,255,255,0.7)", fontSize:11, flexShrink:0 }}>‹</span>}
-                                      {(() => { const ad = parseDateStr(p.admitDate); return newPatientNames.has((p.name||"").replace(/\s/g,"").toLowerCase()) && !(ad && dateOnly(ad).getTime() < today.getTime()); })() && (
+                                      {(() => { const ad = parseDateStr(p.admitDate); return bar.type !== "current" && newPatientNames.has((p.name||"").replace(/\s/g,"").toLowerCase()) && !(ad && dateOnly(ad).getTime() < today.getTime()); })() && (
                                         <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }}>★신</span>
                                       )}
                                       <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
@@ -681,7 +681,7 @@ export default function WardTimeline() {
                                   }}>
                                     <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden" }}>
                                       {bar.overflowLeft && <span style={{ color:"rgba(255,255,255,0.7)", fontSize:11, flexShrink:0 }}>‹</span>}
-                                      {(() => { const ad = parseDateStr(p.admitDate); return newPatientNames.has((p.name||"").replace(/\s/g,"").toLowerCase()) && !(ad && dateOnly(ad).getTime() < today.getTime()); })() && (
+                                      {(() => { const ad = parseDateStr(p.admitDate); return bar.type !== "current" && newPatientNames.has((p.name||"").replace(/\s/g,"").toLowerCase()) && !(ad && dateOnly(ad).getTime() < today.getTime()); })() && (
                                         <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }}>★신</span>
                                       )}
                                       <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
