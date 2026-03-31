@@ -186,6 +186,7 @@ export default function WardTimeline() {
 
   const [slots,         setSlots]         = useState({});
   const [consultations, setConsultations] = useState({});
+  const [roomMemos,     setRoomMemos]     = useState({});
   const [syncing,    setSyncing]    = useState(true);
   const [lastSync,   setLastSync]   = useState(null);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -193,6 +194,8 @@ export default function WardTimeline() {
   const [popover,    setPopover]    = useState(null);
   const [editModal,  setEditModal]  = useState(null);
   const [saving,     setSaving]     = useState(false);
+  const [memoOpen,   setMemoOpen]   = useState(true);
+  const [localMemos, setLocalMemos] = useState({});  // 입력 중 로컬 상태
 
   // ── 드래그 앤 드롭 상태 ──────────────────────────────────────────────────
   const [dragging,   setDragging]   = useState(null);  // { slotKey, bar }
@@ -236,6 +239,15 @@ export default function WardTimeline() {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    const unsub = onValue(ref(db, "roomMemos"), snap => {
+      const val = snap.val() || {};
+      setRoomMemos(val);
+      setLocalMemos(val);
+    });
+    return () => unsub();
+  }, []);
+
   // 신환 이름 집합 (consultations 기준, patientId 없음=신규, 취소/입원완료 제외)
   const newPatientNames = useMemo(() => {
     // "신)이름" 같은 접두사 제거 후 비교
@@ -254,6 +266,12 @@ export default function WardTimeline() {
     setSlots(ns);
     await set(ref(db, "slots"), ns);
   }, []);
+
+  const saveMemo = useCallback(async (roomId, text) => {
+    const next = { ...roomMemos, [roomId]: text };
+    setRoomMemos(next);
+    await set(ref(db, "roomMemos"), next);
+  }, [roomMemos]);
 
   // ── 드래그 앤 드롭 실행 ──────────────────────────────────────────────────
   const executeDrop = useCallback(async (targetSlotKey) => {
@@ -453,7 +471,10 @@ export default function WardTimeline() {
         )}
       </div>
 
-      {/* ── 타임라인 본체 ── */}
+      {/* ── 타임라인 본체 + 메모 패널 ── */}
+      <div style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
+
+      {/* 타임라인 */}
       <div style={{ flex:1, overflow:"auto", position:"relative" }}>
         <div style={{ minWidth: LEFT_W + DAY_W * DAYS_TOTAL }}>
 
@@ -718,6 +739,47 @@ export default function WardTimeline() {
           <div style={{ height:40 }}/>
         </div>
       </div>
+
+      {/* ── 메모 패널 ── */}
+      <div style={{ width: memoOpen ? 220 : 36, flexShrink:0, borderLeft:"2px solid #e2e8f0", background:"#f8fafc", display:"flex", flexDirection:"column", transition:"width 0.2s", overflow:"hidden" }}>
+        {/* 패널 헤더 */}
+        <div style={{ padding: memoOpen ? "10px 12px 8px" : "10px 0", display:"flex", alignItems:"center", justifyContent: memoOpen ? "space-between" : "center", borderBottom:"1px solid #e2e8f0", flexShrink:0, background:"#f1f5f9" }}>
+          {memoOpen && <span style={{ fontSize:13, fontWeight:800, color:"#0f2744" }}>📝 병실 메모</span>}
+          <button onClick={() => setMemoOpen(o => !o)}
+            style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, color:"#64748b", padding:2, lineHeight:1 }}
+            title={memoOpen ? "메모 패널 닫기" : "메모 패널 열기"}>
+            {memoOpen ? "»" : "«"}
+          </button>
+        </div>
+
+        {/* 병실 메모 목록 */}
+        {memoOpen && (
+          <div style={{ flex:1, overflowY:"auto", padding:"8px 10px", display:"flex", flexDirection:"column", gap:8 }}>
+            {Object.entries(WARD_STRUCTURE).map(([wardNum, ward]) =>
+              ward.rooms
+                .filter(room => !filterType || room.type === filterType)
+                .map(room => (
+                  <div key={room.id} style={{ background:"#fff", borderRadius:8, border:"1px solid #e2e8f0", overflow:"hidden" }}>
+                    <div style={{ background:TYPE_BG[room.type], padding:"4px 8px", display:"flex", alignItems:"center", gap:5 }}>
+                      <span style={{ fontSize:11, fontWeight:800, color:TYPE_COLOR[room.type] }}>{room.id}호</span>
+                      <span style={{ fontSize:10, color:TYPE_COLOR[room.type], opacity:0.8 }}>{room.type}</span>
+                    </div>
+                    <textarea
+                      value={localMemos[room.id] || ""}
+                      onChange={e => setLocalMemos(m => ({ ...m, [room.id]: e.target.value }))}
+                      onBlur={e => { const t = e.target.value; if (t !== (roomMemos[room.id] || "")) saveMemo(room.id, t); }}
+                      placeholder="메모 입력..."
+                      rows={3}
+                      style={{ width:"100%", border:"none", resize:"vertical", fontSize:12, padding:"6px 8px", fontFamily:"inherit", color:"#334155", outline:"none", background:"#fff", boxSizing:"border-box", lineHeight:1.5, minHeight:52 }}
+                    />
+                  </div>
+                ))
+            )}
+          </div>
+        )}
+      </div>
+
+      </div>{/* flex row 끝 */}
 
       {/* 팝오버 */}
       {popover && !dragging && (
