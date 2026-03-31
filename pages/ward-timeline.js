@@ -197,6 +197,9 @@ export default function WardTimeline() {
   const [memoOpen,   setMemoOpen]   = useState(true);
   const [localMemos, setLocalMemos] = useState({});  // 입력 중 로컬 상태
 
+  const timelineScrollRef = useRef(null);
+  const memoScrollRef     = useRef(null);
+
   // ── 드래그 앤 드롭 상태 ──────────────────────────────────────────────────
   const [dragging,   setDragging]   = useState(null);  // { slotKey, bar }
   const [dragOver,   setDragOver]   = useState(null);  // 대상 slotKey
@@ -475,7 +478,9 @@ export default function WardTimeline() {
       <div style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
 
       {/* 타임라인 */}
-      <div style={{ flex:1, overflow:"auto", position:"relative" }}>
+      <div ref={timelineScrollRef}
+        onScroll={e => { if (memoScrollRef.current) memoScrollRef.current.scrollTop = e.currentTarget.scrollTop; }}
+        style={{ flex:1, overflow:"auto", position:"relative" }}>
         <div style={{ minWidth: LEFT_W + DAY_W * DAYS_TOTAL }}>
 
           {/* 날짜 헤더 */}
@@ -742,39 +747,49 @@ export default function WardTimeline() {
 
       {/* ── 메모 패널 ── */}
       <div style={{ width: memoOpen ? 220 : 36, flexShrink:0, borderLeft:"2px solid #e2e8f0", background:"#f8fafc", display:"flex", flexDirection:"column", transition:"width 0.2s", overflow:"hidden" }}>
-        {/* 패널 헤더 */}
-        <div style={{ padding: memoOpen ? "10px 12px 8px" : "10px 0", display:"flex", alignItems:"center", justifyContent: memoOpen ? "space-between" : "center", borderBottom:"1px solid #e2e8f0", flexShrink:0, background:"#f1f5f9" }}>
-          {memoOpen && <span style={{ fontSize:13, fontWeight:800, color:"#0f2744" }}>📝 병실 메모</span>}
+        {/* 패널 헤더 — 날짜 헤더(54px)와 높이 일치 */}
+        <div style={{ height:54, flexShrink:0, display:"flex", alignItems:"center", justifyContent: memoOpen ? "space-between" : "center", padding: memoOpen ? "0 12px" : "0", borderBottom:"2px solid #cbd5e1", background:"#f8fafc", boxShadow:"0 2px 6px rgba(0,0,0,0.07)" }}>
+          {memoOpen && <span style={{ fontSize:12, fontWeight:800, color:"#64748b" }}>📝 병실 메모</span>}
           <button onClick={() => setMemoOpen(o => !o)}
-            style={{ background:"none", border:"none", cursor:"pointer", fontSize:16, color:"#64748b", padding:2, lineHeight:1 }}
+            style={{ background:"none", border:"none", cursor:"pointer", fontSize:15, color:"#94a3b8", padding:2, lineHeight:1 }}
             title={memoOpen ? "메모 패널 닫기" : "메모 패널 열기"}>
             {memoOpen ? "»" : "«"}
           </button>
         </div>
 
-        {/* 병실 메모 목록 */}
+        {/* 병실 메모 목록 — 병동/병실 높이에 맞춰 정렬 */}
         {memoOpen && (
-          <div style={{ flex:1, overflowY:"auto", padding:"8px 10px", display:"flex", flexDirection:"column", gap:8 }}>
-            {Object.entries(WARD_STRUCTURE).map(([wardNum, ward]) =>
-              ward.rooms
-                .filter(room => !filterType || room.type === filterType)
-                .map(room => (
-                  <div key={room.id} style={{ background:"#fff", borderRadius:8, border:"1px solid #e2e8f0", overflow:"hidden" }}>
-                    <div style={{ background:TYPE_BG[room.type], padding:"4px 8px", display:"flex", alignItems:"center", gap:5 }}>
-                      <span style={{ fontSize:11, fontWeight:800, color:TYPE_COLOR[room.type] }}>{room.id}호</span>
-                      <span style={{ fontSize:10, color:TYPE_COLOR[room.type], opacity:0.8 }}>{room.type}</span>
-                    </div>
-                    <textarea
-                      value={localMemos[room.id] || ""}
-                      onChange={e => setLocalMemos(m => ({ ...m, [room.id]: e.target.value }))}
-                      onBlur={e => { const t = e.target.value; if (t !== (roomMemos[room.id] || "")) saveMemo(room.id, t); }}
-                      placeholder="메모 입력..."
-                      rows={3}
-                      style={{ width:"100%", border:"none", resize:"vertical", fontSize:12, padding:"6px 8px", fontFamily:"inherit", color:"#334155", outline:"none", background:"#fff", boxSizing:"border-box", lineHeight:1.5, minHeight:52 }}
-                    />
-                  </div>
-                ))
-            )}
+          <div ref={memoScrollRef} style={{ flex:1, overflowY:"auto", overflowX:"hidden" }}>
+            {Object.entries(WARD_STRUCTURE).map(([wardNum, ward]) => {
+              const isCollapsed = collapsed[wardNum];
+              const filteredRooms = ward.rooms.filter(r => !filterType || r.type === filterType);
+              return (
+                <div key={wardNum}>
+                  {/* 병동 헤더 높이 맞춤 (35px) */}
+                  <div style={{ height:35, background:"#1e293b", flexShrink:0 }}/>
+                  {!isCollapsed && filteredRooms.map(room => {
+                    // 병실 헤더(27) + 병상 행(61px × capacity)
+                    const cardH = 27 + room.capacity * 61;
+                    return (
+                      <div key={room.id} style={{ height:cardH, borderBottom:"1px solid #e2e8f0", boxSizing:"border-box", display:"flex", flexDirection:"column", background: localMemos[room.id] ? "#fffef0" : "#fff" }}>
+                        {/* 병실 헤더 높이(27px) */}
+                        <div style={{ height:27, flexShrink:0, display:"flex", alignItems:"center", padding:"0 8px", gap:5, background:"#f0f4f8", borderBottom:"1px solid #e8edf2" }}>
+                          <span style={{ fontSize:10, fontWeight:800, color:TYPE_COLOR[room.type], background:TYPE_BG[room.type], borderRadius:4, padding:"1px 5px" }}>{room.id}호</span>
+                        </div>
+                        <textarea
+                          value={localMemos[room.id] || ""}
+                          onChange={e => setLocalMemos(m => ({ ...m, [room.id]: e.target.value }))}
+                          onBlur={e => { const t = e.target.value; if (t !== (roomMemos[room.id] || "")) saveMemo(room.id, t); }}
+                          placeholder="메모..."
+                          style={{ flex:1, border:"none", resize:"none", fontSize:12, padding:"5px 8px", fontFamily:"inherit", color:"#334155", outline:"none", background:"transparent", boxSizing:"border-box", lineHeight:1.5 }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+            <div style={{ height:40 }}/>
           </div>
         )}
       </div>
