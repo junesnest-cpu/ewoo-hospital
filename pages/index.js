@@ -1098,6 +1098,7 @@ export default function HospitalWardManager() {
         )}
         {view === "room" && selectedRoom && (
           <RoomDetailView room={selectedRoom} slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
+            newPatientNames={newPatientNames}
             movingPatient={movingPatient} onStartMove={startMove} onMoveTarget={executeMove}
             onEditCurrent={(sk, data) => setEditingSlot({ slotKey: sk, mode: "current", data })}
             onEditReservation={(sk, data, idx) => setEditingSlot({ slotKey: sk, mode: "reservation", data, resIndex: idx })}
@@ -1343,7 +1344,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
 }
 
 // ── RoomDetailView ────────────────────────────────────────────────────────────
-function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, movingPatient, onStartMove, onMoveTarget, onEditCurrent, onEditReservation, onAddCurrent, onAddReservation, onConvertReservation, onBack }) {
+function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, newPatientNames, movingPatient, onStartMove, onMoveTarget, onEditCurrent, onEditReservation, onAddCurrent, onAddReservation, onConvertReservation, onBack }) {
   const router = useRouter();
   const { occupied, bedList } = getRoomStats(room.id, room.capacity);
   return (
