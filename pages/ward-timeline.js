@@ -196,9 +196,31 @@ export default function WardTimeline() {
   const [saving,     setSaving]     = useState(false);
   const [memoOpen,   setMemoOpen]   = useState(true);
   const [localMemos, setLocalMemos] = useState({});  // 입력 중 로컬 상태
+  const [memoWidth,  setMemoWidth]  = useState(220);
+  const isResizing = useRef(false);
 
   const timelineScrollRef = useRef(null);
   const memoScrollRef     = useRef(null);
+
+  // ── 메모 패널 너비 드래그 조절 ──────────────────────────────────────────
+  const onResizerMouseDown = useCallback((e) => {
+    e.preventDefault();
+    isResizing.current = true;
+    const startX = e.clientX;
+    const startW = memoWidth;
+    const onMove = (ev) => {
+      if (!isResizing.current) return;
+      const delta = startX - ev.clientX;
+      setMemoWidth(Math.max(120, Math.min(500, startW + delta)));
+    };
+    const onUp = () => {
+      isResizing.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [memoWidth]);
 
   // ── 드래그 앤 드롭 상태 ──────────────────────────────────────────────────
   const [dragging,   setDragging]   = useState(null);  // { slotKey, bar }
@@ -745,8 +767,23 @@ export default function WardTimeline() {
         </div>
       </div>
 
+      {/* ── 드래그 핸들 ── */}
+      {memoOpen && (
+        <div
+          onMouseDown={onResizerMouseDown}
+          style={{ width:5, flexShrink:0, cursor:"col-resize", background:"#e2e8f0", transition:"background 0.15s", zIndex:10, position:"relative" }}
+          onMouseEnter={e => e.currentTarget.style.background="#94a3b8"}
+          onMouseLeave={e => e.currentTarget.style.background="#e2e8f0"}
+          title="드래그하여 너비 조절"
+        >
+          <div style={{ position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)", display:"flex", flexDirection:"column", gap:3, pointerEvents:"none" }}>
+            {[0,1,2].map(i => <div key={i} style={{ width:3, height:3, borderRadius:"50%", background:"#94a3b8" }}/>)}
+          </div>
+        </div>
+      )}
+
       {/* ── 메모 패널 ── */}
-      <div style={{ width: memoOpen ? 220 : 36, flexShrink:0, borderLeft:"2px solid #e2e8f0", background:"#f8fafc", display:"flex", flexDirection:"column", transition:"width 0.2s", overflow:"hidden" }}>
+      <div style={{ width: memoOpen ? memoWidth : 36, flexShrink:0, borderLeft: memoOpen ? "none" : "2px solid #e2e8f0", background:"#f8fafc", display:"flex", flexDirection:"column", overflow:"hidden" }}>
         {/* 패널 헤더 — 날짜 헤더(54px)와 높이 일치 */}
         <div style={{ height:54, flexShrink:0, display:"flex", alignItems:"center", justifyContent: memoOpen ? "space-between" : "center", padding: memoOpen ? "0 12px" : "0", borderBottom:"2px solid #cbd5e1", background:"#f8fafc", boxShadow:"0 2px 6px rgba(0,0,0,0.07)" }}>
           {memoOpen && <span style={{ fontSize:12, fontWeight:800, color:"#64748b" }}>📝 병실 메모</span>}
