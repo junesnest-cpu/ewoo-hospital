@@ -694,7 +694,7 @@ export default function HistoryPage() {
 
   const allList = Object.entries(changes)
     .map(([id, c]) => ({ ...c, id }))
-    .sort((a, b) => new Date(b.ts) - new Date(a.ts));
+    .sort((a, b) => new Date(a.ts) - new Date(b.ts));
 
   const pendingList = allList.filter((c) => c.status === "pending");
   const resolvedList = allList.filter((c) => c.status !== "pending");
