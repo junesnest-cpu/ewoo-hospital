@@ -2,7 +2,7 @@ import "../styles/globals.css";
 import Head from "next/head";
 import { useState, useEffect } from "react";
 import { auth } from "../lib/firebaseConfig";
-import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "firebase/auth";
 
 function LoginScreen() {
   const [name,     setName]     = useState("");
@@ -68,9 +68,84 @@ const LS = {
   footer:   { marginTop:24, fontSize:11, color:"#94a3b8", textAlign:"center" },
 };
 
+function ChangePasswordModal({ user, onClose }) {
+  const [curPw,   setCurPw]   = useState("");
+  const [newPw,   setNewPw]   = useState("");
+  const [newPw2,  setNewPw2]  = useState("");
+  const [error,   setError]   = useState("");
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    if (!curPw || !newPw || !newPw2) { setError("모든 항목을 입력해 주세요."); return; }
+    if (newPw.length < 6) { setError("새 비밀번호는 6자 이상이어야 합니다."); return; }
+    if (newPw !== newPw2) { setError("새 비밀번호가 일치하지 않습니다."); return; }
+    setLoading(true);
+    try {
+      const credential = EmailAuthProvider.credential(user.email, curPw);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPw);
+      setSuccess(true);
+    } catch (err) {
+      if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+        setError("현재 비밀번호가 올바르지 않습니다.");
+      } else {
+        setError("변경 실패: " + err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background:"#fff", borderRadius:14, padding:"28px 24px", width:"100%", maxWidth:340, boxShadow:"0 16px 48px rgba(0,0,0,0.25)" }}>
+        <div style={{ fontWeight:800, fontSize:16, color:"#0f2744", marginBottom:4 }}>🔑 비밀번호 변경</div>
+        <div style={{ fontSize:12, color:"#94a3b8", marginBottom:20 }}>{user.email?.replace("@ewoo.com","")}</div>
+        {success ? (
+          <>
+            <div style={{ background:"#f0fdf4", color:"#166534", borderRadius:8, padding:"12px", fontSize:14, fontWeight:700, textAlign:"center", marginBottom:16 }}>
+              ✅ 비밀번호가 변경되었습니다.
+            </div>
+            <button onClick={onClose} style={{ width:"100%", background:"#0f2744", color:"#fff", border:"none", borderRadius:9, padding:"12px", fontSize:14, fontWeight:700, cursor:"pointer" }}>닫기</button>
+          </>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            {[
+              { label:"현재 비밀번호", value:curPw,  set:setCurPw,  ph:"현재 비밀번호 입력" },
+              { label:"새 비밀번호",   value:newPw,  set:setNewPw,  ph:"6자 이상" },
+              { label:"새 비밀번호 확인", value:newPw2, set:setNewPw2, ph:"새 비밀번호 재입력" },
+            ].map(({ label, value, set, ph }) => (
+              <div key={label} style={{ marginBottom:12 }}>
+                <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#475569", marginBottom:4 }}>{label}</label>
+                <input type="password" value={value} onChange={e => set(e.target.value)}
+                  placeholder={ph} autoComplete="off"
+                  style={{ width:"100%", border:"1.5px solid #e2e8f0", borderRadius:8, padding:"10px 12px", fontSize:14, outline:"none", boxSizing:"border-box" }} />
+              </div>
+            ))}
+            {error && <div style={{ background:"#fef2f2", color:"#dc2626", borderRadius:7, padding:"8px 12px", fontSize:13, fontWeight:600, marginBottom:12 }}>{error}</div>}
+            <div style={{ display:"flex", gap:8, marginTop:4 }}>
+              <button type="button" onClick={onClose}
+                style={{ flex:1, background:"#f1f5f9", color:"#475569", border:"none", borderRadius:9, padding:"12px", fontSize:14, fontWeight:600, cursor:"pointer" }}>취소</button>
+              <button type="submit" disabled={loading}
+                style={{ flex:2, background:"#0f2744", color:"#fff", border:"none", borderRadius:9, padding:"12px", fontSize:14, fontWeight:700, cursor:"pointer", opacity:loading?0.7:1 }}>
+                {loading ? "변경 중..." : "변경"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App({ Component, pageProps }) {
   const [user,    setUser]    = useState(undefined);
   const [loading, setLoading] = useState(true);
+  const [showChangePw, setShowChangePw] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setLoading(false); });
@@ -110,11 +185,18 @@ export default function App({ Component, pageProps }) {
       {/* 로그인 사용자 표시 바 */}
       <div style={{ background:"#0f2744", color:"#94a3b8", fontSize:11, padding:"4px 16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <span>👤 <b style={{color:"#e2e8f0"}}>{userName}</b>님 로그인 중</span>
-        <button onClick={()=>signOut(auth)}
-          style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:5, padding:"2px 10px", cursor:"pointer", fontSize:11, fontWeight:600 }}>
-          로그아웃
-        </button>
+        <div style={{ display:"flex", gap:6 }}>
+          <button onClick={()=>setShowChangePw(true)}
+            style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:5, padding:"2px 10px", cursor:"pointer", fontSize:11, fontWeight:600 }}>
+            🔑 비밀번호 변경
+          </button>
+          <button onClick={()=>signOut(auth)}
+            style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:5, padding:"2px 10px", cursor:"pointer", fontSize:11, fontWeight:600 }}>
+            로그아웃
+          </button>
+        </div>
       </div>
+      {showChangePw && <ChangePasswordModal user={user} onClose={()=>setShowChangePw(false)} />}
       <Component {...pageProps}/>
     </>
   );
