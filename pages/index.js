@@ -1086,6 +1086,7 @@ export default function HospitalWardManager() {
         {view === "ward" && (
           <WardView
             slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
+            newPatientNames={newPatientNames}
             showReserved={showReserved} highlightEmpty={highlightEmpty} currentEmptySlotKey={currentEmptySlotKey}
             movingPatient={movingPatient} onMoveTarget={executeMove}
             conflictSlotKeys={new Set(overlapConflicts.map(c => c.slotKey))}
@@ -1183,7 +1184,7 @@ export default function HospitalWardManager() {
 }
 
 // ── WardView ──────────────────────────────────────────────────────────────────
-function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, highlightEmpty, currentEmptySlotKey, movingPatient, onMoveTarget, onSelectRoom, cardRefs, conflictSlotKeys }) {
+function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, showReserved, highlightEmpty, currentEmptySlotKey, movingPatient, onMoveTarget, onSelectRoom, cardRefs, conflictSlotKeys }) {
   return (
     <div style={S.wardGrid}>
       {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => (
