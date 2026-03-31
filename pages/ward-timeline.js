@@ -199,9 +199,6 @@ export default function WardTimeline() {
   const [memoWidth,  setMemoWidth]  = useState(220);
   const isResizing = useRef(false);
 
-  const timelineScrollRef = useRef(null);
-  const memoScrollRef     = useRef(null);
-
   // ── 메모 패널 너비 드래그 조절 ──────────────────────────────────────────
   const onResizerMouseDown = useCallback((e) => {
     e.preventDefault();
@@ -211,7 +208,7 @@ export default function WardTimeline() {
     const onMove = (ev) => {
       if (!isResizing.current) return;
       const delta = startX - ev.clientX;
-      setMemoWidth(Math.max(120, Math.min(500, startW + delta)));
+      setMemoWidth(Math.max(120, Math.min(900, startW + delta)));
     };
     const onUp = () => {
       isResizing.current = false;
@@ -496,14 +493,13 @@ export default function WardTimeline() {
         )}
       </div>
 
-      {/* ── 타임라인 본체 + 메모 패널 ── */}
-      <div style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
+      {/* ── 타임라인 본체 + 메모 패널 (단일 스크롤) ── */}
+      <div style={{ flex:1, overflow:"auto", minHeight:0 }}>
+      <div style={{ display:"flex", minWidth: LEFT_W + DAY_W * DAYS_TOTAL }}>
 
       {/* 타임라인 */}
-      <div ref={timelineScrollRef}
-        onScroll={e => { if (memoScrollRef.current) memoScrollRef.current.scrollTop = e.currentTarget.scrollTop; }}
-        style={{ flex:1, overflow:"auto", position:"relative" }}>
-        <div style={{ minWidth: LEFT_W + DAY_W * DAYS_TOTAL }}>
+      <div style={{ flex:1, position:"relative" }}>
+        <div>
 
           {/* 날짜 헤더 */}
           <div style={{ display:"flex", position:"sticky", top:0, zIndex:30, background:"#fff", borderBottom:"2px solid #cbd5e1", boxShadow:"0 2px 6px rgba(0,0,0,0.07)" }}>
@@ -765,7 +761,7 @@ export default function WardTimeline() {
 
           <div style={{ height:40 }}/>
         </div>
-      </div>
+      </div>{/* 타임라인 열 끝 */}
 
       {/* ── 드래그 핸들 ── */}
       {memoOpen && (
@@ -784,8 +780,8 @@ export default function WardTimeline() {
 
       {/* ── 메모 패널 ── */}
       <div style={{ width: memoOpen ? memoWidth : 36, flexShrink:0, borderLeft: memoOpen ? "none" : "2px solid #e2e8f0", background:"#f8fafc", display:"flex", flexDirection:"column", overflow:"hidden" }}>
-        {/* 패널 헤더 — 날짜 헤더(54px)와 높이 일치 */}
-        <div style={{ height:54, flexShrink:0, display:"flex", alignItems:"center", justifyContent: memoOpen ? "space-between" : "center", padding: memoOpen ? "0 12px" : "0", borderBottom:"2px solid #cbd5e1", background:"#f8fafc", boxShadow:"0 2px 6px rgba(0,0,0,0.07)" }}>
+        {/* 패널 헤더 — sticky, 날짜 헤더(54px)와 높이 일치 */}
+        <div style={{ position:"sticky", top:0, zIndex:29, height:54, display:"flex", alignItems:"center", justifyContent: memoOpen ? "space-between" : "center", padding: memoOpen ? "0 12px" : "0", borderBottom:"2px solid #cbd5e1", background:"#f8fafc", boxShadow:"0 2px 6px rgba(0,0,0,0.07)" }}>
           {memoOpen && <span style={{ fontSize:12, fontWeight:800, color:"#64748b" }}>📝 병실 메모</span>}
           <button onClick={() => setMemoOpen(o => !o)}
             style={{ background:"none", border:"none", cursor:"pointer", fontSize:15, color:"#94a3b8", padding:2, lineHeight:1 }}
@@ -794,44 +790,39 @@ export default function WardTimeline() {
           </button>
         </div>
 
-        {/* 병실 메모 목록 — 병동/병실 높이에 맞춰 정렬 */}
-        {memoOpen && (
-          <div ref={memoScrollRef} style={{ flex:1, overflowY:"auto", overflowX:"hidden" }}>
-            {Object.entries(WARD_STRUCTURE).map(([wardNum, ward]) => {
-              const isCollapsed = collapsed[wardNum];
-              const filteredRooms = ward.rooms.filter(r => !filterType || r.type === filterType);
-              return (
-                <div key={wardNum}>
-                  {/* 병동 헤더 높이 맞춤 (35px) */}
-                  <div style={{ height:35, background:"#1e293b", flexShrink:0 }}/>
-                  {!isCollapsed && filteredRooms.map(room => {
-                    // 병실 헤더(27) + 병상 행(61px × capacity)
-                    const cardH = 27 + room.capacity * 61;
-                    return (
-                      <div key={room.id} style={{ height:cardH, borderBottom:"1px solid #e2e8f0", boxSizing:"border-box", display:"flex", flexDirection:"column", background: localMemos[room.id] ? "#fffef0" : "#fff" }}>
-                        {/* 병실 헤더 높이(27px) */}
-                        <div style={{ height:27, flexShrink:0, display:"flex", alignItems:"center", padding:"0 8px", gap:5, background:"#f0f4f8", borderBottom:"1px solid #e8edf2" }}>
-                          <span style={{ fontSize:10, fontWeight:800, color:TYPE_COLOR[room.type], background:TYPE_BG[room.type], borderRadius:4, padding:"1px 5px" }}>{room.id}호</span>
-                        </div>
-                        <textarea
-                          value={localMemos[room.id] || ""}
-                          onChange={e => setLocalMemos(m => ({ ...m, [room.id]: e.target.value }))}
-                          onBlur={e => { const t = e.target.value; if (t !== (roomMemos[room.id] || "")) saveMemo(room.id, t); }}
-                          placeholder="메모..."
-                          style={{ flex:1, border:"none", resize:"none", fontSize:12, padding:"5px 8px", fontFamily:"inherit", color:"#334155", outline:"none", background:"transparent", boxSizing:"border-box", lineHeight:1.5 }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-            <div style={{ height:40 }}/>
-          </div>
-        )}
+        {/* 병실 메모 목록 — 병동/병실 높이에 맞춰 정렬, 별도 스크롤 없음 */}
+        {memoOpen && Object.entries(WARD_STRUCTURE).map(([wardNum, ward]) => {
+          const isCollapsed = collapsed[wardNum];
+          const filteredRooms = ward.rooms.filter(r => !filterType || r.type === filterType);
+          return (
+            <div key={wardNum}>
+              {/* 병동 헤더 높이 맞춤 (35px) */}
+              <div style={{ height:35, background:"#1e293b" }}/>
+              {!isCollapsed && filteredRooms.map(room => {
+                const cardH = 27 + room.capacity * 61;
+                return (
+                  <div key={room.id} style={{ height:cardH, borderBottom:"1px solid #e2e8f0", boxSizing:"border-box", display:"flex", flexDirection:"column", background: localMemos[room.id] ? "#fffef0" : "#fff" }}>
+                    <div style={{ height:27, flexShrink:0, display:"flex", alignItems:"center", padding:"0 8px", gap:5, background:"#f0f4f8", borderBottom:"1px solid #e8edf2" }}>
+                      <span style={{ fontSize:10, fontWeight:800, color:TYPE_COLOR[room.type], background:TYPE_BG[room.type], borderRadius:4, padding:"1px 5px" }}>{room.id}호</span>
+                    </div>
+                    <textarea
+                      value={localMemos[room.id] || ""}
+                      onChange={e => setLocalMemos(m => ({ ...m, [room.id]: e.target.value }))}
+                      onBlur={e => { const t = e.target.value; if (t !== (roomMemos[room.id] || "")) saveMemo(room.id, t); }}
+                      placeholder="메모..."
+                      style={{ flex:1, border:"none", resize:"none", fontSize:12, padding:"5px 8px", fontFamily:"inherit", color:"#334155", outline:"none", background:"transparent", boxSizing:"border-box", lineHeight:1.5 }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        {memoOpen && <div style={{ height:40 }}/>}
       </div>
 
       </div>{/* flex row 끝 */}
+      </div>{/* 단일 스크롤 컨테이너 끝 */}
 
       {/* 팝오버 */}
       {popover && !dragging && (
