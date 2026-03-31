@@ -148,6 +148,7 @@ export default function HospitalWardManager() {
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [slots,          setSlots]          = useState({});
+  const [consultations,  setConsultations]  = useState({});
   const [view,           setView]           = useState("ward");
   const [selectedRoom,   setSelectedRoom]   = useState(null);
   const [editingSlot,    setEditingSlot]    = useState(null);
@@ -203,6 +204,9 @@ export default function HospitalWardManager() {
       const val = snap.val();
       if (val) setLogs(Array.isArray(val) ? val : Object.values(val));
     });
+    const unsubC = onValue(ref(db, "consultations"), snap => {
+      setConsultations(snap.val() || {});
+    });
     const unsubP = onValue(ref(db, "pendingChanges"), snap => {
       const val = snap.val();
       if (val) {
@@ -212,7 +216,7 @@ export default function HospitalWardManager() {
         setPendingCount(0);
       }
     });
-    return () => { unsubS(); unsubL(); unsubP(); };
+    return () => { unsubS(); unsubL(); unsubC(); unsubP(); };
   }, []);
 
   // ── 자동완성용 전체 환자 목록 (현재 입원 + 예약) ──────────────────────────────
@@ -234,6 +238,19 @@ export default function HospitalWardManager() {
     });
     return list.sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }, [slots]);
+
+  // 신환 이름 집합 (consultations 기준, patientId 없음=신규, 취소/입원완료 제외)
+  const newPatientNames = useMemo(() => {
+    const normN = n => (n||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+    const s = new Set();
+    Object.values(consultations).forEach(c => {
+      if (!c?.name) return;
+      if (c.patientId) return;
+      if (c.status === "취소" || c.status === "입원완료") return;
+      s.add(normN(c.name));
+    });
+    return s;
+  }, [consultations]);
 
   // ── 자동 처리: 입원일 도달 예약 자동 전환 + 지난 예약 자동 삭제 ──────────────
   useEffect(() => {
@@ -1262,6 +1279,9 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                             {isDischarging && <span style={{ fontSize:11 }}>🚪</span>}
                             {isAdmitting   && <span style={{ fontSize:11 }}>🛏</span>}
                             <span style={{ ...S.bedPositionBadge, background: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{posNum}</span>
+                            {(()=>{ const _ad=parseDateStr(b.person.admitDate); return newPatientNames.has((b.person.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && (!_ad||dateOnly(_ad).getTime()>=todayDate().getTime()-7*24*60*60*1000); })() && (
+                              <span style={{ fontSize:11, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"0 4px", fontWeight:800, flexShrink:0 }}>★</span>
+                            )}
                             <span
                               style={{ ...S.patientName, color: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f",
                                 ...(b.person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
@@ -1384,6 +1404,9 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
 
               {b.person ? (
                 <>
+                  {(()=>{ const _ad=parseDateStr(b.person.admitDate); return newPatientNames.has((b.person.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && (!_ad||dateOnly(_ad).getTime()>=todayDate().getTime()-7*24*60*60*1000); })() && (
+                    <div style={{ marginBottom:2 }}><span style={{ fontSize:11, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 6px", fontWeight:800 }}>★ 신환</span></div>
+                  )}
                   <div
                     style={{ ...S.bedPatientName, color: isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
                       ...(b.person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}

@@ -185,6 +185,7 @@ export default function MonthlySchedule() {
     // consultations: 정규화된 이름으로 dedup, 슬롯 항목과 겹치면 신환 정보 병합
     Object.values(consultations).forEach(c => {
       if (!c?.name || !c.admitDate) return;
+      if (c.patientId) return;                                // patientId 있으면 재입원 → 제외
       if (c.status === "취소" || c.status === "입원완료") return;
       const admitD = parseISO(c.admitDate);
       if (!admitD) return;
