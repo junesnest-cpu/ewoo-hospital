@@ -347,9 +347,10 @@ export default function ConsultationPage() {
     return acc;
   }, []);
 
-  // 입원예정일이 있으나 병상 미배정인 상담 목록
+  // 입원예정일이 있으나 병상 미배정인 상담 목록 (오늘 이후만 표시)
   const pendingAdmits = allList.filter(c => {
     if (!c.admitDate) return false;
+    if (c.admitDate < today()) return false; // 오늘 날짜 지난 항목 제외
     if (c.status === "취소" || c.status === "입원완료") return false;
     if (c.reservedSlot) return false;
     return true;
@@ -884,13 +885,16 @@ export default function ConsultationPage() {
                         const occupied  = slots[slotKey]?.current?.name;
                         const hasReserve = (slots[slotKey]?.reservations||[]).length > 0;
                         const selected = reserveSlot === slotKey;
+                        const btnBorder = selected ? "#0f2744" : !available ? "#e2e8f0" : (available && hasReserve) ? "#f59e0b" : "#10b981";
+                        const btnBg     = selected ? "#0f2744" : !available ? "#f1f5f9" : (available && hasReserve) ? "#fffbeb" : "#f0fdf4";
+                        const btnColor  = selected ? "#fff"    : !available ? "#94a3b8" : (available && hasReserve) ? "#92400e" : "#065f46";
                         return (
                           <button key={slotKey}
                             style={{padding:"4px 10px", borderRadius:6, fontSize:12, fontWeight:700,
                               cursor: available ? "pointer" : "not-allowed",
-                              border:`1.5px solid ${selected?"#0f2744": available?"#10b981":"#e2e8f0"}`,
-                              background: selected ? "#0f2744" : available ? "#f0fdf4" : "#f1f5f9",
-                              color: selected ? "#fff" : available ? "#065f46" : "#94a3b8",
+                              border:`1.5px solid ${btnBorder}`,
+                              background: btnBg,
+                              color: btnColor,
                               opacity: available ? 1 : 0.55}}
                             disabled={!available}
                             onClick={()=>setReserveSlot(slotKey)}>
@@ -904,8 +908,8 @@ export default function ConsultationPage() {
               })}
             </div>
 
-            <div style={{display:"flex", gap:8, marginTop:16, flexWrap:"wrap"}}>
-              <button style={{flex:1, ...S.btnSave, fontSize:14}} onClick={doRegisterReservation}
+            <div style={{display:"flex", gap:8, marginTop:16, flexWrap:"wrap", alignItems:"stretch"}}>
+              <button style={{flex:1, ...S.btnSave, fontSize:14, padding:"10px 14px", marginTop:0}} onClick={doRegisterReservation}
                 disabled={!reserveSlot}>예약 등록</button>
               <button
                 style={{padding:"10px 14px", border:"1px solid #312e81", borderRadius:8,
