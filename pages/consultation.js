@@ -40,6 +40,16 @@ function monthKey(str) {
   if (!str) return "";
   return str.slice(0,7); // "YYYY-MM"
 }
+// admitDate를 YYYY-MM-DD로 정규화 (M/D 형식은 createdAt 연도 기준)
+function normAdmitDate(c) {
+  const s = c.admitDate;
+  if (!s) return null;
+  if (s.includes("-")) return s.slice(0, 10);
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return null;
+  const year = c.createdAt ? new Date(c.createdAt).getFullYear() : new Date().getFullYear();
+  return `${year}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;
+}
 function korMonth(ym) {
   if (!ym) return "";
   const [y,m] = ym.split("-");
@@ -347,16 +357,20 @@ export default function ConsultationPage() {
     return acc;
   }, []);
 
-  // 입원예정일이 있으나 병상 미배정인 상담 목록 (월 필터 무관 — 전체 데이터 기준)
+  // 입원예정일이 있으나 병상 미배정인 상담 목록
+  // - 월 필터 무관하게 전체 데이터 기준
+  // - 오늘 이전 항목 제외 (M/D 형식은 createdAt 연도로 YYYY-MM-DD 변환 후 비교)
   const pendingAdmits = Object.entries(allConsultations)
-    .map(([id, c]) => ({ id, ...c }))
+    .map(([id, c]) => ({ id, ...c, _normAdmit: normAdmitDate({...c}) }))
     .filter(c => {
       if (!c.admitDate) return false;
       if (c.status === "취소" || c.status === "입원완료") return false;
       if (c.reservedSlot) return false;
+      if (!c._normAdmit) return false;
+      if (c._normAdmit < today()) return false; // 오늘 이전 제외
       return true;
     })
-    .sort((a, b) => (a.admitDate || "").localeCompare(b.admitDate || ""));
+    .sort((a, b) => a._normAdmit.localeCompare(b._normAdmit));
 
   // M/D 형식 → Date 변환 (슬롯 날짜 비교용)
   const parseMD = (str) => {
@@ -666,18 +680,14 @@ export default function ConsultationPage() {
           <span style={{fontWeight:700, fontSize:13}}>🏥 입원 예약 대기</span>
           <span style={{fontSize:12, color:"#92400e", marginLeft:8}}>{pendingAdmits.length}명 — 병실 배정 필요</span>
           <div style={{display:"flex", gap:6, flexWrap:"wrap", marginTop:8}}>
-            {pendingAdmits.map(c=>{
-              const overdue = c.admitDate < today();
-              return (
-                <button key={c.id} style={{...S.pendCard, ...(overdue ? {background:"#fee2e2", borderColor:"#fca5a5"} : {})}}
-                  onClick={()=>setReserveModal({id:c.id, consultation:c})}>
-                  {overdue && <span style={{fontSize:10, color:"#dc2626", fontWeight:800, marginRight:2}}>지연</span>}
-                  <span style={{fontWeight:700}}>{c.name}</span>
-                  <span style={{fontSize:11, color: overdue?"#dc2626":"#92400e", marginLeft:4}}>{fmtDate(c.admitDate)} 입원예정</span>
-                  {c.roomTypes?.length>0 && <span style={{fontSize:10, color:"#78350f", marginLeft:4}}>({c.roomTypes.join("·")})</span>}
-                </button>
-              );
-            })}
+            {pendingAdmits.map(c=>(
+              <button key={c.id} style={S.pendCard}
+                onClick={()=>setReserveModal({id:c.id, consultation:c})}>
+                <span style={{fontWeight:700}}>{c.name}</span>
+                <span style={{fontSize:11, color:"#92400e", marginLeft:4}}>{fmtDate(c.admitDate)} 입원예정</span>
+                {c.roomTypes?.length>0 && <span style={{fontSize:10, color:"#78350f", marginLeft:4}}>({c.roomTypes.join("·")})</span>}
+              </button>
+            ))}
           </div>
         </div>
       )}
