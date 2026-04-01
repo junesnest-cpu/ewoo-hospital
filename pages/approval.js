@@ -1144,7 +1144,7 @@ function VacationSummaryPanel({ docs, onOpenDoc }) {
   const [mode, setMode] = useState("yearly"); // "yearly" | "monthly"
   const [selMonth, setSelMonth] = useState(nowYMstr);
 
-  const approved = docs.filter(([,d]) => ["approved","final"].includes(d.status));
+  const approved = docs.filter(([,d]) => ["approved","final"].includes(d.status) && !d.formData?.cancelled);
 
   const calcLeave = (fd) => {
     if (!fd) return 0;
@@ -1620,6 +1620,32 @@ export default function ApprovalPage() {
     setView("edit");
   };
 
+  // 승인된 휴가신청서 취소 신청 (결재 라인 재진행, 승인 시 원본 삭제)
+  const handleCancelVacation = async (docId) => {
+    const doc = docs[docId];
+    if (!doc) return;
+    if (!window.confirm("이 휴가 신청의 취소를 요청하시겠습니까?\n결재 승인 후 연차 현황에서 제외됩니다.")) return;
+    const newDocRef = push(ref(db, "approvals"));
+    const newDocId = newDocRef.key;
+    await set(newDocRef, {
+      type: doc.type,
+      title: `[취소] ${doc.title || DOC_TYPES[doc.type]?.label || ""}`,
+      authorUid: user.uid,
+      authorName: profile.name,
+      authorDept: profile.department,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: "draft",
+      currentApproverUid: null,
+      formData: { ...doc.formData, cancelled: true },
+      fileUrls: [],
+      originalDocId: docId,
+      history: [{ action:"cancel_requested", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:`${doc.docNumber||"승인 문서"} 취소 신청` }],
+    });
+    setSelectedId(newDocId);
+    setView("detail");
+  };
+
   // 승인된 문서 수정 재제출 (새 임시저장 문서 생성, 원본 ID 참조)
   const handleReviseApproved = async (docId) => {
     const doc = docs[docId];
@@ -1770,7 +1796,7 @@ export default function ApprovalPage() {
                   <div style={{ fontSize:13, fontWeight:700 }}>
                     {h.byName} <span style={{ color:"#94a3b8", fontWeight:400 }}>({h.byRole==="director"?"병원장":h.byRole==="dept_head"?"부서장":"작성자"})</span>
                     <span style={{ marginLeft:8, fontSize:12, color:actionColors[h.action]||"#64748b" }}>
-                      {h.action==="submitted"?"제출":h.action==="approved"?"승인":h.action==="final"?"전결":h.action==="rejected"?"반려":h.action==="revision_started"?"수정본 생성":""}
+                      {h.action==="submitted"?"제출":h.action==="approved"?"승인":h.action==="final"?"전결":h.action==="rejected"?"반려":h.action==="revision_started"?"수정본 생성":h.action==="cancel_requested"?"취소 신청":""}
                     </span>
                   </div>
                   {h.memo && <div style={{ fontSize:12, color: h.action==="revision_started"?"#92400e":"#dc2626", marginTop:2 }}>{h.action==="revision_started"?"원본":"반려 사유"}: {h.memo}</div>}
@@ -1794,18 +1820,36 @@ export default function ApprovalPage() {
               <button style={S.btnPri} onClick={()=>handleResubmit(selectedId)}>↩ 수정 후 재제출</button>
             </div>
           )}
-          {/* 승인된 내 문서: 수정 재제출 */}
-          {isMine && ["approved","final"].includes(doc.status) && (
+          {/* 승인된 내 문서: 수정 재제출 / 취소 신청 */}
+          {isMine && ["approved","final"].includes(doc.status) && !doc.formData?.cancelled && (
             <div style={{ ...S.card, display:"flex", gap:12, justifyContent:"center", alignItems:"center", flexWrap:"wrap" }}>
-              <span style={{ fontSize:12, color:"#92400e" }}>내용을 수정하여 다시 결재를 받을 수 있습니다. 수정본이 최종 승인되면 이 문서는 삭제됩니다.</span>
+              <span style={{ fontSize:12, color:"#92400e" }}>수정본이 최종 승인되면 이 문서는 삭제됩니다.</span>
               <button style={{ background:"#fffbeb", color:"#92400e", border:"1.5px solid #fde68a", borderRadius:8, padding:"9px 20px", fontWeight:700, fontSize:13, cursor:"pointer" }}
                 onClick={()=>handleReviseApproved(selectedId)}>
                 ✏️ 수정 재제출
               </button>
+              {doc.type === "vacation" && (
+                <button style={{ background:"#fee2e2", color:"#dc2626", border:"1.5px solid #fca5a5", borderRadius:8, padding:"9px 20px", fontWeight:700, fontSize:13, cursor:"pointer" }}
+                  onClick={()=>handleCancelVacation(selectedId)}>
+                  ✕ 취소 신청
+                </button>
+              )}
+            </div>
+          )}
+          {/* 임시저장 내 문서 — 취소 신청 */}
+          {isMine && doc.status==="draft" && doc.formData?.cancelled && (
+            <div style={{ ...S.card, display:"flex", flexDirection:"column", gap:10, alignItems:"center" }}>
+              <div style={{ fontSize:13, color:"#dc2626", fontWeight:700, background:"#fee2e2", borderRadius:8, padding:"8px 16px", width:"100%", textAlign:"center" }}>
+                ⚠️ 취소 신청 문서입니다. 제출하면 결재 후 기존 휴가가 연차 현황에서 제외됩니다.
+              </div>
+              <div style={{ display:"flex", gap:12 }}>
+                <button style={S.btnPri} onClick={()=>handleDraftSubmit(selectedId)}>→ 취소 신청 제출</button>
+                <button style={{ ...S.btnRed, background:"#fff1f2" }} onClick={()=>handleDeleteDraft(selectedId)}>🗑 취소 철회</button>
+              </div>
             </div>
           )}
           {/* 임시저장 내 문서: 수정 / 제출 / 삭제 */}
-          {isMine && doc.status==="draft" && (
+          {isMine && doc.status==="draft" && !doc.formData?.cancelled && (
             <div style={{ ...S.card, display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
               <button style={{ ...S.btnSec, background:"#f0f9ff", color:"#0369a1", border:"1.5px solid #7dd3fc" }}
                 onClick={()=>{
@@ -2369,7 +2413,8 @@ export default function ApprovalPage() {
                   {doc.docNumber || "임시저장"}
                 </span>
                 <span style={S.badge(t.color, t.bg)}>{t.label}</span>
-                {doc.originalDocId && <span style={{ fontSize:10, fontWeight:700, color:"#92400e", background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:5, padding:"1px 6px", flexShrink:0 }}>수정본</span>}
+                {doc.formData?.cancelled && <span style={{ fontSize:10, fontWeight:700, color:"#dc2626", background:"#fee2e2", border:"1px solid #fca5a5", borderRadius:5, padding:"1px 6px", flexShrink:0 }}>취소신청</span>}
+                {doc.originalDocId && !doc.formData?.cancelled && <span style={{ fontSize:10, fontWeight:700, color:"#92400e", background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:5, padding:"1px 6px", flexShrink:0 }}>수정본</span>}
                 <span style={{ fontWeight:600, fontSize:14, flex:1 }}>
                   {doc.authorName}
                   {doc.formData?.title && <span style={{ fontSize:12, color:"#475569", fontWeight:400, marginLeft:6 }}>— {doc.formData.title}</span>}
