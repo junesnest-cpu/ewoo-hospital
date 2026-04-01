@@ -369,6 +369,7 @@ function SupplyForm({ data, onChange, readonly }) {
   const total = (f.items||[]).reduce((s,it)=>s+((Number(it.qty)||0)*(Number(it.price)||0)),0);
   if (readonly) return (
     <div>
+      {f.title && <div style={{ fontSize:15, fontWeight:800, color:"#0f2744", marginBottom:10 }}>{f.title}</div>}
       <Grid><ReadVal label="신청부서" value={f.department} /><ReadVal label="신청일" value={f.requestDate} /></Grid>
       <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13, marginBottom:12 }}>
         <thead><tr>{["번호","품명 및 규격","단위","수량","금액(원)","비고"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
@@ -389,6 +390,9 @@ function SupplyForm({ data, onChange, readonly }) {
   );
   return (
     <div>
+      <Field label="신청 제목">
+        <input style={S.input} value={f.title||""} onChange={e=>upd("title",e.target.value)} placeholder="예) 4월 사무용품 신청, 의료소모품 구매 등" />
+      </Field>
       <Grid><Field label="신청부서"><input style={S.input} value={f.department||""} onChange={e=>upd("department",e.target.value)} /></Field>
         <Field label="신청일"><input type="date" style={S.input} value={f.requestDate||""} onChange={e=>upd("requestDate",e.target.value)} /></Field>
       </Grid>
@@ -1461,24 +1465,28 @@ export default function ApprovalPage() {
     const dept = supplyDoc.formData?.department || "";
     const docNum = supplyDoc.docNumber || "";
 
-    const newItems = (supplyDoc.formData?.items||[])
-      .filter(it => it.name)
-      .map(it => ({
-        id: uid7(),
-        category: "물품비",
-        vendor: "",
-        content: `${it.name}${it.unit ? ` (${it.unit})` : ""}`,
-        amount: String((Number(it.qty)||0) * (Number(it.price)||0)),
-        method: "계좌",
-        issueDate: approvalDateStr,
-        count: String(it.qty||1),
-        note: [dept && `[${dept}]`, it.note].filter(Boolean).join(" "),
-      }));
+    const total = (supplyDoc.formData?.items||[])
+      .reduce((s, it) => s + (Number(it.qty)||0) * (Number(it.price)||0), 0);
 
-    if (newItems.length === 0) return;
+    if (total === 0) return;
 
+    const supplyTitle = supplyDoc.formData?.title || "";
     const groupMeta = [dept, docNum].filter(Boolean).join(" · ");
     const groupName = groupMeta ? `물품청구서 (${groupMeta})` : "물품청구서";
+    const itemContent = supplyTitle || (groupMeta ? `물품청구 (${groupMeta})` : "물품청구");
+
+    const newItems = [{
+      id: uid7(),
+      category: "물품비",
+      vendor: "",
+      content: itemContent,
+      amount: String(total),
+      method: "계좌",
+      issueDate: approvalDateStr,
+      count: "1",
+      note: [dept && `[${dept}]`, docNum].filter(Boolean).join(" "),
+    }];
+
     const newGroup = { name: groupName, items: newItems };
 
     // 해당 월 세금계산서 탐색 (draft 우선, 없으면 최신)
@@ -1494,7 +1502,7 @@ export default function ApprovalPage() {
         updatedAt: Date.now(),
       });
       const statusLabel = taxDoc.status === "draft" ? "임시저장" : taxDoc.status === "approved" ? "승인됨" : taxDoc.status === "final" ? "전결" : "진행중";
-      alert(`✅ ${approvalMonth} 세금계산서(${statusLabel})에 물품청구 항목 ${newItems.length}건이 추가되었습니다.`);
+      alert(`✅ ${approvalMonth} 세금계산서(${statusLabel})에 "${itemContent}" 항목이 추가되었습니다.`);
     } else {
       // 해당 월 세금계산서 없으면 draft로 신규 생성
       const docNumber = await getNextDocNumber("tax");
@@ -1508,7 +1516,7 @@ export default function ApprovalPage() {
         fileUrls: [],
         history: [{ action:"auto_created", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:`물품청구서(${docNum}) 승인으로 자동 생성` }],
       });
-      alert(`✅ ${approvalMonth} 세금계산서가 없어 임시저장 문서를 새로 생성하고 물품청구 항목 ${newItems.length}건을 추가했습니다.`);
+      alert(`✅ ${approvalMonth} 세금계산서가 없어 임시저장 문서를 새로 생성하고 "${itemContent}" 항목을 추가했습니다.`);
     }
   };
 
@@ -1582,6 +1590,10 @@ export default function ApprovalPage() {
         await syncRefundPatientAccounts(doc.formData);
       }
     }
+    // 수정본 최종 승인 시 원본 문서 삭제
+    if (["approved", "final"].includes(newStatus) && doc.originalDocId) {
+      await remove(ref(db, `approvals/${doc.originalDocId}`));
+    }
     setActionLoading(false);
     alert(isFinal ? "전결 처리 완료" : "승인 완료");
   };
@@ -1605,6 +1617,33 @@ export default function ApprovalPage() {
     setEditDocId(docId);
     setFormData(doc?.formData || {});
     setFiles(doc?.fileUrls || []);
+    setView("edit");
+  };
+
+  // 승인된 문서 수정 재제출 (새 임시저장 문서 생성, 원본 ID 참조)
+  const handleReviseApproved = async (docId) => {
+    const doc = docs[docId];
+    if (!doc) return;
+    const newDocRef = push(ref(db, "approvals"));
+    const newDocId = newDocRef.key;
+    await set(newDocRef, {
+      type: doc.type,
+      title: doc.title || DOC_TYPES[doc.type]?.label || "",
+      authorUid: user.uid,
+      authorName: profile.name,
+      authorDept: profile.department,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: "draft",
+      currentApproverUid: null,
+      formData: doc.formData || {},
+      fileUrls: doc.fileUrls || [],
+      originalDocId: docId,
+      history: [{ action:"revision_started", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:`${doc.docNumber||"승인 문서"} 수정본` }],
+    });
+    setEditDocId(newDocId);
+    setFormData(doc.formData || {});
+    setFiles(doc.fileUrls || []);
     setView("edit");
   };
 
@@ -1731,10 +1770,10 @@ export default function ApprovalPage() {
                   <div style={{ fontSize:13, fontWeight:700 }}>
                     {h.byName} <span style={{ color:"#94a3b8", fontWeight:400 }}>({h.byRole==="director"?"병원장":h.byRole==="dept_head"?"부서장":"작성자"})</span>
                     <span style={{ marginLeft:8, fontSize:12, color:actionColors[h.action]||"#64748b" }}>
-                      {h.action==="submitted"?"제출":h.action==="approved"?"승인":h.action==="final"?"전결":h.action==="rejected"?"반려":""}
+                      {h.action==="submitted"?"제출":h.action==="approved"?"승인":h.action==="final"?"전결":h.action==="rejected"?"반려":h.action==="revision_started"?"수정본 생성":""}
                     </span>
                   </div>
-                  {h.memo && <div style={{ fontSize:12, color:"#dc2626", marginTop:2 }}>반려 사유: {h.memo}</div>}
+                  {h.memo && <div style={{ fontSize:12, color: h.action==="revision_started"?"#92400e":"#dc2626", marginTop:2 }}>{h.action==="revision_started"?"원본":"반려 사유"}: {h.memo}</div>}
                   <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{fmtTs(h.at)}</div>
                 </div>
               </div>
@@ -1753,6 +1792,16 @@ export default function ApprovalPage() {
           {isMine && doc.status==="rejected" && (
             <div style={{ ...S.card, display:"flex", gap:12, justifyContent:"center" }}>
               <button style={S.btnPri} onClick={()=>handleResubmit(selectedId)}>↩ 수정 후 재제출</button>
+            </div>
+          )}
+          {/* 승인된 내 문서: 수정 재제출 */}
+          {isMine && ["approved","final"].includes(doc.status) && (
+            <div style={{ ...S.card, display:"flex", gap:12, justifyContent:"center", alignItems:"center", flexWrap:"wrap" }}>
+              <span style={{ fontSize:12, color:"#92400e" }}>내용을 수정하여 다시 결재를 받을 수 있습니다. 수정본이 최종 승인되면 이 문서는 삭제됩니다.</span>
+              <button style={{ background:"#fffbeb", color:"#92400e", border:"1.5px solid #fde68a", borderRadius:8, padding:"9px 20px", fontWeight:700, fontSize:13, cursor:"pointer" }}
+                onClick={()=>handleReviseApproved(selectedId)}>
+                ✏️ 수정 재제출
+              </button>
             </div>
           )}
           {/* 임시저장 내 문서: 수정 / 제출 / 삭제 */}
@@ -1782,9 +1831,21 @@ export default function ApprovalPage() {
   // ── 임시저장 편집 뷰 ─────────────────────────────────────────────────────────
   if (view === "edit" && editDocId) {
     const editDoc = docs[editDocId];
-    if (!editDoc) { setView("list"); return null; }
+    // 수정 재제출로 방금 생성된 문서는 Firebase 동기화 전까지 잠시 로딩 상태
+    if (!editDoc) return <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", fontSize:16 }}>로딩 중...</div>;
     const typeInfo = DOC_TYPES[editDoc.type] || DOC_TYPES.vacation;
-    const cancelEdit = () => { setView("detail"); setEditDocId(null); };
+    const isRevision = !!editDoc.originalDocId;
+    const cancelEdit = () => {
+      if (isRevision) {
+        // 수정본은 취소 시 새로 생성된 draft 삭제
+        if (window.confirm("수정 재제출을 취소하면 작성 중인 내용이 삭제됩니다. 취소하시겠습니까?")) {
+          remove(ref(db, `approvals/${editDocId}`));
+          setView("list"); setEditDocId(null); setFormData({}); setFiles([]);
+        }
+      } else {
+        setView("detail"); setEditDocId(null);
+      }
+    };
     return (
       <div style={S.page}>
         <header style={S.header}>
@@ -1793,15 +1854,21 @@ export default function ApprovalPage() {
             ← 취소
           </button>
           <img src="/favicon.png" style={{ width:30, height:30, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
-          <div style={{ flex:1, fontWeight:800, fontSize:16 }}>{typeInfo.label} 수정</div>
+          <div style={{ flex:1, fontWeight:800, fontSize:16 }}>{typeInfo.label} {isRevision ? "수정 재제출" : "수정"}</div>
           <div style={{ fontSize:12, color:"#94a3b8" }}>
             {editDoc.docNumber || "임시저장"} · {editDoc.authorName}
           </div>
         </header>
         <div style={S.main}>
-          <div style={{ background:"#fef9c3", border:"1.5px solid #fde047", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#713f12" }}>
-            ✏️ 임시저장 문서를 수정 중입니다. 저장 후에도 임시저장 상태가 유지됩니다.
-          </div>
+          {isRevision ? (
+            <div style={{ background:"#fff7ed", border:"1.5px solid #fb923c", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#9a3412" }}>
+              🔄 승인된 문서의 수정본입니다. 수정 후 제출하면 기존 결재 라인을 다시 거치며, 최종 승인 시 원본 문서는 삭제됩니다.
+            </div>
+          ) : (
+            <div style={{ background:"#fef9c3", border:"1.5px solid #fde047", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#713f12" }}>
+              ✏️ 임시저장 문서를 수정 중입니다. 저장 후에도 임시저장 상태가 유지됩니다.
+            </div>
+          )}
           <div style={S.card}>
             <div style={{ ...S.sectionTit, color: typeInfo.color }}>{typeInfo.label}</div>
             {renderDocForm(editDoc.type, formData, setFormData, editDocId, files, setFiles, false)}
@@ -1964,7 +2031,7 @@ export default function ApprovalPage() {
     { key:"mine",     label:`내 문서함 (${myDocs.length})` },
     { key:"pending",  label:`결재 대기 (${pendingDocs.length})` },
     { key:"vacation", label:`휴가신청서 (${vacationDisplay.length})` },
-    ...(canSeeAllVacation ? [{ key:"vacation_summary", label:"📊 연차 현황" }] : []),
+    { key:"vacation_summary", label:"📊 연차 현황" },
     { key:"supply",   label:`물품청구서 (${supplyDisplay.length})` },
     ...(canSeeSupplySummary ? [{ key:"supply_summary", label:"📊 물품 월간 합산" }] : []),
     ...(canAccessRefund  ? [{ key:"refund",  label:`위탁진료 환불금 (${refundDisplay.length})` }] : []),
@@ -2002,11 +2069,13 @@ export default function ApprovalPage() {
           ))}
         </div>
         {/* 연차 현황 탭 */}
-        {activeTab === "vacation_summary" && canSeeAllVacation && (
+        {activeTab === "vacation_summary" && (
           <div style={S.card}>
-            <div style={{ fontWeight:800, fontSize:15, color:"#0369a1", marginBottom:16 }}>휴가 사용 현황 (승인 완료 기준)</div>
+            <div style={{ fontWeight:800, fontSize:15, color:"#0369a1", marginBottom:16 }}>
+              {canSeeAllVacation ? "휴가 사용 현황 (전 직원 · 승인 완료 기준)" : "내 연차 사용 현황 (승인 완료 기준)"}
+            </div>
             <VacationSummaryPanel
-              docs={vacationDocs}
+              docs={vacationDisplay}
               onOpenDoc={(id)=>{ setSelectedId(id); setView("detail"); }}
             />
           </div>
@@ -2300,7 +2369,11 @@ export default function ApprovalPage() {
                   {doc.docNumber || "임시저장"}
                 </span>
                 <span style={S.badge(t.color, t.bg)}>{t.label}</span>
-                <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{doc.authorName}</span>
+                {doc.originalDocId && <span style={{ fontSize:10, fontWeight:700, color:"#92400e", background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:5, padding:"1px 6px", flexShrink:0 }}>수정본</span>}
+                <span style={{ fontWeight:600, fontSize:14, flex:1 }}>
+                  {doc.authorName}
+                  {doc.formData?.title && <span style={{ fontSize:12, color:"#475569", fontWeight:400, marginLeft:6 }}>— {doc.formData.title}</span>}
+                </span>
                 <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{fmtTs(doc.updatedAt||doc.createdAt).slice(0,10)}</span>
                 <StatusBadge status={doc.status} />
                 {/* 내 임시저장 문서: 빠른 수정/삭제 버튼 */}

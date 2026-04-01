@@ -347,14 +347,16 @@ export default function ConsultationPage() {
     return acc;
   }, []);
 
-  // 입원예정일이 있으나 병상 미배정인 상담 목록 (오늘 이후만 표시)
-  const pendingAdmits = allList.filter(c => {
-    if (!c.admitDate) return false;
-    if (c.admitDate < today()) return false; // 오늘 날짜 지난 항목 제외
-    if (c.status === "취소" || c.status === "입원완료") return false;
-    if (c.reservedSlot) return false;
-    return true;
-  });
+  // 입원예정일이 있으나 병상 미배정인 상담 목록 (월 필터 무관 — 전체 데이터 기준)
+  const pendingAdmits = Object.entries(allConsultations)
+    .map(([id, c]) => ({ id, ...c }))
+    .filter(c => {
+      if (!c.admitDate) return false;
+      if (c.status === "취소" || c.status === "입원완료") return false;
+      if (c.reservedSlot) return false;
+      return true;
+    })
+    .sort((a, b) => (a.admitDate || "").localeCompare(b.admitDate || ""));
 
   // M/D 형식 → Date 변환 (슬롯 날짜 비교용)
   const parseMD = (str) => {
@@ -664,14 +666,18 @@ export default function ConsultationPage() {
           <span style={{fontWeight:700, fontSize:13}}>🏥 입원 예약 대기</span>
           <span style={{fontSize:12, color:"#92400e", marginLeft:8}}>{pendingAdmits.length}명 — 병실 배정 필요</span>
           <div style={{display:"flex", gap:6, flexWrap:"wrap", marginTop:8}}>
-            {pendingAdmits.map(c=>(
-              <button key={c.id} style={S.pendCard}
-                onClick={()=>setReserveModal({id:c.id, consultation:c})}>
-                <span style={{fontWeight:700}}>{c.name}</span>
-                <span style={{fontSize:11, color:"#92400e", marginLeft:4}}>{fmtDate(c.admitDate)} 입원예정</span>
-                {c.roomTypes?.length>0 && <span style={{fontSize:10, color:"#78350f", marginLeft:4}}>({c.roomTypes.join("·")})</span>}
-              </button>
-            ))}
+            {pendingAdmits.map(c=>{
+              const overdue = c.admitDate < today();
+              return (
+                <button key={c.id} style={{...S.pendCard, ...(overdue ? {background:"#fee2e2", borderColor:"#fca5a5"} : {})}}
+                  onClick={()=>setReserveModal({id:c.id, consultation:c})}>
+                  {overdue && <span style={{fontSize:10, color:"#dc2626", fontWeight:800, marginRight:2}}>지연</span>}
+                  <span style={{fontWeight:700}}>{c.name}</span>
+                  <span style={{fontSize:11, color: overdue?"#dc2626":"#92400e", marginLeft:4}}>{fmtDate(c.admitDate)} 입원예정</span>
+                  {c.roomTypes?.length>0 && <span style={{fontSize:10, color:"#78350f", marginLeft:4}}>({c.roomTypes.join("·")})</span>}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

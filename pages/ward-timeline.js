@@ -198,6 +198,28 @@ export default function WardTimeline() {
   const [localMemos, setLocalMemos] = useState({});  // 입력 중 로컬 상태
   const [memoWidth,  setMemoWidth]  = useState(220);
   const isResizing = useRef(false);
+  const timelineScrollRef = useRef(null);
+  const memoScrollRef     = useRef(null);
+  const isSyncingScroll   = useRef(false);
+
+  // ── 타임라인 ↔ 메모 패널 세로 스크롤 동기화 ─────────────────────────────
+  const onTimelineScroll = useCallback((e) => {
+    if (isSyncingScroll.current) return;
+    if (memoScrollRef.current) {
+      isSyncingScroll.current = true;
+      memoScrollRef.current.scrollTop = e.target.scrollTop;
+      requestAnimationFrame(() => { isSyncingScroll.current = false; });
+    }
+  }, []);
+
+  const onMemoScroll = useCallback((e) => {
+    if (isSyncingScroll.current) return;
+    if (timelineScrollRef.current) {
+      isSyncingScroll.current = true;
+      timelineScrollRef.current.scrollTop = e.target.scrollTop;
+      requestAnimationFrame(() => { isSyncingScroll.current = false; });
+    }
+  }, []);
 
   // ── 메모 패널 너비 드래그 조절 ──────────────────────────────────────────
   const onResizerMouseDown = useCallback((e) => {
@@ -268,6 +290,54 @@ export default function WardTimeline() {
       setLocalMemos(val);
     });
     return () => unsub();
+  }, []);
+
+  // ── 타임라인 드래그 스크롤 ────────────────────────────────────────────────
+  // 환자 바(draggable) · 버튼 · 링크 위에서는 제외, 나머지 어디서든 좌우 드래그 스크롤
+  useEffect(() => {
+    const el = timelineScrollRef.current;
+    if (!el) return;
+    let startX = 0, startScrollLeft = 0;
+    let draggingScroll = false, moved = false;
+
+    const onMouseDown = (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('[draggable="true"]')) return;
+      if (e.target.closest('button, a, input, textarea, select')) return;
+      draggingScroll = true;
+      moved = false;
+      startX = e.clientX;
+      startScrollLeft = el.scrollLeft;
+    };
+    const onMouseMove = (e) => {
+      if (!draggingScroll) return;
+      const dx = startX - e.clientX;
+      if (Math.abs(dx) > 4) {
+        moved = true;
+        el.scrollLeft = startScrollLeft + dx;
+        el.style.cursor = "grabbing";
+        el.style.userSelect = "none";
+      }
+    };
+    const onMouseUp = () => {
+      if (moved) { el.style.cursor = ""; el.style.userSelect = ""; }
+      draggingScroll = false;
+    };
+    // 드래그 후 클릭 이벤트가 발화되지 않도록 capture 단계에서 차단
+    const onClickCapture = (e) => {
+      if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; }
+    };
+
+    el.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    el.addEventListener("click", onClickCapture, true);
+    return () => {
+      el.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      el.removeEventListener("click", onClickCapture, true);
+    };
   }, []);
 
   // 신환 이름 집합 (consultations 기준, patientId 없음=신규, 취소/입원완료 제외)
@@ -493,9 +563,12 @@ export default function WardTimeline() {
         )}
       </div>
 
-      {/* ── 타임라인 본체 + 메모 패널 (단일 스크롤) ── */}
-      <div style={{ flex:1, overflow:"auto", minHeight:0 }}>
-      <div style={{ display:"flex", minWidth: LEFT_W + DAY_W * DAYS_TOTAL }}>
+      {/* ── 타임라인 본체 + 메모 패널 ── */}
+      {/* 외부 flex: 타임라인 스크롤 영역 / 메모 패널을 나란히 배치 */}
+      <div style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
+      {/* 타임라인 스크롤 (가로+세로) — 메모 패널은 여기 포함 안 됨 */}
+      <div ref={timelineScrollRef} style={{ flex:1, overflow:"auto" }} onScroll={onTimelineScroll}>
+      <div style={{ minWidth: LEFT_W + DAY_W * DAYS_TOTAL }}>
 
       {/* 타임라인 */}
       <div style={{ flex:1, position:"relative" }}>
@@ -762,6 +835,8 @@ export default function WardTimeline() {
           <div style={{ height:40 }}/>
         </div>
       </div>{/* 타임라인 열 끝 */}
+      </div>{/* minWidth 컨테이너 끝 */}
+      </div>{/* 타임라인 스크롤 컨테이너 끝 */}
 
       {/* ── 드래그 핸들 ── */}
       {memoOpen && (
@@ -778,8 +853,8 @@ export default function WardTimeline() {
         </div>
       )}
 
-      {/* ── 메모 패널 ── */}
-      <div style={{ width: memoOpen ? memoWidth : 36, flexShrink:0, borderLeft: memoOpen ? "none" : "2px solid #e2e8f0", background:"#f8fafc", display:"flex", flexDirection:"column", overflow:"hidden" }}>
+      {/* ── 메모 패널 (가로 고정, 세로 스크롤은 타임라인과 동기화) ── */}
+      <div ref={memoScrollRef} onScroll={onMemoScroll} style={{ width: memoOpen ? memoWidth : 36, flexShrink:0, borderLeft: memoOpen ? "none" : "2px solid #e2e8f0", background:"#f8fafc", overflowY:"auto", overflowX:"hidden" }}>
         {/* 패널 헤더 — sticky, 날짜 헤더(54px)와 높이 일치 */}
         <div style={{ position:"sticky", top:0, zIndex:29, height:54, display:"flex", alignItems:"center", justifyContent: memoOpen ? "space-between" : "center", padding: memoOpen ? "0 12px" : "0", borderBottom:"2px solid #cbd5e1", background:"#f8fafc", boxShadow:"0 2px 6px rgba(0,0,0,0.07)" }}>
           {memoOpen && <span style={{ fontSize:12, fontWeight:800, color:"#64748b" }}>📝 병실 메모</span>}
@@ -821,8 +896,7 @@ export default function WardTimeline() {
         {memoOpen && <div style={{ height:40 }}/>}
       </div>
 
-      </div>{/* flex row 끝 */}
-      </div>{/* 단일 스크롤 컨테이너 끝 */}
+      </div>{/* 외부 flex 컨테이너 끝 */}
 
       {/* 팝오버 */}
       {popover && !dragging && (
