@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
+import { searchPatientsByName } from "../lib/patientSearch";
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 const WARD_STRUCTURE = {
@@ -84,11 +85,43 @@ function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving }) {
     discharge:     modal.data.discharge     || "미정",
     note:          modal.data.note          || "",
     scheduleAlert: modal.data.scheduleAlert || false,
+    patientId:     modal.data.patientId     || "",
   });
+  const [suggestions,     setSuggestions]     = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searching,       setSearching]       = useState(false);
+  const searchTimer = useRef(null);
+
   const isNew         = modal.resIndex === -1;
   const isReservation = modal.mode === "reservation";
   const slotLabel     = modal.slotKey.replace(/(\d+)-(\d+)/, "$1호 $2번");
   const inpStyle = { width:"100%", border:"1.5px solid #e2e8f0", borderRadius:8, padding:"9px 11px", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
+
+  const onNameChange = (val) => {
+    setForm(p => ({ ...p, name: val, patientId: "" }));
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!val.trim()) { setSuggestions([]); setShowSuggestions(false); setSearching(false); return; }
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const results = await searchPatientsByName(val.trim());
+        setSuggestions(results);
+        setShowSuggestions(results.length > 0);
+      } catch(e) {}
+      setSearching(false);
+    }, 300);
+  };
+
+  const selectPatient = (p) => {
+    setForm(prev => ({
+      ...prev,
+      name:      p.name,
+      patientId: p.internalId || "",
+      note:      prev.note || (p.diagnosis ? `[${p.diagnosis}]` : ""),
+    }));
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}
@@ -99,14 +132,57 @@ function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving }) {
         </div>
         <div style={{ fontSize:12, color:"#94a3b8", marginBottom:20 }}>{slotLabel} 병상</div>
 
+        {/* 이름 입력 + 환자 자동완성 */}
+        <div style={{ marginBottom:14, position:"relative" }}>
+          <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>
+            환자 이름 *
+            {form.patientId && (
+              <span style={{ marginLeft:6, fontSize:11, color:"#059669", fontWeight:700 }}>✓ 기존 환자 연결됨</span>
+            )}
+          </label>
+          <div style={{ position:"relative" }}>
+            <input
+              style={{ ...inpStyle, borderColor: form.patientId ? "#10b981" : "#e2e8f0", paddingRight: searching ? 80 : 11 }}
+              value={form.name}
+              onChange={e => onNameChange(e.target.value)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              placeholder="이름 입력 (기존 환자 자동완성)"
+              autoFocus
+            />
+            {searching && (
+              <span style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", fontSize:11, color:"#94a3b8" }}>검색 중…</span>
+            )}
+          </div>
+          {showSuggestions && (
+            <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#fff", borderRadius:8,
+              boxShadow:"0 8px 24px rgba(0,0,0,0.18)", border:"1px solid #e2e8f0", zIndex:50, maxHeight:220, overflowY:"auto", marginTop:2 }}>
+              {suggestions.map((p, i) => (
+                <div key={i} onMouseDown={() => selectPatient(p)}
+                  style={{ padding:"9px 12px", cursor:"pointer", borderBottom:"1px solid #f1f5f9",
+                    display:"flex", flexDirection:"column", gap:2, background:"#fff", transition:"background 0.1s" }}
+                  onMouseEnter={e => e.currentTarget.style.background="#f0f9ff"}
+                  onMouseLeave={e => e.currentTarget.style.background="#fff"}>
+                  <div style={{ fontWeight:700, fontSize:14, color:"#0f2744" }}>{p.name}</div>
+                  <div style={{ fontSize:11, color:"#94a3b8", display:"flex", gap:8, flexWrap:"wrap" }}>
+                    {p.birthDate  && <span>{p.birthDate}</span>}
+                    {p.diagnosis  && <span style={{ color:"#64748b" }}>{p.diagnosis}</span>}
+                    {p.chartNo    && <span>차트 {p.chartNo}</span>}
+                    {p.doctor     && <span>담당 {p.doctor}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 입원일 / 퇴원일 */}
         {[
-          { label:"환자 이름 *", key:"name", ph:"이름 입력", type:"text" },
-          ...(isReservation ? [{ label:"예약 입원일 (예: 4/15)", key:"admitDate", ph:"4/15", type:"text" }] : []),
-          { label:"퇴원 예정일 (예: 4/25 또는 미정)", key:"discharge", ph:"4/25 또는 미정", type:"text" },
+          ...(isReservation ? [{ label:"예약 입원일 (예: 4/15)", key:"admitDate", ph:"4/15" }] : []),
+          { label:"퇴원 예정일 (예: 4/25 또는 미정)", key:"discharge", ph:"4/25 또는 미정" },
         ].map(f => (
           <div key={f.key} style={{ marginBottom:14 }}>
             <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>{f.label}</label>
-            <input style={inpStyle} value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} placeholder={f.ph} autoFocus={f.key==="name"} />
+            <input style={inpStyle} value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} placeholder={f.ph} />
           </div>
         ))}
 
@@ -197,10 +273,22 @@ export default function WardTimeline() {
   const [memoOpen,   setMemoOpen]   = useState(true);
   const [localMemos, setLocalMemos] = useState({});  // 입력 중 로컬 상태
   const [memoWidth,  setMemoWidth]  = useState(220);
-  const isResizing = useRef(false);
+  const [singleRoomMemoText, setSingleRoomMemoText] = useState("");
+  const [localSingleMemo,    setLocalSingleMemo]    = useState("");
+  const [singleMemoOpen,     setSingleMemoOpen]     = useState(true);
+  const [tlSearchQuery,    setTlSearchQuery]    = useState("");
+  const [tlSearchResults,  setTlSearchResults]  = useState([]);
+  const [tlSearchFocused,  setTlSearchFocused]  = useState(false);
+  const [highlightKey,     setHighlightKey]     = useState(null); // { slotKey }
+  const tlSearchRef    = useRef(null);
+  const hlTimer        = useRef(null);
+  const rowRefs        = useRef({});
+  const isResizing     = useRef(false);
   const timelineScrollRef = useRef(null);
   const memoScrollRef     = useRef(null);
   const isSyncingScroll   = useRef(false);
+  const dragMousePos      = useRef({ x: 0, y: 0 });
+  const autoScrollRAF     = useRef(null);
 
   // ── 타임라인 ↔ 메모 패널 세로 스크롤 동기화 ─────────────────────────────
   const onTimelineScroll = useCallback((e) => {
@@ -245,6 +333,42 @@ export default function WardTimeline() {
   const [dragging,   setDragging]   = useState(null);  // { slotKey, bar }
   const [dragOver,   setDragOver]   = useState(null);  // 대상 slotKey
 
+  // ── 드래그 중 자동 스크롤 ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!dragging) {
+      if (autoScrollRAF.current) { cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current = null; }
+      return;
+    }
+    const THRESHOLD = 80;   // 엣지에서 이 거리(px) 이내면 스크롤 시작
+    const MAX_SPEED = 16;   // 프레임당 최대 스크롤 px
+
+    const onDragOver = (e) => { dragMousePos.current = { x: e.clientX, y: e.clientY }; };
+    document.addEventListener("dragover", onDragOver);
+
+    const tick = () => {
+      const el = timelineScrollRef.current;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const { x, y } = dragMousePos.current;
+        const rightDist  = rect.right  - x;
+        const leftDist   = x - rect.left;
+        const bottomDist = rect.bottom - y;
+        const topDist    = y - rect.top;
+        if (rightDist  > 0 && rightDist  < THRESHOLD) el.scrollLeft += MAX_SPEED * (1 - rightDist  / THRESHOLD);
+        else if (leftDist  > 0 && leftDist  < THRESHOLD) el.scrollLeft -= MAX_SPEED * (1 - leftDist  / THRESHOLD);
+        if (bottomDist > 0 && bottomDist < THRESHOLD) el.scrollTop  += MAX_SPEED * (1 - bottomDist / THRESHOLD);
+        else if (topDist   > 0 && topDist   < THRESHOLD) el.scrollTop  -= MAX_SPEED * (1 - topDist   / THRESHOLD);
+      }
+      autoScrollRAF.current = requestAnimationFrame(tick);
+    };
+    autoScrollRAF.current = requestAnimationFrame(tick);
+
+    return () => {
+      document.removeEventListener("dragover", onDragOver);
+      if (autoScrollRAF.current) { cancelAnimationFrame(autoScrollRAF.current); autoScrollRAF.current = null; }
+    };
+  }, [dragging]);
+
   // ── 병실 타입 필터 ───────────────────────────────────────────────────────
   const [filterType, setFilterType] = useState(null);  // null=전체, "1인실" 등
 
@@ -288,6 +412,15 @@ export default function WardTimeline() {
       const val = snap.val() || {};
       setRoomMemos(val);
       setLocalMemos(val);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onValue(ref(db, "roomTypeMemos/1인실"), snap => {
+      const val = snap.val() || "";
+      setSingleRoomMemoText(val);
+      setLocalSingleMemo(val);
     });
     return () => unsub();
   }, []);
@@ -340,6 +473,47 @@ export default function WardTimeline() {
     };
   }, []);
 
+  // ── 타임라인 검색 ────────────────────────────────────────────────────────
+  const doTlSearch = (q) => {
+    setTlSearchQuery(q);
+    if (!q.trim()) { setTlSearchResults([]); return; }
+    const results = [];
+    Object.entries(slots).forEach(([slotKey, slot]) => {
+      const roomId = slotKey.split("-")[0];
+      if (slot?.current?.name?.includes(q.trim()))
+        results.push({ slotKey, name: slot.current.name, type: "current", roomId });
+      (slot?.reservations || []).forEach(r => {
+        if (r.name?.includes(q.trim()))
+          results.push({ slotKey, name: r.name, type: "reserved", roomId, admitDate: r.admitDate });
+      });
+    });
+    setTlSearchResults(results);
+  };
+
+  const scrollToRow = (slotKey) => {
+    if (hlTimer.current) clearTimeout(hlTimer.current);
+    const el = rowRefs.current[slotKey];
+    const container = timelineScrollRef.current;
+    if (el && container) {
+      const containerRect = container.getBoundingClientRect();
+      const elRect        = el.getBoundingClientRect();
+      const relTop        = elRect.top - containerRect.top + container.scrollTop;
+      container.scrollTo({ top: relTop - containerRect.height / 2 + ROW_H / 2, behavior: "smooth" });
+    }
+    // 4회 점멸 후 소멸
+    const BLINK_MS = 300;
+    const TOTAL    = 8; // on/off × 4회
+    let tick = 0;
+    setHighlightKey({ slotKey });
+    const doBlink = () => {
+      tick++;
+      if (tick >= TOTAL) { setHighlightKey(null); return; }
+      setHighlightKey(tick % 2 === 0 ? { slotKey } : null);
+      hlTimer.current = setTimeout(doBlink, BLINK_MS);
+    };
+    hlTimer.current = setTimeout(doBlink, BLINK_MS);
+  };
+
   // 신환 이름 집합 (consultations 기준, patientId 없음=신규, 취소/입원완료 제외)
   const newPatientNames = useMemo(() => {
     // "신)이름" 같은 접두사 제거 후 비교
@@ -364,6 +538,11 @@ export default function WardTimeline() {
     setRoomMemos(next);
     await set(ref(db, "roomMemos"), next);
   }, [roomMemos]);
+
+  const saveSingleRoomMemo = useCallback(async (text) => {
+    setSingleRoomMemoText(text);
+    await set(ref(db, "roomTypeMemos/1인실"), text);
+  }, []);
 
   // ── 드래그 앤 드롭 실행 ──────────────────────────────────────────────────
   const executeDrop = useCallback(async (targetSlotKey) => {
@@ -561,6 +740,50 @@ export default function WardTimeline() {
             — {Object.values(WARD_STRUCTURE).flatMap(w=>w.rooms).filter(r=>r.type===filterType).length}개 병실 표시 중
           </span>
         )}
+        {/* 환자 검색 */}
+        <div style={{ position:"relative", marginLeft:"auto", flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", border:"1.5px solid #e2e8f0", borderRadius:8, overflow:"visible", background:"#f8fafc" }}>
+            <span style={{ padding:"0 8px", fontSize:14, color:"#94a3b8" }}>🔍</span>
+            <input
+              ref={tlSearchRef}
+              style={{ border:"none", outline:"none", background:"transparent", padding:"6px 4px", fontSize:13, width:140, fontFamily:"inherit" }}
+              placeholder="환자 이름 검색..."
+              value={tlSearchQuery}
+              onChange={e => doTlSearch(e.target.value)}
+              onFocus={() => setTlSearchFocused(true)}
+              onBlur={() => setTimeout(() => setTlSearchFocused(false), 200)}
+            />
+            {tlSearchQuery && (
+              <button onClick={() => { setTlSearchQuery(""); setTlSearchResults([]); }}
+                style={{ border:"none", background:"none", cursor:"pointer", padding:"0 8px", color:"#94a3b8", fontSize:14 }}>✕</button>
+            )}
+          </div>
+          {/* 검색 결과 드롭다운 */}
+          {tlSearchFocused && tlSearchResults.length > 0 && (
+            <div style={{ position:"absolute", top:"100%", right:0, minWidth:260, background:"#fff", borderRadius:8,
+              boxShadow:"0 4px 20px rgba(0,0,0,0.15)", border:"1px solid #e2e8f0", zIndex:100, maxHeight:300, overflowY:"auto", marginTop:4 }}>
+              {tlSearchResults.map((r, i) => (
+                <div key={i}
+                  onClick={() => { scrollToRow(r.slotKey); setTlSearchFocused(false); }}
+                  style={{ padding:"8px 14px", cursor:"pointer", borderBottom:"1px solid #f1f5f9", display:"flex", alignItems:"center", gap:8, background:"#fff", transition:"background 0.1s" }}
+                  onMouseEnter={e => e.currentTarget.style.background="#f0f9ff"}
+                  onMouseLeave={e => e.currentTarget.style.background="#fff"}>
+                  <span style={{ fontSize:11, background:r.type==="current"?"#dbeafe":"#f5f3ff", color:r.type==="current"?"#1d4ed8":"#7c3aed",
+                    borderRadius:4, padding:"1px 6px", fontWeight:700, flexShrink:0 }}>
+                    {r.type==="current"?"입원중":"예약"}
+                  </span>
+                  <span style={{ fontWeight:700, fontSize:13 }}>{r.name}</span>
+                  <span style={{ fontSize:11, color:"#94a3b8", marginLeft:"auto" }}>{r.roomId}호{r.admitDate&&` · ${r.admitDate}`}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {tlSearchFocused && tlSearchQuery.trim() && tlSearchResults.length === 0 && (
+            <div style={{ position:"absolute", top:"100%", right:0, width:240, background:"#fff", borderRadius:8,
+              boxShadow:"0 4px 20px rgba(0,0,0,0.15)", border:"1px solid #e2e8f0", zIndex:100, padding:"12px 14px", marginTop:4,
+              fontSize:13, color:"#94a3b8", textAlign:"center" }}>검색 결과 없음</div>
+          )}
+        </div>
       </div>
 
       {/* ── 타임라인 본체 + 메모 패널 ── */}
@@ -650,16 +873,18 @@ export default function WardTimeline() {
                         const slot     = slots[slotKey];
                         const bars     = getBars(slot, days);
                         const overlaps = getOverlaps(bars);
-                        const isDragTarget = dragOver === slotKey && dragging?.slotKey !== slotKey;
-                        const isDragSource = dragging?.slotKey === slotKey;
+                        const isDragTarget  = dragOver === slotKey && dragging?.slotKey !== slotKey;
+                        const isDragSource  = dragging?.slotKey === slotKey;
+                        const isRowHighlit  = highlightKey?.slotKey === slotKey;
 
                         return (
                           <div key={bi}
+                            ref={el => { rowRefs.current[slotKey] = el; }}
                             style={{ display:"flex", height:ROW_H, borderBottom:"1px solid #f1f5f9",
-                              background: isDragTarget ? "#f0fdf4" : "#fff",
-                              outline: isDragTarget ? "2px solid #059669" : "none",
+                              background: isDragTarget ? "#f0fdf4" : isRowHighlit ? "#fff1f2" : "#fff",
+                              outline: isDragTarget ? "2px solid #059669" : isRowHighlit ? "2px solid #ef4444" : "none",
                               outlineOffset: -2,
-                              transition:"background 0.15s" }}
+                              transition:"background 0.3s, outline 0.3s" }}
                             onDragOver={e => { e.preventDefault(); setDragOver(slotKey); }}
                             onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); }}
                             onDrop={e => { e.preventDefault(); executeDrop(slotKey); }}>
@@ -731,6 +956,7 @@ export default function WardTimeline() {
                                 let bg = bar.type==="current" ? "#10b981" : "#8b5cf6";
                                 if (bar.type==="current" && disToday)   bg = "#f59e0b";
                                 if (bar.type==="current" && admitToday) bg = "#3b82f6";
+                                const isBarHighlit = isRowHighlit;
 
                                 const barLeft  = bar.startDay * DAY_W + (bar.overflowLeft  ? 0 : 3);
                                 const barWidth = Math.max(20, (bar.endDay - bar.startDay + 1) * DAY_W - (bar.overflowLeft?0:3) - (bar.overflowRight?0:3));
@@ -750,9 +976,10 @@ export default function WardTimeline() {
                                       borderRadius:`${bar.overflowLeft?0:7}px ${bar.overflowRight?0:7}px ${bar.overflowRight?0:7}px ${bar.overflowLeft?0:7}px`,
                                       cursor:"grab", overflow:"hidden",
                                       display:"flex", flexDirection:"column", justifyContent:"center", padding:"0 8px",
-                                      boxShadow: isDraggingThis ? "none" : "0 2px 6px rgba(0,0,0,0.18)",
+                                      boxShadow: isDraggingThis ? "none" : isBarHighlit ? "0 0 0 3px #ef4444, 0 4px 12px rgba(0,0,0,0.3)" : "0 2px 6px rgba(0,0,0,0.18)",
                                       opacity: isDraggingThis ? 0.4 : 1,
-                                      transition:"opacity 0.15s, box-shadow 0.15s",
+                                      outline: isBarHighlit ? "2px solid #ef4444" : "none",
+                                      transition:"opacity 0.15s, box-shadow 0.3s, outline 0.3s",
                                       userSelect:"none",
                                     }}
                                     onClick={e => { e.stopPropagation(); if (!dragging) setPopover({ slotKey, bar, x:e.clientX+8, y:e.clientY+8 }); }}
@@ -897,6 +1124,32 @@ export default function WardTimeline() {
       </div>
 
       </div>{/* 외부 flex 컨테이너 끝 */}
+
+      {/* ── 1인실 전용 메모 패널 (최하단) ── */}
+      {filterType === "1인실" && (
+        <div style={{ flexShrink:0, background:"#eef2ff", borderTop:"2px solid #c7d2fe" }}>
+          <div
+            onClick={() => setSingleMemoOpen(o => !o)}
+            style={{ padding:"6px 16px", display:"flex", alignItems:"center", gap:8, cursor:"pointer", userSelect:"none" }}>
+            <span style={{ fontSize:13, fontWeight:800, color:"#4338ca" }}>📋 1인실 예약 메모</span>
+            <span style={{ fontSize:11, color:"#818cf8" }}>{singleMemoOpen ? "▼" : "▲"}</span>
+            {!singleMemoOpen && localSingleMemo && (
+              <span style={{ fontSize:11, color:"#6366f1", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>
+                {localSingleMemo.split("\n")[0]}
+              </span>
+            )}
+          </div>
+          {singleMemoOpen && (
+            <textarea
+              value={localSingleMemo}
+              onChange={e => setLocalSingleMemo(e.target.value)}
+              onBlur={e => { const t = e.target.value; if (t !== singleRoomMemoText) saveSingleRoomMemo(t); }}
+              placeholder="1인실 예약 조정, 대기 현황, 특이사항 등 자유롭게 입력하세요..."
+              style={{ display:"block", width:"100%", border:"none", resize:"none", height:130, fontSize:13, padding:"6px 16px 10px", fontFamily:"inherit", color:"#1e1b4b", outline:"none", background:"transparent", boxSizing:"border-box", lineHeight:1.7 }}
+            />
+          )}
+        </div>
+      )}
 
       {/* 팝오버 */}
       {popover && !dragging && (

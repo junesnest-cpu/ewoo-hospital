@@ -173,10 +173,12 @@ export default function HospitalWardManager() {
   const fileInputRef = useRef();
 
   // ── 환자 검색 ────────────────────────────────────────────────────────────
-  const [searchQuery,    setSearchQuery]    = useState("");
-  const [searchResults,  setSearchResults]  = useState([]); // [{slotKey, name, type, roomId}]
-  const [searchFocused,  setSearchFocused]  = useState(false);
+  const [searchQuery,      setSearchQuery]      = useState("");
+  const [searchResults,    setSearchResults]    = useState([]); // [{slotKey, name, type, roomId}]
+  const [searchFocused,    setSearchFocused]    = useState(false);
+  const [highlightSlotKey, setHighlightSlotKey] = useState(null);
   const searchRef = useRef();
+  const highlightTimer = useRef(null);
 
   // ── 가용 병실 조회 ────────────────────────────────────────────────────────
   const [availOpen,        setAvailOpen]        = useState(false);
@@ -349,13 +351,27 @@ export default function HospitalWardManager() {
     setSearchResults(results);
   };
 
-  const scrollToCard = (roomId) => {
+  const scrollToCard = (roomId, slotKey) => {
     setView("ward");
     setSelectedRoom(null);
     setTimeout(() => {
       const el = cardRefs.current[roomId];
       if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); }
     }, 100);
+    if (!slotKey) return;
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    // 4회 점멸 후 소멸
+    const BLINK_MS = 300;
+    const TOTAL    = 8; // on/off × 4회
+    let tick = 0;
+    setHighlightSlotKey(slotKey);
+    const doBlink = () => {
+      tick++;
+      if (tick >= TOTAL) { setHighlightSlotKey(null); return; }
+      setHighlightSlotKey(tick % 2 === 0 ? slotKey : null);
+      highlightTimer.current = setTimeout(doBlink, BLINK_MS);
+    };
+    highlightTimer.current = setTimeout(doBlink, BLINK_MS);
   };
 
   // ── 가용 병실 조회 (개선판) ────────────────────────────────────────────────
@@ -909,7 +925,7 @@ export default function HospitalWardManager() {
               <div style={{position:"absolute",top:"100%",left:0,minWidth:240,background:"#fff",borderRadius:8,
                 boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid #e2e8f0",zIndex:100,maxHeight:280,overflowY:"auto",marginTop:4}}>
                 {searchResults.map((r,i)=>(
-                  <div key={i} onClick={()=>{ scrollToCard(r.roomId); setSearchFocused(false); }}
+                  <div key={i} onClick={()=>{ scrollToCard(r.roomId, r.slotKey); setSearchFocused(false); }}
                     style={{padding:"8px 14px",cursor:"pointer",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",gap:8,
                       background:"#fff",transition:"background 0.1s"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#f0f9ff"}
@@ -1088,6 +1104,7 @@ export default function HospitalWardManager() {
             slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
             newPatientNames={newPatientNames}
             showReserved={showReserved} highlightEmpty={highlightEmpty} currentEmptySlotKey={currentEmptySlotKey}
+            highlightSlotKey={highlightSlotKey}
             movingPatient={movingPatient} onMoveTarget={executeMove}
             conflictSlotKeys={new Set(overlapConflicts.map(c => c.slotKey))}
             onSelectRoom={r => {
@@ -1184,7 +1201,7 @@ export default function HospitalWardManager() {
 }
 
 // ── WardView ──────────────────────────────────────────────────────────────────
-function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, showReserved, highlightEmpty, currentEmptySlotKey, movingPatient, onMoveTarget, onSelectRoom, cardRefs, conflictSlotKeys }) {
+function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, showReserved, highlightEmpty, currentEmptySlotKey, highlightSlotKey, movingPatient, onMoveTarget, onSelectRoom, cardRefs, conflictSlotKeys }) {
   return (
     <div style={S.wardGrid}>
       {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => (
@@ -1250,7 +1267,8 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                   {/* 환자 목록 */}
                   <div style={S.patientList}>
                     {bedList.map((b, i) => {
-                      const isHighlighted = highlightEmpty && b.slotKey === currentEmptySlotKey;
+                      const isHighlighted     = highlightEmpty && b.slotKey === currentEmptySlotKey;
+                      const isNameHighlighted = !!highlightSlotKey && b.slotKey === highlightSlotKey;
                       // 빈 병상도 번호 배지와 함께 표시
 
                       const isDischarging = b.type === "discharging_today";
@@ -1285,7 +1303,13 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                               <span style={{ fontSize:11, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"0 4px", fontWeight:800, flexShrink:0 }}>★</span>
                             )}
                             <span
-                              style={{ ...S.patientName, color: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f",
+                              style={{ ...S.patientName,
+                                color: isNameHighlighted ? "#fff" : isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f",
+                                background: isNameHighlighted ? "#ef4444" : "transparent",
+                                borderRadius: isNameHighlighted ? 4 : 0,
+                                padding: isNameHighlighted ? "1px 5px" : undefined,
+                                boxShadow: isNameHighlighted ? "0 0 0 2px #fca5a5" : "none",
+                                transition: "all 0.3s",
                                 ...(b.person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
                               onClick={b.person.patientId ? (e) => { e.stopPropagation(); router.push(`/patients?id=${encodeURIComponent(b.person.patientId)}`); } : undefined}>
                               {b.person.name}
