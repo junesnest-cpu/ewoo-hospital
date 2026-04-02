@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "firebase": "^10.11.0",
+    "mssql": "^12.2.1",
     "next": "14.2.3",
     "react": "^18",
     "react-dom": "^18",

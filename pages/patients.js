@@ -116,8 +116,9 @@ export default function PatientsPage() {
       const allC  = Object.values(cSnap.val() || {}).filter(Boolean);
       const linked = allC
         .filter(c => {
-          if (p.internalId) return c.patientId === p.internalId;
-          return c.name === p.name; // internalId 없을 때만 이름 폴백
+          if (c.patientId && p.internalId) return c.patientId === p.internalId;
+          if (!c.patientId) return c.name === p.name; // patientId 없는 구형 상담 기록은 이름 매칭
+          return false;
         })
         .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       setConsultations(linked);
@@ -127,12 +128,13 @@ export default function PatientsPage() {
       let curSlot = null, resList = [];
       Object.entries(allS).forEach(([slotKey, slot]) => {
         if (!slot) return;
-        const matchCurrent = p.internalId
-          ? slot.current?.patientId === p.internalId
-          : slot.current?.name === p.name;
-        if (matchCurrent) curSlot = { slotKey, data: slot.current };
+        const cur = slot.current;
+        const matchCurrent = cur && (
+          (cur.patientId && p.internalId) ? cur.patientId === p.internalId : (!cur.patientId && cur.name === p.name)
+        );
+        if (matchCurrent) curSlot = { slotKey, data: cur };
         (Array.isArray(slot.reservations) ? slot.reservations : Object.values(slot.reservations || {})).filter(Boolean).forEach(r => {
-          const matchRes = p.internalId ? r.patientId === p.internalId : r.name === p.name;
+          const matchRes = (r.patientId && p.internalId) ? r.patientId === p.internalId : (!r.patientId && r.name === p.name);
           if (matchRes) resList.push({ slotKey, data: r });
         });
       });

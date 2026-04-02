@@ -155,14 +155,30 @@ specificDates 형식:
 }
 
 function findPatientInRoom(slots, roomId, patientName) {
+  const norm = normalizeName(patientName);
   const capacity = WARD_ROOMS[roomId] || 1;
+
+  // 1차: 정규화 후 완전 일치
   for (let i = 1; i <= capacity; i++) {
     const slotKey = `${roomId}-${i}`;
     const slot    = slots[slotKey];
     if (!slot) continue;
-    if (slot.current?.name === patientName) return slotKey;
-    if ((slot.reservations || []).some((r) => r.name === patientName)) return slotKey;
+    const curName  = normalizeName(slot.current?.name);
+    const resNames = (slot.reservations || []).map(r => normalizeName(r.name));
+    if (curName === norm || resNames.includes(norm)) return slotKey;
   }
+
+  // 2차: 부분 일치 (예: "김소영" ↔ "김소영5")
+  for (let i = 1; i <= capacity; i++) {
+    const slotKey = `${roomId}-${i}`;
+    const slot    = slots[slotKey];
+    if (!slot) continue;
+    const curName  = normalizeName(slot.current?.name);
+    const resNames = (slot.reservations || []).map(r => normalizeName(r.name));
+    const isPartial = (n) => n && (n.includes(norm) || norm.includes(n));
+    if (isPartial(curName) || resNames.some(isPartial)) return slotKey;
+  }
+
   return null;
 }
 
