@@ -716,20 +716,34 @@ function WeeklyForm({ data, onChange, readonly }) {
 
   if (readonly) {
     const ms = data?.monthSummary;
+    // monthSummary가 없으면 일별 데이터에서 직접 계산
+    const computedMs = !ms && f.days && f.days.some(d=>Number(d.ecoFood)||Number(d.dojunFood)||Number(d.ecoSnack)||Number(d.dojunSnack)||Number(d.otherCost)||Number(d.staffCount)||Number(d.patientCount)) ? (() => {
+      const ecoFood   = f.days.reduce((s,d)=>s+(Number(d.ecoFood)||0),0);
+      const dojunFood = f.days.reduce((s,d)=>s+(Number(d.dojunFood)||0),0);
+      const ecoSnack  = f.days.reduce((s,d)=>s+(Number(d.ecoSnack)||0),0);
+      const dojunSnack= f.days.reduce((s,d)=>s+(Number(d.dojunSnack)||0),0);
+      const otherCost = f.days.reduce((s,d)=>s+(Number(d.otherCost)||0),0);
+      const staff     = f.days.reduce((s,d)=>s+(Number(d.staffCount)||0),0);
+      const patient   = f.days.reduce((s,d)=>s+(Number(d.patientCount)||0),0);
+      const totalCost = ecoFood+dojunFood+ecoSnack+dojunSnack+otherCost;
+      const totalCount= staff+patient;
+      return { ecoFood, dojunFood, ecoSnack, dojunSnack, otherCost, staff, patient, totalCost, totalCount, perCapita: totalCount>0?Math.round(totalCost/totalCount):0 };
+    })() : null;
+    const displayMs = ms || computedMs;
     const hasDailyData = f.days && f.days.some(d => Number(d.ecoFood)||Number(d.dojunFood)||Number(d.ecoSnack)||Number(d.dojunSnack)||Number(d.otherCost)||Number(d.staffCount)||Number(d.patientCount));
     return (
       <div>
         <ReadVal label="보고 월" value={f.reportMonth} />
-        {ms && (
+        {displayMs && (
           <div style={{ background:"#f3f0ff", borderRadius:10, padding:"14px 16px", marginBottom:14 }}>
             <div style={{...S.sectionTit, color:"#7c3aed", marginBottom:10}}>월간 요약</div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"8px 16px" }}>
-              <ReadVal label="식재료비(에코+도준)" value={fmtNum((ms.ecoFood||0)+(ms.dojunFood||0))+"원"} />
-              <ReadVal label="간식비(에코+도준)"   value={fmtNum((ms.ecoSnack||0)+(ms.dojunSnack||0))+"원"} />
-              <ReadVal label="기타(현지구매)"       value={fmtNum(ms.otherCost||0)+"원"} />
-              <ReadVal label="총 식비합계"   value={<strong style={{color:"#4c1d95",fontSize:15}}>{fmtNum(ms.totalCost||0)}원</strong>} />
-              <ReadVal label="직원/환우/총식수" value={`${ms.staff||0} / ${ms.patient||0} / ${ms.totalCount||0}명`} />
-              <ReadVal label="1인 식단가" value={fmtNum(ms.perCapita||0)+"원"} />
+              <ReadVal label="식재료비(에코+도준)" value={fmtNum((displayMs.ecoFood||0)+(displayMs.dojunFood||0))+"원"} />
+              <ReadVal label="간식비(에코+도준)"   value={fmtNum((displayMs.ecoSnack||0)+(displayMs.dojunSnack||0))+"원"} />
+              <ReadVal label="기타(현지구매)"       value={fmtNum(displayMs.otherCost||0)+"원"} />
+              <ReadVal label="총 식비합계"   value={<strong style={{color:"#4c1d95",fontSize:15}}>{fmtNum(displayMs.totalCost||0)}원</strong>} />
+              <ReadVal label="직원/환우/총식수" value={`${displayMs.staff||0} / ${displayMs.patient||0} / ${displayMs.totalCount||0}명`} />
+              <ReadVal label="1인 식단가" value={fmtNum(displayMs.perCapita||0)+"원"} />
             </div>
           </div>
         )}
@@ -982,6 +996,25 @@ function TaxForm({ data, onChange, readonly }) {
   if (readonly) return (
     <div>
       <ReadVal label="보고 월" value={f.reportMonth} />
+      {/* 지출 요약 (상단) */}
+      {(grandPaid > 0 || grandBilled > 0) && (
+        <div style={{ background:"#fff1f2", borderRadius:10, padding:"12px 16px", marginBottom:16, border:"1px solid #fca5a5" }}>
+          <div style={{ fontWeight:800, fontSize:13, color:"#991b1b", marginBottom:8 }}>지출 요약</div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 16px", alignItems:"center", marginBottom:8 }}>
+            {(f.groups||[]).filter(g=>groupPaid(g)>0||groupBilled(g)>0).map((g,i)=>(
+              <div key={i} style={{ display:"flex", alignItems:"center", gap:5 }}>
+                <span style={{ fontSize:11, color:"#64748b", fontWeight:600 }}>{g.name}</span>
+                <span style={{ fontSize:13, fontWeight:700, color:PAID_AMT_CLR }}>{fmtNum(groupPaid(g))}원</span>
+                {groupBilled(g)>0 && <span style={{ fontSize:11, color:BILLED_AMT_CLR }}>(+청구 {fmtNum(groupBilled(g))}원)</span>}
+              </div>
+            ))}
+          </div>
+          <div style={{ borderTop:"1px solid #fecaca", paddingTop:8, display:"flex", gap:20, flexWrap:"wrap" }}>
+            {grandBilled > 0 && <div style={{ fontSize:13, fontWeight:700, color:BILLED_AMT_CLR }}>청구(미지급): {fmtNum(grandBilled)}원</div>}
+            <div style={{ fontSize:15, fontWeight:800, color:PAID_AMT_CLR }}>총 실지출: {fmtNum(grandPaid)}원</div>
+          </div>
+        </div>
+      )}
       {(f.groups||[]).map((g,gi) => {
         const hasData = g.items.some(it=>it.amount||it.vendor||it.content);
         if (!hasData) return null;
@@ -2140,6 +2173,23 @@ export default function ApprovalPage() {
             {supplyDocGroups.length === 0 ? (
               <div style={{ textAlign:"center", color:"#94a3b8", padding:"32px 0", fontSize:14 }}>{supplyNavMonth} 승인된 물품청구서가 없습니다.</div>
             ) : (<>
+              {/* 부서별 사용금액 + 총 합계 (상단 요약) */}
+              <div style={{ background:"#f0fdf4", borderRadius:10, padding:"12px 16px", marginBottom:20, border:"1px solid #6ee7b7" }}>
+                <div style={{ fontWeight:800, fontSize:13, color:"#065f46", marginBottom:8 }}>부서별 사용금액</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:"8px 24px", alignItems:"center" }}>
+                  {Object.entries(supplyDeptTotals).sort(([,a],[,b])=>b-a).map(([dept,tot])=>(
+                    <div key={dept} style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <span style={{ fontSize:12, color:"#64748b", fontWeight:600 }}>{dept}</span>
+                      <span style={{ fontSize:13, fontWeight:700, color:"#065f46" }}>{fmtNum(tot)}원</span>
+                    </div>
+                  ))}
+                  <div style={{ marginLeft:"auto", fontSize:15, fontWeight:800, color:"#065f46", borderLeft:"2px solid #6ee7b7", paddingLeft:16 }}>
+                    총 사용금액 {fmtNum(supplyGrandTotal)}원
+                  </div>
+                </div>
+              </div>
+              {/* 세부 내역 */}
+              <div style={{ fontWeight:700, fontSize:12, color:"#94a3b8", marginBottom:6 }}>세부 내역</div>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, marginBottom:24 }}>
                 <thead>
                   <tr>{["일자","부서","문서번호","품명","단위","수량","금액(원)"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr>
@@ -2167,19 +2217,6 @@ export default function ApprovalPage() {
                         );
                       })
                   )}
-                </tbody>
-              </table>
-              <div style={{ fontWeight:700, fontSize:13, color:"#374151", marginBottom:8 }}>부서별 합계</div>
-              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-                <thead><tr><th style={S.th}>부서</th><th style={{...S.th,textAlign:"right"}}>합계(원)</th></tr></thead>
-                <tbody>
-                  {Object.entries(supplyDeptTotals).sort(([,a],[,b])=>b-a).map(([dept,tot])=>(
-                    <tr key={dept}><td style={S.td}>{dept}</td><td style={{...S.td,textAlign:"right",fontWeight:600}}>{fmtNum(tot)}</td></tr>
-                  ))}
-                  <tr style={{background:"#ecfdf5"}}>
-                    <td style={{...S.td,fontWeight:800,color:"#065f46"}}>월 합계</td>
-                    <td style={{...S.td,textAlign:"right",fontWeight:800,color:"#065f46",fontSize:14}}>{fmtNum(supplyGrandTotal)}</td>
-                  </tr>
                 </tbody>
               </table>
             </>)}
@@ -2287,6 +2324,28 @@ export default function ApprovalPage() {
                   <StatusBadge status={refundDocForMonth[1].status} />
                   <span style={{ fontSize:12, color:"#94a3b8", marginLeft:"auto" }}>{refundDocForMonth[1].authorName}</span>
                 </div>
+                {["approved","final"].includes(refundDocForMonth[1].status) && (() => {
+                  const patients = refundDocForMonth[1].formData?.patients || [];
+                  const grandTotal = patients.reduce((s,p)=>s+(p.treatments||[]).reduce((s2,t)=>s2+(Number(t.refundAmount)||0),0),0);
+                  const patientTotals = patients.map(p=>({ name:p.name, total:(p.treatments||[]).reduce((s,t)=>s+(Number(t.refundAmount)||0),0) })).filter(p=>p.total>0);
+                  if (grandTotal === 0) return null;
+                  return (
+                    <div style={{ background:"#fffbeb", borderRadius:10, padding:"12px 16px", marginBottom:16, border:"1px solid #fcd34d" }}>
+                      <div style={{ fontWeight:800, fontSize:13, color:"#b45309", marginBottom:8 }}>환불금 합산</div>
+                      <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 20px", alignItems:"center" }}>
+                        {patientTotals.map((p,i)=>(
+                          <div key={i} style={{ display:"flex", alignItems:"center", gap:5 }}>
+                            <span style={{ fontSize:12, color:"#64748b" }}>{p.name}</span>
+                            <span style={{ fontSize:13, fontWeight:700, color:"#b45309" }}>{fmtNum(p.total)}원</span>
+                          </div>
+                        ))}
+                        <div style={{ marginLeft:"auto", fontSize:15, fontWeight:800, color:"#92400e", borderLeft:"2px solid #fcd34d", paddingLeft:16 }}>
+                          총 환불금액 {fmtNum(grandTotal)}원
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <RefundForm data={refundDocForMonth[1].formData} onChange={()=>{}} readonly={true} />
               </div>
             ) : (
