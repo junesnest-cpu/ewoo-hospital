@@ -45,6 +45,7 @@ export default function PatientsPage() {
   const [reservations,  setReservations]  = useState([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [activeTab,     setActiveTab]     = useState("info");
+  const [deletingRes,   setDeletingRes]   = useState(false);
 
   // 진단 관련 상태
   const [diagRunning,  setDiagRunning]  = useState(false);
@@ -134,9 +135,9 @@ export default function PatientsPage() {
           (cur.patientId && p.internalId) ? cur.patientId === p.internalId : (!cur.patientId && cur.name === p.name)
         );
         if (matchCurrent) curSlot = { slotKey, data: cur };
-        (Array.isArray(slot.reservations) ? slot.reservations : Object.values(slot.reservations || {})).filter(Boolean).forEach(r => {
+        (Array.isArray(slot.reservations) ? slot.reservations : Object.values(slot.reservations || {})).filter(Boolean).forEach((r, ri) => {
           const matchRes = (r.patientId && p.internalId) ? r.patientId === p.internalId : (!r.patientId && r.name === p.name);
-          if (matchRes) resList.push({ slotKey, data: r });
+          if (matchRes) resList.push({ slotKey, data: r, resIndex: ri });
         });
       });
       setCurrentSlot(curSlot);
@@ -322,6 +323,40 @@ export default function PatientsPage() {
     setDiagFixing(false);
   }, [runDiagnosis]);
 
+  const deleteReservation = async (slotKey, resIndex) => {
+    if (!window.confirm("이 예약을 삭제하시겠습니까?")) return;
+    setDeletingRes(true);
+    try {
+      const snap = await get(ref(db, `slots/${slotKey}`));
+      const slot = snap.val();
+      if (!slot) return;
+      const arr = Array.isArray(slot.reservations) ? slot.reservations : Object.values(slot.reservations || {});
+      const newRes = arr.filter((r, i) => i !== resIndex && r);
+      await set(ref(db, `slots/${slotKey}/reservations`), newRes.length > 0 ? newRes : null);
+      if (selected) await selectPatient(selected);
+    } catch(e) {
+      alert("삭제 중 오류가 발생했습니다.");
+    }
+    setDeletingRes(false);
+  };
+
+  // 날짜 파싱 + 일수 계산
+  const parseAnyDate = (s) => {
+    if (!s || s === "미정") return null;
+    let d = new Date(s);
+    if (!isNaN(d.getTime())) return d;
+    const md = String(s).match(/^(\d{1,2})[\/\.](\d{1,2})$/);
+    if (md) { d = new Date(new Date().getFullYear(), parseInt(md[1])-1, parseInt(md[2])); return isNaN(d.getTime()) ? null : d; }
+    return null;
+  };
+  const daysBetween = (start, end) => {
+    const s = parseAnyDate(start);
+    if (!s) return null;
+    const e = parseAnyDate(end) || new Date();
+    const diff = Math.round((e - s) / 86400000);
+    return diff >= 0 ? diff + 1 : null;
+  };
+
   const phoneDisplay = (p) => {
     if (!p) return "";
     const n = normalizePhone(p);
@@ -421,14 +456,16 @@ export default function PatientsPage() {
                 </button>
               </div>
               <InfoGrid items={[
-                { label:"생년월일", value:selected.birthDate || selected.birthYear },
-                { label:"성별",     value:selected.gender==="M"?"남성":selected.gender==="F"?"여성":"" },
-                { label:"전화번호", value:phoneDisplay(selected.phone) },
-                { label:"주상병",   value:selected.diagnosis },
-                { label:"주소",     value:selected.address },
-                { label:"진료의사", value:selected.doctor },
-                { label:"최근 입원일", value:selected.lastAdmitDate },
-                { label:"등록 경로", value:selected.source==="consultation"?"상담":"EMR 임포트" },
+                { label:"생년월일",     value:selected.birthDate || selected.birthYear },
+                { label:"성별",         value:selected.gender==="M"?"남성":selected.gender==="F"?"여성":"" },
+                { label:"전화번호",     value:phoneDisplay(selected.phone) },
+                { label:"주소증",       value:selected.chiefComplaint },
+                { label:"주상병",       value:selected.diagName || selected.diagnosis },
+                { label:"주소",         value:selected.address },
+                { label:"진료의사",     value:selected.lastDoctor || selected.doctor },
+                { label:"주치의 과목",  value:selected.lastDept },
+                { label:"최근 입원일",  value:selected.lastAdmitDate },
+                { label:"등록 경로",    value:selected.source==="consultation"?"상담":"EMR 임포트" },
               ]} />
             </div>
 
@@ -474,16 +511,66 @@ export default function PatientsPage() {
                         <div style={{ fontSize:14, fontWeight:800, color:"#7c3aed", marginBottom:8 }}>📅 입원 예약 ({reservations.length}건)</div>
                         {reservations.map((r, i) => (
                           <div key={i} style={{ background:"#faf5ff", border:"1px solid #e9d5ff", borderRadius:8, padding:"10px 12px", marginBottom:6 }}>
-                            <InfoGrid items={[
-                              { label:"병실·병상",  value:r.slotKey.replace("-"," 호 ")+"번" },
-                              { label:"입원 예정",  value:r.data.admitDate },
-                              { label:"퇴원 예정",  value:r.data.discharge },
-                            ]} />
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+                              <InfoGrid items={[
+                                { label:"병실·병상",  value:r.slotKey.replace("-"," 호 ")+"번" },
+                                { label:"입원 예정",  value:r.data.admitDate },
+                                { label:"퇴원 예정",  value:r.data.discharge },
+                              ]} />
+                              <button
+                                onClick={() => deleteReservation(r.slotKey, r.resIndex)}
+                                disabled={deletingRes}
+                                style={{ flexShrink:0, background:"#fee2e2", color:"#dc2626", border:"1px solid #fca5a5", borderRadius:6, padding:"4px 10px", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                                삭제
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </>
                     )}
-                    {!currentSlot && reservations.length === 0 && (
+
+                    {/* 입원 이력 */}
+                    {(() => {
+                      const history = [];
+                      const completedCons = consultations.filter(c => c.status === "입원완료" && c.admitDate);
+                      completedCons.forEach(c => {
+                        history.push({ admitDate: c.admitDate, discharge: null, isCurrent: false });
+                      });
+                      if (currentSlot?.data?.admitDate) {
+                        history.unshift({ admitDate: currentSlot.data.admitDate, discharge: currentSlot.data.discharge, isCurrent: true });
+                      }
+                      const totalDays = history.reduce((sum, h) => {
+                        const d = daysBetween(h.admitDate, h.discharge);
+                        return sum + (d || 0);
+                      }, 0);
+                      if (history.length === 0) return null;
+                      return (
+                        <div style={{ marginTop:16, paddingTop:16, borderTop:"1px solid #f1f5f9" }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+                            <span style={{ fontSize:14, fontWeight:800, color:"#0f2744" }}>📊 입원 이력</span>
+                            {totalDays > 0 && (
+                              <span style={{ fontSize:12, background:"#dbeafe", color:"#1e40af", borderRadius:5, padding:"2px 8px", fontWeight:700 }}>합계 {totalDays}일</span>
+                            )}
+                          </div>
+                          {history.map((h, i) => {
+                            const days = daysBetween(h.admitDate, h.discharge);
+                            return (
+                              <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", border:"1px solid #e2e8f0", borderRadius:7, padding:"7px 12px", marginBottom:5, background: h.isCurrent ? "#f0fdf4" : "#f8fafc" }}>
+                                <div style={{ fontSize:13 }}>
+                                  <span style={{ fontWeight:700 }}>{h.admitDate}</span>
+                                  <span style={{ color:"#94a3b8", margin:"0 6px" }}>→</span>
+                                  <span style={{ color: h.isCurrent ? "#059669" : "#475569" }}>{h.isCurrent ? (h.discharge && h.discharge !== "미정" ? h.discharge : "재원 중") : (h.discharge || "미상")}</span>
+                                  {h.isCurrent && <span style={{ marginLeft:6, fontSize:11, background:"#dcfce7", color:"#166534", borderRadius:3, padding:"1px 5px", fontWeight:700 }}>현재</span>}
+                                </div>
+                                {days && <span style={{ fontSize:12, color:"#64748b", background:"#e2e8f0", borderRadius:4, padding:"1px 8px", fontWeight:600, flexShrink:0 }}>{days}일</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {!currentSlot && reservations.length === 0 && consultations.filter(c => c.status === "입원완료").length === 0 && (
                       <div style={{ color:"#94a3b8", fontSize:13, marginTop:8 }}>입원 이력 없음</div>
                     )}
                   </div>
