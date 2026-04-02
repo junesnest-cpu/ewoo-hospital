@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
@@ -47,6 +47,7 @@ export default function TherapyPage() {
   const [physSched,   setPhysSched]   = useState({});
   const [hyperSched,  setHyperSched]  = useState({});
   const [slots,       setSlots]       = useState({});
+  const [consultations, setConsultations] = useState({});
   const [treatPlans,  setTreatPlans]  = useState({});
   const [therapists,  setTherapists]  = useState(["치료사1","치료사2"]);
 
@@ -93,14 +94,42 @@ export default function TherapyPage() {
   const isThisWeek=weekKey(getWeekStart(todayD))===wk;
 
   useEffect(()=>{
+    const u0=onValue(ref(db,"consultations"),        s=>setConsultations(s.val()||{}));
     const u1=onValue(ref(db,"slots"),               s=>setSlots(s.val()||{}));
     const u2=onValue(ref(db,"treatmentPlans"),      s=>{ const v=s.val()||{}; setTreatPlans(v); treatRef.current=v; });
     const u3=onValue(ref(db,"physicalSchedule"),    s=>{ const v=s.val()||{}; setPhysSched(v);  physRef.current=v; });
     const u4=onValue(ref(db,"hyperthermiaSchedule"),s=>{ const v=s.val()||{}; setHyperSched(v); hyperRef.current=v; });
     const u5=onValue(ref(db,"settings"),            s=>{ const v=s.val()||{}; setTherapists([v.therapist1||"치료사1",v.therapist2||"치료사2"]); });
     const u6=onValue(ref(db,"weeklyPlans"),         s=>{ weeklyPlansRef.current=s.val()||{}; });
-    return ()=>{ u1();u2();u3();u4();u5();u6(); };
+    return ()=>{ u0();u1();u2();u3();u4();u5();u6(); };
   },[]);
+
+  // 신환 이름 집합 (patientId 없는 consultations, 취소/입원완료 제외)
+  const newPatientNames = useMemo(() => {
+    const normN = n => (n||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+    const s = new Set();
+    Object.values(consultations).forEach(c => {
+      if (!c?.name) return;
+      if (c.patientId) return;
+      if (c.status === "취소" || c.status === "입원완료") return;
+      s.add(normN(c.name));
+    });
+    return s;
+  }, [consultations]);
+
+  // 입원일로부터 7일 이내 신환 여부 (M/D 형식 파싱)
+  const isNewWithin7 = useCallback((patientName, slotKey) => {
+    const normN = n => (n||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+    if (!newPatientNames.has(normN(patientName))) return false;
+    const admitStr = slots[slotKey]?.current?.admitDate;
+    if (!admitStr || admitStr === "미정") return true;
+    const m = admitStr.match(/(\d{1,2})\/(\d{1,2})/);
+    if (!m) return true;
+    const ad = new Date(new Date().getFullYear(), parseInt(m[1])-1, parseInt(m[2]));
+    ad.setHours(0,0,0,0);
+    const todayMs = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
+    return ad.getTime() >= todayMs - 7*24*60*60*1000;
+  }, [newPatientNames, slots]);
 
   // ── 셀 조회 (th1/th2 고정 키) ─────────────────────────────────────────────
   const getCell=useCallback((roomId,dayIdx,time)=>{
@@ -647,6 +676,9 @@ export default function TherapyPage() {
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
                                       {ca?(()=>{const {roomId:caR,bedNum:caB}=getRoomFromCell(ca);const caNL=(ca.patientName||"").length;return(
                                         <>
+                                          {!ca.isPending && isNewWithin7(ca.patientName, ca.slotKey) && (
+                                            <span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800,display:"block",marginBottom:1}}>★신</span>
+                                          )}
                                           <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:caNL>5?"ellipsis":"clip"}}>
                                             {ca.patientName}
                                           </div>
@@ -668,6 +700,9 @@ export default function TherapyPage() {
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
                                       {cb?(()=>{const {roomId:cbR,bedNum:cbB}=getRoomFromCell(cb);const cbNL=(cb.patientName||"").length;return(
                                         <>
+                                          {!cb.isPending && isNewWithin7(cb.patientName, cb.slotKey) && (
+                                            <span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800,display:"block",marginBottom:1}}>★신</span>
+                                          )}
                                           <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:cbNL>5?"ellipsis":"clip"}}>
                                             {cb.patientName}
                                           </div>
@@ -708,6 +743,9 @@ export default function TherapyPage() {
                                     const nameLen=(cell.patientName||"").length;
                                     return (
                                     <>
+                                      {!cell.isPending && isNewWithin7(cell.patientName, cell.slotKey) && (
+                                        <div style={{marginBottom:1}}><span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800}}>★신</span></div>
+                                      )}
                                       <div style={{fontSize:isMobile?14:13,fontWeight:800,color:"#1e293b",lineHeight:1.4,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip"}}>
                                         {cell.patientName}
                                       </div>

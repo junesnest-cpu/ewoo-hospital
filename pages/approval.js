@@ -262,7 +262,12 @@ function FileUpload({ files, onChange, docId }) {
       const uploadRef = sRef(storage, path);
       await new Promise((res, rej) => {
         const task = uploadBytesResumable(uploadRef, f);
-        task.on("state_changed", null, rej, () => res());
+        const timeout = setTimeout(() => rej(new Error("업로드 시간 초과 (30초). Firebase Storage 버킷이 초기화되지 않았거나 네트워크 오류입니다.")), 30000);
+        task.on("state_changed",
+          (snap) => console.log(`업로드 진행: ${Math.round(snap.bytesTransferred/snap.totalBytes*100)}%`),
+          (err) => { clearTimeout(timeout); console.error("Storage 오류:", err.code, err.message); rej(err); },
+          () => { clearTimeout(timeout); res(); }
+        );
       });
       const url = await getDownloadURL(uploadRef);
       onChange([...(files||[]), { name:f.name, url, path, size:f.size }]);
@@ -364,6 +369,7 @@ function SupplyForm({ data, onChange, readonly }) {
   const total = (f.items||[]).reduce((s,it)=>s+((Number(it.qty)||0)*(Number(it.price)||0)),0);
   if (readonly) return (
     <div>
+      {f.title && <div style={{ fontSize:15, fontWeight:800, color:"#0f2744", marginBottom:10 }}>{f.title}</div>}
       <Grid><ReadVal label="신청부서" value={f.department} /><ReadVal label="신청일" value={f.requestDate} /></Grid>
       <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13, marginBottom:12 }}>
         <thead><tr>{["번호","품명 및 규격","단위","수량","금액(원)","비고"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
@@ -384,6 +390,9 @@ function SupplyForm({ data, onChange, readonly }) {
   );
   return (
     <div>
+      <Field label="신청 제목">
+        <input style={S.input} value={f.title||""} onChange={e=>upd("title",e.target.value)} placeholder="예) 4월 사무용품 신청, 의료소모품 구매 등" />
+      </Field>
       <Grid><Field label="신청부서"><input style={S.input} value={f.department||""} onChange={e=>upd("department",e.target.value)} /></Field>
         <Field label="신청일"><input type="date" style={S.input} value={f.requestDate||""} onChange={e=>upd("requestDate",e.target.value)} /></Field>
       </Grid>
@@ -803,7 +812,7 @@ const PRESET_GROUPS = [
 ];
 
 function makeTaxItem(p={}) {
-  return { id:uid7(), category:p.category||"", vendor:p.vendor||"", content:p.content||"", amount:"", method:"청구", issueDate:"", count:"1", note:"" };
+  return { id:uid7(), category:p.category||"", vendor:p.vendor||"", content:p.content||"", amount:"", method:"청구", issueDate:"", count:"", note:"" };
 }
 function makeTaxGroups() {
   return PRESET_GROUPS.map(g => ({ name:g.name, items:g.items.map(makeTaxItem) }));
@@ -1014,7 +1023,7 @@ function TaxForm({ data, onChange, readonly }) {
                             : it.method}
                         </td>
                         <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.issueDate}</td>
-                        <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.count?`${it.count}건`:""}</td>
+                        <td style={{...TD,...rowStyle,textAlign:"center"}}>{it.count && it.amount?`${it.count}건`:""}</td>
                         <td style={{...TD,...rowStyle}}>{it.note}</td>
                       </tr>
                     );
@@ -1135,7 +1144,7 @@ function VacationSummaryPanel({ docs, onOpenDoc }) {
   const [mode, setMode] = useState("yearly"); // "yearly" | "monthly"
   const [selMonth, setSelMonth] = useState(nowYMstr);
 
-  const approved = docs.filter(([,d]) => ["approved","final"].includes(d.status));
+  const approved = docs.filter(([,d]) => ["approved","final"].includes(d.status) && !d.formData?.cancelled);
 
   const calcLeave = (fd) => {
     if (!fd) return 0;
@@ -1340,9 +1349,10 @@ export default function ApprovalPage() {
   const [newType,    setNewType]    = useState(null);
   // 탭 월 네비게이션
   const nowYM = (() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; })();
-  const [weeklyNavMonth, setWeeklyNavMonth] = useState(nowYM);
-  const [refundNavMonth, setRefundNavMonth] = useState(nowYM);
-  const [taxNavMonth,    setTaxNavMonth]    = useState(nowYM);
+  const [weeklyNavMonth,  setWeeklyNavMonth]  = useState(nowYM);
+  const [refundNavMonth,  setRefundNavMonth]  = useState(nowYM);
+  const [taxNavMonth,     setTaxNavMonth]     = useState(nowYM);
+  const [supplyNavMonth,  setSupplyNavMonth]  = useState(nowYM);
 
   // 결재 액션
   const [rejectModal, setRejectModal] = useState(null); // { docId }
@@ -1455,24 +1465,28 @@ export default function ApprovalPage() {
     const dept = supplyDoc.formData?.department || "";
     const docNum = supplyDoc.docNumber || "";
 
-    const newItems = (supplyDoc.formData?.items||[])
-      .filter(it => it.name)
-      .map(it => ({
-        id: uid7(),
-        category: "물품비",
-        vendor: "",
-        content: `${it.name}${it.unit ? ` (${it.unit})` : ""}`,
-        amount: String((Number(it.qty)||0) * (Number(it.price)||0)),
-        method: "계좌",
-        issueDate: approvalDateStr,
-        count: String(it.qty||1),
-        note: [dept && `[${dept}]`, it.note].filter(Boolean).join(" "),
-      }));
+    const total = (supplyDoc.formData?.items||[])
+      .reduce((s, it) => s + (Number(it.qty)||0) * (Number(it.price)||0), 0);
 
-    if (newItems.length === 0) return;
+    if (total === 0) return;
 
+    const supplyTitle = supplyDoc.formData?.title || "";
     const groupMeta = [dept, docNum].filter(Boolean).join(" · ");
     const groupName = groupMeta ? `물품청구서 (${groupMeta})` : "물품청구서";
+    const itemContent = supplyTitle || (groupMeta ? `물품청구 (${groupMeta})` : "물품청구");
+
+    const newItems = [{
+      id: uid7(),
+      category: "물품비",
+      vendor: "",
+      content: itemContent,
+      amount: String(total),
+      method: "계좌",
+      issueDate: approvalDateStr,
+      count: "1",
+      note: [dept && `[${dept}]`, docNum].filter(Boolean).join(" "),
+    }];
+
     const newGroup = { name: groupName, items: newItems };
 
     // 해당 월 세금계산서 탐색 (draft 우선, 없으면 최신)
@@ -1488,7 +1502,7 @@ export default function ApprovalPage() {
         updatedAt: Date.now(),
       });
       const statusLabel = taxDoc.status === "draft" ? "임시저장" : taxDoc.status === "approved" ? "승인됨" : taxDoc.status === "final" ? "전결" : "진행중";
-      alert(`✅ ${approvalMonth} 세금계산서(${statusLabel})에 물품청구 항목 ${newItems.length}건이 추가되었습니다.`);
+      alert(`✅ ${approvalMonth} 세금계산서(${statusLabel})에 "${itemContent}" 항목이 추가되었습니다.`);
     } else {
       // 해당 월 세금계산서 없으면 draft로 신규 생성
       const docNumber = await getNextDocNumber("tax");
@@ -1502,7 +1516,7 @@ export default function ApprovalPage() {
         fileUrls: [],
         history: [{ action:"auto_created", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:`물품청구서(${docNum}) 승인으로 자동 생성` }],
       });
-      alert(`✅ ${approvalMonth} 세금계산서가 없어 임시저장 문서를 새로 생성하고 물품청구 항목 ${newItems.length}건을 추가했습니다.`);
+      alert(`✅ ${approvalMonth} 세금계산서가 없어 임시저장 문서를 새로 생성하고 "${itemContent}" 항목을 추가했습니다.`);
     }
   };
 
@@ -1576,6 +1590,10 @@ export default function ApprovalPage() {
         await syncRefundPatientAccounts(doc.formData);
       }
     }
+    // 수정본 최종 승인 시 원본 문서 삭제
+    if (["approved", "final"].includes(newStatus) && doc.originalDocId) {
+      await remove(ref(db, `approvals/${doc.originalDocId}`));
+    }
     setActionLoading(false);
     alert(isFinal ? "전결 처리 완료" : "승인 완료");
   };
@@ -1599,6 +1617,59 @@ export default function ApprovalPage() {
     setEditDocId(docId);
     setFormData(doc?.formData || {});
     setFiles(doc?.fileUrls || []);
+    setView("edit");
+  };
+
+  // 승인된 휴가신청서 취소 신청 (결재 라인 재진행, 승인 시 원본 삭제)
+  const handleCancelVacation = async (docId) => {
+    const doc = docs[docId];
+    if (!doc) return;
+    if (!window.confirm("이 휴가 신청의 취소를 요청하시겠습니까?\n결재 승인 후 연차 현황에서 제외됩니다.")) return;
+    const newDocRef = push(ref(db, "approvals"));
+    const newDocId = newDocRef.key;
+    await set(newDocRef, {
+      type: doc.type,
+      title: `[취소] ${doc.title || DOC_TYPES[doc.type]?.label || ""}`,
+      authorUid: user.uid,
+      authorName: profile.name,
+      authorDept: profile.department,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: "draft",
+      currentApproverUid: null,
+      formData: { ...doc.formData, cancelled: true },
+      fileUrls: [],
+      originalDocId: docId,
+      history: [{ action:"cancel_requested", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:`${doc.docNumber||"승인 문서"} 취소 신청` }],
+    });
+    setSelectedId(newDocId);
+    setView("detail");
+  };
+
+  // 승인된 문서 수정 재제출 (새 임시저장 문서 생성, 원본 ID 참조)
+  const handleReviseApproved = async (docId) => {
+    const doc = docs[docId];
+    if (!doc) return;
+    const newDocRef = push(ref(db, "approvals"));
+    const newDocId = newDocRef.key;
+    await set(newDocRef, {
+      type: doc.type,
+      title: doc.title || DOC_TYPES[doc.type]?.label || "",
+      authorUid: user.uid,
+      authorName: profile.name,
+      authorDept: profile.department,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: "draft",
+      currentApproverUid: null,
+      formData: doc.formData || {},
+      fileUrls: doc.fileUrls || [],
+      originalDocId: docId,
+      history: [{ action:"revision_started", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:`${doc.docNumber||"승인 문서"} 수정본` }],
+    });
+    setEditDocId(newDocId);
+    setFormData(doc.formData || {});
+    setFiles(doc.fileUrls || []);
     setView("edit");
   };
 
@@ -1725,10 +1796,10 @@ export default function ApprovalPage() {
                   <div style={{ fontSize:13, fontWeight:700 }}>
                     {h.byName} <span style={{ color:"#94a3b8", fontWeight:400 }}>({h.byRole==="director"?"병원장":h.byRole==="dept_head"?"부서장":"작성자"})</span>
                     <span style={{ marginLeft:8, fontSize:12, color:actionColors[h.action]||"#64748b" }}>
-                      {h.action==="submitted"?"제출":h.action==="approved"?"승인":h.action==="final"?"전결":h.action==="rejected"?"반려":""}
+                      {h.action==="submitted"?"제출":h.action==="approved"?"승인":h.action==="final"?"전결":h.action==="rejected"?"반려":h.action==="revision_started"?"수정본 생성":h.action==="cancel_requested"?"취소 신청":""}
                     </span>
                   </div>
-                  {h.memo && <div style={{ fontSize:12, color:"#dc2626", marginTop:2 }}>반려 사유: {h.memo}</div>}
+                  {h.memo && <div style={{ fontSize:12, color: h.action==="revision_started"?"#92400e":"#dc2626", marginTop:2 }}>{h.action==="revision_started"?"원본":"반려 사유"}: {h.memo}</div>}
                   <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{fmtTs(h.at)}</div>
                 </div>
               </div>
@@ -1749,8 +1820,36 @@ export default function ApprovalPage() {
               <button style={S.btnPri} onClick={()=>handleResubmit(selectedId)}>↩ 수정 후 재제출</button>
             </div>
           )}
+          {/* 승인된 내 문서: 수정 재제출 / 취소 신청 */}
+          {isMine && ["approved","final"].includes(doc.status) && !doc.formData?.cancelled && (
+            <div style={{ ...S.card, display:"flex", gap:12, justifyContent:"center", alignItems:"center", flexWrap:"wrap" }}>
+              <span style={{ fontSize:12, color:"#92400e" }}>수정본이 최종 승인되면 이 문서는 삭제됩니다.</span>
+              <button style={{ background:"#fffbeb", color:"#92400e", border:"1.5px solid #fde68a", borderRadius:8, padding:"9px 20px", fontWeight:700, fontSize:13, cursor:"pointer" }}
+                onClick={()=>handleReviseApproved(selectedId)}>
+                ✏️ 수정 재제출
+              </button>
+              {doc.type === "vacation" && (
+                <button style={{ background:"#fee2e2", color:"#dc2626", border:"1.5px solid #fca5a5", borderRadius:8, padding:"9px 20px", fontWeight:700, fontSize:13, cursor:"pointer" }}
+                  onClick={()=>handleCancelVacation(selectedId)}>
+                  ✕ 취소 신청
+                </button>
+              )}
+            </div>
+          )}
+          {/* 임시저장 내 문서 — 취소 신청 */}
+          {isMine && doc.status==="draft" && doc.formData?.cancelled && (
+            <div style={{ ...S.card, display:"flex", flexDirection:"column", gap:10, alignItems:"center" }}>
+              <div style={{ fontSize:13, color:"#dc2626", fontWeight:700, background:"#fee2e2", borderRadius:8, padding:"8px 16px", width:"100%", textAlign:"center" }}>
+                ⚠️ 취소 신청 문서입니다. 제출하면 결재 후 기존 휴가가 연차 현황에서 제외됩니다.
+              </div>
+              <div style={{ display:"flex", gap:12 }}>
+                <button style={S.btnPri} onClick={()=>handleDraftSubmit(selectedId)}>→ 취소 신청 제출</button>
+                <button style={{ ...S.btnRed, background:"#fff1f2" }} onClick={()=>handleDeleteDraft(selectedId)}>🗑 취소 철회</button>
+              </div>
+            </div>
+          )}
           {/* 임시저장 내 문서: 수정 / 제출 / 삭제 */}
-          {isMine && doc.status==="draft" && (
+          {isMine && doc.status==="draft" && !doc.formData?.cancelled && (
             <div style={{ ...S.card, display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
               <button style={{ ...S.btnSec, background:"#f0f9ff", color:"#0369a1", border:"1.5px solid #7dd3fc" }}
                 onClick={()=>{
@@ -1776,9 +1875,21 @@ export default function ApprovalPage() {
   // ── 임시저장 편집 뷰 ─────────────────────────────────────────────────────────
   if (view === "edit" && editDocId) {
     const editDoc = docs[editDocId];
-    if (!editDoc) { setView("list"); return null; }
+    // 수정 재제출로 방금 생성된 문서는 Firebase 동기화 전까지 잠시 로딩 상태
+    if (!editDoc) return <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", fontSize:16 }}>로딩 중...</div>;
     const typeInfo = DOC_TYPES[editDoc.type] || DOC_TYPES.vacation;
-    const cancelEdit = () => { setView("detail"); setEditDocId(null); };
+    const isRevision = !!editDoc.originalDocId;
+    const cancelEdit = () => {
+      if (isRevision) {
+        // 수정본은 취소 시 새로 생성된 draft 삭제
+        if (window.confirm("수정 재제출을 취소하면 작성 중인 내용이 삭제됩니다. 취소하시겠습니까?")) {
+          remove(ref(db, `approvals/${editDocId}`));
+          setView("list"); setEditDocId(null); setFormData({}); setFiles([]);
+        }
+      } else {
+        setView("detail"); setEditDocId(null);
+      }
+    };
     return (
       <div style={S.page}>
         <header style={S.header}>
@@ -1787,15 +1898,21 @@ export default function ApprovalPage() {
             ← 취소
           </button>
           <img src="/favicon.png" style={{ width:30, height:30, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
-          <div style={{ flex:1, fontWeight:800, fontSize:16 }}>{typeInfo.label} 수정</div>
+          <div style={{ flex:1, fontWeight:800, fontSize:16 }}>{typeInfo.label} {isRevision ? "수정 재제출" : "수정"}</div>
           <div style={{ fontSize:12, color:"#94a3b8" }}>
             {editDoc.docNumber || "임시저장"} · {editDoc.authorName}
           </div>
         </header>
         <div style={S.main}>
-          <div style={{ background:"#fef9c3", border:"1.5px solid #fde047", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#713f12" }}>
-            ✏️ 임시저장 문서를 수정 중입니다. 저장 후에도 임시저장 상태가 유지됩니다.
-          </div>
+          {isRevision ? (
+            <div style={{ background:"#fff7ed", border:"1.5px solid #fb923c", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#9a3412" }}>
+              🔄 승인된 문서의 수정본입니다. 수정 후 제출하면 기존 결재 라인을 다시 거치며, 최종 승인 시 원본 문서는 삭제됩니다.
+            </div>
+          ) : (
+            <div style={{ background:"#fef9c3", border:"1.5px solid #fde047", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#713f12" }}>
+              ✏️ 임시저장 문서를 수정 중입니다. 저장 후에도 임시저장 상태가 유지됩니다.
+            </div>
+          )}
           <div style={S.card}>
             <div style={{ ...S.sectionTit, color: typeInfo.color }}>{typeInfo.label}</div>
             {renderDocForm(editDoc.type, formData, setFormData, editDocId, files, setFiles, false)}
@@ -1882,7 +1999,9 @@ export default function ApprovalPage() {
   // weekly: 영양팀·병원장만 탭 접근
   const canAccessWeekly   = isDirector || isNutrition;
   // tax: 병원장·원무과장·손정아만 탭 접근
-  const canAccessTax      = isDirector || isWonmuHead || profile.name === "손정아";
+  const canAccessTax          = isDirector || isWonmuHead || profile.name === "손정아";
+  // supply_summary: 병원장·원무과장·손정아만 탭 접근
+  const canSeeSupplySummary   = isDirector || isWonmuHead || profile.name === "손정아";
 
   // 타입별 문서 목록
   const allDocEntries  = Object.entries(docs);
@@ -1897,8 +2016,8 @@ export default function ApprovalPage() {
     ? vacationDocs
     : vacationDocs.filter(([,d]) => d.authorUid === user.uid);
 
-  // 물품청구서: 모든 직원 전체 열람
-  const supplyDisplay = supplyDocs;
+  // 물품청구서: draft(임시저장)는 본인 것만, 결재 중/승인은 전체
+  const supplyDisplay = supplyDocs.filter(([,d]) => d.status !== "draft" || d.authorUid === user.uid);
 
   // 위탁진료: 권한자만 전체, 나머지는 본인것 (탭 자체는 권한자만 표시)
   const refundDisplay = refundDocs;
@@ -1928,6 +2047,21 @@ export default function ApprovalPage() {
   const refundAllMonths    = [...new Set(refundDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
   const taxDocForMonth     = findActiveDocForMonth(taxDocs, taxNavMonth);
   const taxAllMonths       = [...new Set(taxDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
+  const supplyAllMonths    = [...new Set(supplyDocs.filter(([,d]) => ["approved","final"].includes(d.status)).map(([,d]) => d.formData?.requestDate?.slice(0,7)).filter(Boolean))].sort();
+  const supplyDocGroups = supplyDocs
+    .filter(([,d]) => ["approved","final"].includes(d.status) && (d.formData?.requestDate||"").slice(0,7) === supplyNavMonth)
+    .sort(([,a],[,b]) => (a.formData?.requestDate||"").localeCompare(b.formData?.requestDate||""))
+    .map(([id, d]) => {
+      const items = (d.formData?.items||[]).filter(it => it.name);
+      const total = items.reduce((s,it) => s + (Number(it.qty)||0)*(Number(it.price)||0), 0);
+      return { docId:id, docNumber:d.docNumber||"", date:d.formData?.requestDate||"", department:d.formData?.department||"미입력", items, total };
+    });
+  const supplyGrandTotal = supplyDocGroups.reduce((s,g) => s + g.total, 0);
+  const supplyDeptTotals = supplyDocGroups.reduce((acc,g) => { acc[g.department] = (acc[g.department]||0) + g.total; return acc; }, {});
+  const supplyActiveDocs = sortedDocs(supplyDisplay.filter(([,d]) => !["approved","final","rejected","superseded"].includes(d.status)));
+  const supplyApprovedForMonth = supplyDocs
+    .filter(([,d]) => ["approved","final"].includes(d.status) && (d.formData?.requestDate||"").slice(0,7) === supplyNavMonth)
+    .sort(([,a],[,b]) => (a.formData?.requestDate||"").localeCompare(b.formData?.requestDate||""));
 
   const displayDocs = activeTab === "mine"     ? sortedDocs(myDocs)
     : activeTab === "pending"   ? sortedDocs(pendingDocs)
@@ -1941,8 +2075,9 @@ export default function ApprovalPage() {
     { key:"mine",     label:`내 문서함 (${myDocs.length})` },
     { key:"pending",  label:`결재 대기 (${pendingDocs.length})` },
     { key:"vacation", label:`휴가신청서 (${vacationDisplay.length})` },
-    ...(canSeeAllVacation ? [{ key:"vacation_summary", label:"📊 연차 현황" }] : []),
+    { key:"vacation_summary", label:"📊 연차 현황" },
     { key:"supply",   label:`물품청구서 (${supplyDisplay.length})` },
+    ...(canSeeSupplySummary ? [{ key:"supply_summary", label:"📊 물품 월간 합산" }] : []),
     ...(canAccessRefund  ? [{ key:"refund",  label:`위탁진료 환불금 (${refundDisplay.length})` }] : []),
     ...(canAccessWeekly  ? [{ key:"weekly",  label:`영양팀 월간보고` }] : []),
     ...(canAccessTax     ? [{ key:"tax",     label:`세금계산서` }] : []),
@@ -1978,13 +2113,148 @@ export default function ApprovalPage() {
           ))}
         </div>
         {/* 연차 현황 탭 */}
-        {activeTab === "vacation_summary" && canSeeAllVacation && (
+        {activeTab === "vacation_summary" && (
           <div style={S.card}>
-            <div style={{ fontWeight:800, fontSize:15, color:"#0369a1", marginBottom:16 }}>휴가 사용 현황 (승인 완료 기준)</div>
+            <div style={{ fontWeight:800, fontSize:15, color:"#0369a1", marginBottom:16 }}>
+              {canSeeAllVacation ? "휴가 사용 현황 (전 직원 · 승인 완료 기준)" : "내 연차 사용 현황 (승인 완료 기준)"}
+            </div>
             <VacationSummaryPanel
-              docs={vacationDocs}
+              docs={vacationDisplay}
               onOpenDoc={(id)=>{ setSelectedId(id); setView("detail"); }}
             />
+          </div>
+        )}
+
+        {/* 물품 월간 합산 탭 */}
+        {activeTab === "supply_summary" && canSeeSupplySummary && (
+          <div style={S.card}>
+            <div style={{ fontWeight:800, fontSize:15, color:"#10b981", marginBottom:16 }}>물품청구서 월간 합산 (승인 완료 기준)</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+              <button style={{ border:"1.5px solid #6ee7b7", background:"#ecfdf5", color:"#065f46", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                onClick={()=>setSupplyNavMonth(prevMonth(supplyNavMonth))}>← 이전달</button>
+              <input type="month" style={{ ...S.input, maxWidth:180, textAlign:"center", fontWeight:700, color:"#065f46", fontSize:15 }}
+                value={supplyNavMonth} onChange={e=>setSupplyNavMonth(e.target.value)} />
+              <button style={{ border:"1.5px solid #6ee7b7", background:"#ecfdf5", color:"#065f46", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                onClick={()=>setSupplyNavMonth(nextMonth(supplyNavMonth))} disabled={supplyNavMonth >= nowYM}>다음달 →</button>
+            </div>
+            {supplyDocGroups.length === 0 ? (
+              <div style={{ textAlign:"center", color:"#94a3b8", padding:"32px 0", fontSize:14 }}>{supplyNavMonth} 승인된 물품청구서가 없습니다.</div>
+            ) : (<>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, marginBottom:24 }}>
+                <thead>
+                  <tr>{["일자","부서","문서번호","품명","단위","수량","금액(원)"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {supplyDocGroups.map(g => g.items.length === 0
+                    ? (<tr key={g.docId}>
+                        <td style={{...S.td,textAlign:"center"}}>{g.date.slice(5).replace("-","/")}</td>
+                        <td style={S.td}>{g.department}</td>
+                        <td style={{...S.td,color:"#2563eb",cursor:"pointer",textDecoration:"underline"}} onClick={()=>{setSelectedId(g.docId);setView("detail");}}>{g.docNumber}</td>
+                        <td colSpan={4} style={{...S.td,color:"#94a3b8"}}>품목 없음</td>
+                      </tr>)
+                    : g.items.map((it, idx) => {
+                        const amt = (Number(it.qty)||0)*(Number(it.price)||0);
+                        return (
+                          <tr key={`${g.docId}-${idx}`} style={{ background: idx%2===0?"#f8fafc":"#fff" }}>
+                            {idx===0 && <td rowSpan={g.items.length} style={{...S.td,verticalAlign:"middle",textAlign:"center",fontWeight:700,background:"#f0fdf4"}}>{g.date.slice(5).replace("-","/")}</td>}
+                            {idx===0 && <td rowSpan={g.items.length} style={{...S.td,verticalAlign:"middle",textAlign:"center",background:"#f0fdf4"}}>{g.department}</td>}
+                            {idx===0 && <td rowSpan={g.items.length} style={{...S.td,verticalAlign:"middle",textAlign:"center",color:"#2563eb",cursor:"pointer",textDecoration:"underline",background:"#f0fdf4"}} onClick={()=>{setSelectedId(g.docId);setView("detail");}}>{g.docNumber}</td>}
+                            <td style={S.td}>{it.name}</td>
+                            <td style={{...S.td,textAlign:"center"}}>{it.unit}</td>
+                            <td style={{...S.td,textAlign:"center"}}>{it.qty}</td>
+                            <td style={{...S.td,textAlign:"right"}}>{amt>0?fmtNum(amt):""}</td>
+                          </tr>
+                        );
+                      })
+                  )}
+                </tbody>
+              </table>
+              <div style={{ fontWeight:700, fontSize:13, color:"#374151", marginBottom:8 }}>부서별 합계</div>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                <thead><tr><th style={S.th}>부서</th><th style={{...S.th,textAlign:"right"}}>합계(원)</th></tr></thead>
+                <tbody>
+                  {Object.entries(supplyDeptTotals).sort(([,a],[,b])=>b-a).map(([dept,tot])=>(
+                    <tr key={dept}><td style={S.td}>{dept}</td><td style={{...S.td,textAlign:"right",fontWeight:600}}>{fmtNum(tot)}</td></tr>
+                  ))}
+                  <tr style={{background:"#ecfdf5"}}>
+                    <td style={{...S.td,fontWeight:800,color:"#065f46"}}>월 합계</td>
+                    <td style={{...S.td,textAlign:"right",fontWeight:800,color:"#065f46",fontSize:14}}>{fmtNum(supplyGrandTotal)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </>)}
+          </div>
+        )}
+
+        {/* 물품청구서 탭: 진행 중 + 월별 승인 목록 */}
+        {activeTab === "supply" && supplyActiveDocs.length > 0 && (
+          <div style={S.card}>
+            <div style={{ fontWeight:700, fontSize:13, color:"#0369a1", marginBottom:10 }}>진행 중인 문서</div>
+            {supplyActiveDocs.map(([id, doc]) => {
+              const isDraft = doc.status === "draft";
+              const isMineDoc = doc.authorUid === user.uid;
+              return (
+                <div key={id}
+                  style={{ ...S.docRow, ...(isDraft ? { background:"#fefce8", borderLeft:"3px solid #fde047" } : {}) }}
+                  onClick={()=>{setSelectedId(id);setView("detail");}}
+                  onMouseEnter={e=>e.currentTarget.style.background=isDraft?"#fef9c3":"#f8fafc"}
+                  onMouseLeave={e=>e.currentTarget.style.background=isDraft?"#fefce8":"transparent"}>
+                  <span style={{ fontFamily:"monospace", fontSize:12, color:isDraft?"#92400e":"#64748b", flexShrink:0, minWidth:110, fontStyle:isDraft?"italic":"normal" }}>
+                    {doc.docNumber || "임시저장"}
+                  </span>
+                  <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{doc.formData?.department || doc.authorName}</span>
+                  <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{doc.formData?.requestDate || fmtTs(doc.updatedAt||doc.createdAt).slice(0,10)}</span>
+                  <StatusBadge status={doc.status} />
+                  {isDraft && isMineDoc && (
+                    <div style={{ display:"flex", gap:4, flexShrink:0, marginLeft:4 }} onClick={e=>e.stopPropagation()}>
+                      <button style={{ border:"1px solid #7dd3fc", background:"#f0f9ff", color:"#0369a1", borderRadius:6, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:700 }}
+                        onClick={()=>{setSelectedId(id);setEditDocId(id);setFormData(doc.formData||{});setFiles(doc.fileUrls||[]);setView("edit");}}>수정</button>
+                      <button style={{ border:"1px solid #fca5a5", background:"#fff1f2", color:"#dc2626", borderRadius:6, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:700 }}
+                        onClick={()=>handleDeleteDraft(id)}>삭제</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {activeTab === "supply" && (
+          <div style={S.card}>
+            <div style={{ fontWeight:700, fontSize:13, color:"#065f46", marginBottom:12 }}>승인 완료 문서</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
+              <button style={{ border:"1.5px solid #6ee7b7", background:"#ecfdf5", color:"#065f46", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                onClick={()=>setSupplyNavMonth(prevMonth(supplyNavMonth))}>← 이전달</button>
+              <input type="month" style={{ ...S.input, maxWidth:180, textAlign:"center", fontWeight:700, color:"#065f46", fontSize:15 }}
+                value={supplyNavMonth} onChange={e=>setSupplyNavMonth(e.target.value)} />
+              <button style={{ border:"1.5px solid #6ee7b7", background:"#ecfdf5", color:"#065f46", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:14 }}
+                onClick={()=>setSupplyNavMonth(nextMonth(supplyNavMonth))} disabled={supplyNavMonth >= nowYM}>다음달 →</button>
+            </div>
+            {supplyApprovedForMonth.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"24px 0", color:"#94a3b8", fontSize:14 }}>
+                {supplyNavMonth} 승인된 물품청구서가 없습니다.
+                {supplyAllMonths.length > 0 && (
+                  <div style={{ fontSize:12, color:"#6ee7b7", marginTop:6 }}>
+                    자료 있는 월: {supplyAllMonths.slice(-6).join(", ")}{supplyAllMonths.length>6?" 외 "+String(supplyAllMonths.length-6)+"건":""}
+                  </div>
+                )}
+              </div>
+            ) : (
+              supplyApprovedForMonth.map(([id, doc]) => {
+                const total = (doc.formData?.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.price)||0),0);
+                return (
+                  <div key={id} style={S.docRow}
+                    onClick={()=>{setSelectedId(id);setView("detail");}}
+                    onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <span style={{ fontFamily:"monospace", fontSize:12, color:"#64748b", flexShrink:0, minWidth:110 }}>{doc.docNumber}</span>
+                    <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{doc.formData?.department || doc.authorName}</span>
+                    <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{doc.formData?.requestDate}</span>
+                    {total > 0 && <span style={{ fontSize:13, color:"#065f46", fontWeight:700, flexShrink:0 }}>{fmtNum(total)}원</span>}
+                    <StatusBadge status={doc.status} />
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
 
@@ -2122,7 +2392,7 @@ export default function ApprovalPage() {
           </div>
         )}
 
-        {activeTab !== "weekly" && activeTab !== "refund" && activeTab !== "tax" && activeTab !== "vacation_summary" && (
+        {activeTab !== "weekly" && activeTab !== "refund" && activeTab !== "tax" && activeTab !== "vacation_summary" && activeTab !== "supply_summary" && activeTab !== "supply" && (
         <div style={S.card}>
           {displayDocs.length === 0 && (
             <div style={{ textAlign:"center", padding:"40px 0", color:"#94a3b8", fontSize:14 }}>
@@ -2143,7 +2413,12 @@ export default function ApprovalPage() {
                   {doc.docNumber || "임시저장"}
                 </span>
                 <span style={S.badge(t.color, t.bg)}>{t.label}</span>
-                <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{doc.authorName}</span>
+                {doc.formData?.cancelled && <span style={{ fontSize:10, fontWeight:700, color:"#dc2626", background:"#fee2e2", border:"1px solid #fca5a5", borderRadius:5, padding:"1px 6px", flexShrink:0 }}>취소신청</span>}
+                {doc.originalDocId && !doc.formData?.cancelled && <span style={{ fontSize:10, fontWeight:700, color:"#92400e", background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:5, padding:"1px 6px", flexShrink:0 }}>수정본</span>}
+                <span style={{ fontWeight:600, fontSize:14, flex:1 }}>
+                  {doc.authorName}
+                  {doc.formData?.title && <span style={{ fontSize:12, color:"#475569", fontWeight:400, marginLeft:6 }}>— {doc.formData.title}</span>}
+                </span>
                 <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{fmtTs(doc.updatedAt||doc.createdAt).slice(0,10)}</span>
                 <StatusBadge status={doc.status} />
                 {/* 내 임시저장 문서: 빠른 수정/삭제 버튼 */}

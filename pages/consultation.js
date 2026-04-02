@@ -40,6 +40,16 @@ function monthKey(str) {
   if (!str) return "";
   return str.slice(0,7); // "YYYY-MM"
 }
+// admitDate를 YYYY-MM-DD로 정규화 (M/D 형식은 createdAt 연도 기준)
+function normAdmitDate(c) {
+  const s = c.admitDate;
+  if (!s) return null;
+  if (s.includes("-")) return s.slice(0, 10);
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return null;
+  const year = c.createdAt ? new Date(c.createdAt).getFullYear() : new Date().getFullYear();
+  return `${year}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;
+}
 function korMonth(ym) {
   if (!ym) return "";
   const [y,m] = ym.split("-");
@@ -347,9 +357,53 @@ export default function ConsultationPage() {
     return acc;
   }, []);
 
-  // 오늘 이후 입원예약일이 있는 상담 (대기 배지용)
-  // admitDate 있으면 모두 예약완료로 표시하므로 pendingAdmits는 사용 안 함
-  const pendingAdmits = [];
+  // 입원예정일이 있으나 병상 미배정인 상담 목록
+  // - 월 필터 무관하게 전체 데이터 기준
+  // - 오늘 이전 항목 제외 (M/D 형식은 createdAt 연도로 YYYY-MM-DD 변환 후 비교)
+  const pendingAdmits = Object.entries(allConsultations)
+    .map(([id, c]) => ({ id, ...c, _normAdmit: normAdmitDate({...c}) }))
+    .filter(c => {
+      if (!c.admitDate) return false;
+      if (c.status === "취소" || c.status === "입원완료") return false;
+      if (c.reservedSlot) return false;
+      if (!c._normAdmit) return false;
+      if (c._normAdmit < today()) return false; // 오늘 이전 제외
+      return true;
+    })
+    .sort((a, b) => a._normAdmit.localeCompare(b._normAdmit));
+
+  // M/D 형식 → Date 변환 (슬롯 날짜 비교용)
+  const parseMD = (str) => {
+    if (!str || str === "미정") return null;
+    const m = str.match(/(\d{1,2})\/(\d{1,2})/);
+    if (!m) return null;
+    const d = new Date(); d.setHours(0,0,0,0);
+    d.setMonth(parseInt(m[1])-1); d.setDate(parseInt(m[2]));
+    return d;
+  };
+
+  // 특정 슬롯이 주어진 입원예정일에 가용한지 확인
+  const isAvailableOn = (slotKey, isoDate) => {
+    if (!isoDate) return true;
+    const target = new Date(isoDate); target.setHours(0,0,0,0);
+    const slot = slots[slotKey];
+    if (!slot) return true;
+    if (slot.current?.name) {
+      const dis = parseMD(slot.current.discharge);
+      if (!dis || dis >= target) return false;
+    }
+    for (const r of (slot.reservations || [])) {
+      if (!r?.name) continue;
+      const rAdmit = parseMD(r.admitDate);
+      const rDis   = parseMD(r.discharge);
+      if (rAdmit && rDis) {
+        if (rAdmit <= target && target <= rDis) return false;
+      } else if (rAdmit) {
+        if (rAdmit.getTime() === target.getTime()) return false;
+      }
+    }
+    return true;
+  };
 
   // 재연락 필요 목록 (완료/취소 제외, 날짜 오름차순)
   const recontactList = allList
@@ -799,7 +853,19 @@ export default function ConsultationPage() {
                 <span style={{marginLeft:"auto", fontSize:10, color:"#94a3b8"}}>{c.createdAt}</span>
               </div>
               {c.memo && <div style={{marginTop:6, fontSize:12, color:"#475569", background:"rgba(0,0,0,0.03)", borderRadius:6, padding:"5px 8px", lineHeight:1.5}}>{c.memo}</div>}
-              {c.reservedSlot && <div style={{marginTop:4, fontSize:11, color:"#059669", fontWeight:700}}>✅ {c.reservedSlot} 병상 배정완료</div>}
+              {c.reservedSlot
+                ? <div style={{marginTop:4, fontSize:11, color:"#059669", fontWeight:700}}>✅ {c.reservedSlot} 병상 배정완료</div>
+                : c.admitDate && c.status !== "취소" && c.status !== "입원완료" && (
+                  <div style={{marginTop:6}} onClick={e=>e.stopPropagation()}>
+                    <button
+                      style={{fontSize:11, fontWeight:700, background:"#fef3c7", color:"#92400e",
+                        border:"1.5px solid #fcd34d", borderRadius:6, padding:"3px 10px", cursor:"pointer"}}
+                      onClick={()=>{ setReserveModal({id:c.id, consultation:c}); setReserveSlot(""); }}>
+                      🏥 병실 배정 필요 — 클릭하여 배정
+                    </button>
+                  </div>
+                )
+              }
             </div>
           );
         })}
@@ -830,18 +896,25 @@ export default function ConsultationPage() {
                     </div>
                     <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
                       {getRoomSlots(room.id, room.cap).map(({slotKey, bed})=>{
-                        const occupied = slots[slotKey]?.current?.name;
+                        const admitIso = reserveModal.consultation.admitDate;
+                        const available = isAvailableOn(slotKey, admitIso);
+                        const occupied  = slots[slotKey]?.current?.name;
                         const hasReserve = (slots[slotKey]?.reservations||[]).length > 0;
+                        const selected = reserveSlot === slotKey;
+                        const btnBorder = selected ? "#0f2744" : !available ? "#e2e8f0" : (available && hasReserve) ? "#f59e0b" : "#10b981";
+                        const btnBg     = selected ? "#0f2744" : !available ? "#f1f5f9" : (available && hasReserve) ? "#fffbeb" : "#f0fdf4";
+                        const btnColor  = selected ? "#fff"    : !available ? "#94a3b8" : (available && hasReserve) ? "#92400e" : "#065f46";
                         return (
                           <button key={slotKey}
-                            style={{padding:"4px 10px", borderRadius:6, fontSize:12, fontWeight:700, cursor: occupied?"not-allowed":"pointer",
-                              border:`1.5px solid ${reserveSlot===slotKey?"#0f2744":"#e2e8f0"}`,
-                              background: reserveSlot===slotKey ? "#0f2744" : occupied ? "#f1f5f9" : "#fff",
-                              color: reserveSlot===slotKey ? "#fff" : occupied ? "#94a3b8" : "#0f2744",
-                              opacity: occupied ? 0.6 : 1}}
-                            disabled={!!occupied}
+                            style={{padding:"4px 10px", borderRadius:6, fontSize:12, fontWeight:700,
+                              cursor: available ? "pointer" : "not-allowed",
+                              border:`1.5px solid ${btnBorder}`,
+                              background: btnBg,
+                              color: btnColor,
+                              opacity: available ? 1 : 0.55}}
+                            disabled={!available}
                             onClick={()=>setReserveSlot(slotKey)}>
-                            {bed}번{occupied ? "(사용중)" : hasReserve ? "(예약)" : ""}
+                            {bed}번{!available ? (occupied?"(사용중)":"(겹침)") : hasReserve ? "(예약있음)" : "(가용)"}
                           </button>
                         );
                       })}
@@ -851,10 +924,16 @@ export default function ConsultationPage() {
               })}
             </div>
 
-            <div style={{display:"flex", gap:8, marginTop:16}}>
-              <button style={{flex:1, ...S.btnSave, fontSize:14}} onClick={doRegisterReservation}
+            <div style={{display:"flex", gap:8, marginTop:16, flexWrap:"wrap", alignItems:"stretch"}}>
+              <button style={{flex:1, ...S.btnSave, fontSize:14, padding:"10px 14px", marginTop:0}} onClick={doRegisterReservation}
                 disabled={!reserveSlot}>예약 등록</button>
-              <button style={{padding:"10px 18px", border:"1px solid #e2e8f0", borderRadius:8,
+              <button
+                style={{padding:"10px 14px", border:"1px solid #312e81", borderRadius:8,
+                  background:"#eef2ff", color:"#312e81", cursor:"pointer", fontSize:13, fontWeight:700, whiteSpace:"nowrap"}}
+                onClick={()=>{ setReserveModal(null); setReserveSlot(""); router.push("/ward-timeline"); }}>
+                📊 타임라인 열기
+              </button>
+              <button style={{padding:"10px 14px", border:"1px solid #e2e8f0", borderRadius:8,
                 background:"#f8fafc", cursor:"pointer", fontSize:14, fontWeight:600}}
                 onClick={()=>{setReserveModal(null);setReserveSlot("");}}>취소</button>
             </div>

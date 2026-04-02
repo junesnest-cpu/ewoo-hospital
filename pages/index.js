@@ -148,6 +148,7 @@ export default function HospitalWardManager() {
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [slots,          setSlots]          = useState({});
+  const [consultations,  setConsultations]  = useState({});
   const [view,           setView]           = useState("ward");
   const [selectedRoom,   setSelectedRoom]   = useState(null);
   const [editingSlot,    setEditingSlot]    = useState(null);
@@ -203,6 +204,9 @@ export default function HospitalWardManager() {
       const val = snap.val();
       if (val) setLogs(Array.isArray(val) ? val : Object.values(val));
     });
+    const unsubC = onValue(ref(db, "consultations"), snap => {
+      setConsultations(snap.val() || {});
+    });
     const unsubP = onValue(ref(db, "pendingChanges"), snap => {
       const val = snap.val();
       if (val) {
@@ -212,7 +216,7 @@ export default function HospitalWardManager() {
         setPendingCount(0);
       }
     });
-    return () => { unsubS(); unsubL(); unsubP(); };
+    return () => { unsubS(); unsubL(); unsubC(); unsubP(); };
   }, []);
 
   // ── 자동완성용 전체 환자 목록 (현재 입원 + 예약) ──────────────────────────────
@@ -234,6 +238,19 @@ export default function HospitalWardManager() {
     });
     return list.sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }, [slots]);
+
+  // 신환 이름 집합 (consultations 기준, patientId 없음=신규, 취소/입원완료 제외)
+  const newPatientNames = useMemo(() => {
+    const normN = n => (n||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+    const s = new Set();
+    Object.values(consultations).forEach(c => {
+      if (!c?.name) return;
+      if (c.patientId) return;
+      if (c.status === "취소" || c.status === "입원완료") return;
+      s.add(normN(c.name));
+    });
+    return s;
+  }, [consultations]);
 
   // ── 자동 처리: 입원일 도달 예약 자동 전환 + 지난 예약 자동 삭제 ──────────────
   useEffect(() => {
@@ -760,6 +777,7 @@ export default function HospitalWardManager() {
                       {[
                         { label:"🏠 홈", action:() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); } },
                         { label:`🔔 웹훅 승인${pendingCount > 0 ? ` (${pendingCount})` : ""}`, action:() => router.push("/history") },
+                        { label:"📊 타임라인", action:() => router.push("/ward-timeline") },
                         { label:"📅 월간 예정표", action:() => router.push("/monthly") },
                         { label:"🏥 치료실", action:() => router.push("/therapy") },
                         { label:"📋 상담일지", action:() => router.push("/consultation") },
@@ -818,6 +836,7 @@ export default function HospitalWardManager() {
             <button style={{ ...S.navBtn, background:"#431407", color:"#fed7aa" }} onClick={() => router.push("/history")}>
               🔔 웹훅 승인{pendingCount > 0 && <span style={{ marginLeft:4, background:"#dc2626", color:"#fff", borderRadius:9, padding:"0 5px", fontSize:11, fontWeight:800 }}>{pendingCount}</span>}
             </button>
+            <button style={{ ...S.navBtn, background:"#312e81", color:"#c4b5fd" }} onClick={() => router.push("/ward-timeline")}>📊 타임라인</button>
             <button style={{ ...S.navBtn, background:"#1e3a5f", color:"#a5f3fc" }} onClick={() => router.push("/monthly")}>📅 월간 예정표</button>
             <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/therapy")}>🏥 치료실</button>
             <button style={{ ...S.navBtn, background:"#713f12", color:"#fef08a" }} onClick={() => router.push("/consultation")}>📋 상담일지</button>
@@ -1067,6 +1086,7 @@ export default function HospitalWardManager() {
         {view === "ward" && (
           <WardView
             slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
+            newPatientNames={newPatientNames}
             showReserved={showReserved} highlightEmpty={highlightEmpty} currentEmptySlotKey={currentEmptySlotKey}
             movingPatient={movingPatient} onMoveTarget={executeMove}
             conflictSlotKeys={new Set(overlapConflicts.map(c => c.slotKey))}
@@ -1079,6 +1099,7 @@ export default function HospitalWardManager() {
         )}
         {view === "room" && selectedRoom && (
           <RoomDetailView room={selectedRoom} slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
+            newPatientNames={newPatientNames}
             movingPatient={movingPatient} onStartMove={startMove} onMoveTarget={executeMove}
             onEditCurrent={(sk, data) => setEditingSlot({ slotKey: sk, mode: "current", data })}
             onEditReservation={(sk, data, idx) => setEditingSlot({ slotKey: sk, mode: "reservation", data, resIndex: idx })}
@@ -1163,7 +1184,7 @@ export default function HospitalWardManager() {
 }
 
 // ── WardView ──────────────────────────────────────────────────────────────────
-function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, highlightEmpty, currentEmptySlotKey, movingPatient, onMoveTarget, onSelectRoom, cardRefs, conflictSlotKeys }) {
+function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, showReserved, highlightEmpty, currentEmptySlotKey, movingPatient, onMoveTarget, onSelectRoom, cardRefs, conflictSlotKeys }) {
   return (
     <div style={S.wardGrid}>
       {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => (
@@ -1260,6 +1281,9 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
                             {isDischarging && <span style={{ fontSize:11 }}>🚪</span>}
                             {isAdmitting   && <span style={{ fontSize:11 }}>🛏</span>}
                             <span style={{ ...S.bedPositionBadge, background: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{posNum}</span>
+                            {(()=>{ const _ad=parseDateStr(b.person.admitDate); return newPatientNames.has((b.person.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && (!_ad||dateOnly(_ad).getTime()>=todayDate().getTime()-7*24*60*60*1000); })() && (
+                              <span style={{ fontSize:11, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"0 4px", fontWeight:800, flexShrink:0 }}>★</span>
+                            )}
                             <span
                               style={{ ...S.patientName, color: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f",
                                 ...(b.person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
@@ -1321,7 +1345,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, showReserved, high
 }
 
 // ── RoomDetailView ────────────────────────────────────────────────────────────
-function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, movingPatient, onStartMove, onMoveTarget, onEditCurrent, onEditReservation, onAddCurrent, onAddReservation, onConvertReservation, onBack }) {
+function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, newPatientNames, movingPatient, onStartMove, onMoveTarget, onEditCurrent, onEditReservation, onAddCurrent, onAddReservation, onConvertReservation, onBack }) {
   const router = useRouter();
   const { occupied, bedList } = getRoomStats(room.id, room.capacity);
   return (
@@ -1382,6 +1406,9 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, moving
 
               {b.person ? (
                 <>
+                  {(()=>{ const _ad=parseDateStr(b.person.admitDate); return newPatientNames.has((b.person.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && (!_ad||dateOnly(_ad).getTime()>=todayDate().getTime()-7*24*60*60*1000); })() && (
+                    <div style={{ marginBottom:2 }}><span style={{ fontSize:11, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 6px", fontWeight:800 }}>★ 신환</span></div>
+                  )}
                   <div
                     style={{ ...S.bedPatientName, color: isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
                       ...(b.person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
