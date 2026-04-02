@@ -474,7 +474,12 @@ export default function RoomPage() {
                     {reservations.map((r,ri)=>(
                       <div key={ri} style={{ background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:8,padding:"8px 10px",marginBottom:6 }}>
                         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4 }}>
-                          <span style={{ fontWeight:700,color:"#7c3aed",fontSize:17 }}>{r.name}</span>
+                          <span
+                            style={{ fontWeight:700,color:"#7c3aed",fontSize:17,
+                              ...(r.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                            onClick={r.patientId ? () => router.push(`/patients?id=${encodeURIComponent(r.patientId)}`) : undefined}>
+                            {r.name}
+                          </span>
                           <div style={{ display:"flex",gap:4 }}>
                             <button style={{...NS.btnSmall,color:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:r,resIndex:ri})); router.push("/"); }}>🚚</button>
                             <button style={NS.btnSmall} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...r},resIndex:ri})}>수정</button>
