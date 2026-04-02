@@ -118,11 +118,11 @@ export default function ConsultationPage() {
   const [reserveModal, setReserveModal] = useState(null); // { consultation }
   const [reserveSlot, setReserveSlot] = useState("");
 
-  // 월별 상담일지 로드 (월 변경 시 해당 월만 로드)
+  // 월별 상담일지 로드 (검색어가 있으면 전체 로드, 없으면 해당 월만 로드)
   useEffect(() => {
     setConsultations({});
     let q;
-    if (filterMonth) {
+    if (filterMonth && !search) {
       const monthStart = `${filterMonth}-01`;
       const monthEnd   = `${filterMonth}-31`;
       q = query(ref(db,"consultations"), orderByChild("createdAt"), startAt(monthStart), endAt(monthEnd));
@@ -133,7 +133,7 @@ export default function ConsultationPage() {
       setConsultations(snap.val() || {});
     });
     return unsub;
-  }, [filterMonth]);
+  }, [filterMonth, search]);
 
   useEffect(() => {
     const unsub2 = onValue(ref(db,"slots"), snap => {
