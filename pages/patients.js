@@ -52,10 +52,11 @@ export default function PatientsPage() {
   const [diagFixing,   setDiagFixing]   = useState(false);
   const [diagFixMsg,   setDiagFixMsg]   = useState("");
 
-  // URL에서 patientId 로드
+  // URL에서 patientId 또는 이름 로드
   useEffect(() => {
-    const { id } = router.query;
+    const { id, name } = router.query;
     if (id) loadPatientById(id);
+    else if (name) { setQuery(name); doSearch(name); }
   }, [router.query]);
 
   // 입력 유형 자동 감지 후 검색

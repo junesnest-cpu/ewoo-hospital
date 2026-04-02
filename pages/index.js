@@ -1310,8 +1310,8 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                                 padding: isNameHighlighted ? "1px 5px" : undefined,
                                 boxShadow: isNameHighlighted ? "0 0 0 2px #fca5a5" : "none",
                                 transition: "all 0.3s",
-                                ...(b.person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
-                              onClick={b.person.patientId ? (e) => { e.stopPropagation(); router.push(`/patients?id=${encodeURIComponent(b.person.patientId)}`); } : undefined}>
+                                ...((b.person.patientId || isReservedType || isAdmitting) ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                              onClick={(b.person.patientId || isReservedType || isAdmitting) ? (e) => { e.stopPropagation(); b.person.patientId ? router.push(`/patients?id=${encodeURIComponent(b.person.patientId)}`) : router.push(`/patients?name=${encodeURIComponent(b.person.name)}`); } : undefined}>
                               {b.person.name}
                             </span>
                             {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
@@ -1435,8 +1435,8 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, newPat
                   )}
                   <div
                     style={{ ...S.bedPatientName, color: isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
-                      ...(b.person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
-                    onClick={b.person.patientId ? (e) => { e.stopPropagation(); router.push(`/patients?id=${encodeURIComponent(b.person.patientId)}`); } : undefined}>
+                      ...((b.person.patientId || isReservedType || isAdmitting) ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                    onClick={(b.person.patientId || isReservedType || isAdmitting) ? (e) => { e.stopPropagation(); b.person.patientId ? router.push(`/patients?id=${encodeURIComponent(b.person.patientId)}`) : router.push(`/patients?name=${encodeURIComponent(b.person.name)}`); } : undefined}>
                     {b.person.name}
                   </div>
                   {b.person.admitDate && <div style={{ fontSize:12, color:"#7c3aed", marginBottom:4 }}>입원일: {b.person.admitDate}</div>}

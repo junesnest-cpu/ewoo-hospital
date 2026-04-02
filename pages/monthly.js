@@ -287,7 +287,7 @@ export default function MonthlySchedule() {
           const dis = parseDateStr(s.current.discharge, now.getFullYear());
           if (dis) {
             const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
-            if (disD < todayDateOnly) continue;
+            if (disD <= todayDateOnly) continue;
           }
           todayCensus++;
         }

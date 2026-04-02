@@ -476,8 +476,8 @@ export default function RoomPage() {
                         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4 }}>
                           <span
                             style={{ fontWeight:700,color:"#7c3aed",fontSize:17,
-                              ...(r.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
-                            onClick={r.patientId ? () => router.push(`/patients?id=${encodeURIComponent(r.patientId)}`) : undefined}>
+                              cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" }}
+                            onClick={() => r.patientId ? router.push(`/patients?id=${encodeURIComponent(r.patientId)}`) : router.push(`/patients?name=${encodeURIComponent(r.name)}`)}>
                             {r.name}
                           </span>
                           <div style={{ display:"flex",gap:4 }}>
