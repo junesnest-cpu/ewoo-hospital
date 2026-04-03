@@ -61,7 +61,7 @@ const EMPTY_FORM = {
   phone:"", phoneNote:"",
   phone2:"", phone2Note:"",
   diagnosis:"", hospital:"",
-  admitDate:"", roomTypes:[],
+  admitDate:"", dischargeDate:"", roomTypes:[],
   surgery:false, surgeryDate:"",
   chemo:false, chemoDate:"",
   radiation:false, radiationDate:"",
@@ -249,7 +249,7 @@ export default function ConsultationPage() {
     const reservations = [...(existing.reservations||[]), {
       name: c.name,
       admitDate: c.admitDate ? fmtDate(c.admitDate) : "",
-      discharge: "미정",
+      discharge: c.dischargeDate ? fmtDate(c.dischargeDate) : "미정",
       note: [c.diagnosis, c.hospital, c.memo].filter(Boolean).join(" / "),
       scheduleAlert: false,
       bedPosition: parseInt(reserveSlot.split("-")[1]),
@@ -274,7 +274,7 @@ export default function ConsultationPage() {
       newReservations.push({
         name: consult.name,
         admitDate: consult.admitDate ? fmtDate(consult.admitDate) : "",
-        discharge: consult.discharge || "미정",
+        discharge: consult.dischargeDate ? fmtDate(consult.dischargeDate) : (consult.discharge || "미정"),
         note: consult.diagnosis || "",
         consultationId: reserveModal.id,
       });
@@ -382,24 +382,35 @@ export default function ConsultationPage() {
     return d;
   };
 
-  // 특정 슬롯이 주어진 입원예정일에 가용한지 확인
-  const isAvailableOn = (slotKey, isoDate) => {
-    if (!isoDate) return true;
-    const target = new Date(isoDate); target.setHours(0,0,0,0);
+  // 특정 슬롯이 주어진 입원~퇴원 기간에 가용한지 확인
+  const isAvailableForPeriod = (slotKey, admitIso, dischargeIso) => {
+    if (!admitIso) return true;
+    const admitTarget = new Date(admitIso); admitTarget.setHours(0,0,0,0);
+    const disTarget = dischargeIso ? (() => { const d = new Date(dischargeIso); d.setHours(0,0,0,0); return d; })() : null;
     const slot = slots[slotKey];
     if (!slot) return true;
+    // current 환자: 우리 입원일 이후까지 있으면 겹침
     if (slot.current?.name) {
       const dis = parseMD(slot.current.discharge);
-      if (!dis || dis >= target) return false;
+      if (!dis || dis >= admitTarget) return false;
     }
     for (const r of (slot.reservations || [])) {
       if (!r?.name) continue;
       const rAdmit = parseMD(r.admitDate);
       const rDis   = parseMD(r.discharge);
-      if (rAdmit && rDis) {
-        if (rAdmit <= target && target <= rDis) return false;
+      if (rAdmit && rDis && disTarget) {
+        // 두 기간 [admitTarget, disTarget]와 [rAdmit, rDis] 겹침
+        if (rAdmit <= disTarget && admitTarget <= rDis) return false;
+      } else if (rAdmit && rDis) {
+        // 퇴원예정일 없으면 입원일이 기간 내에 있는지
+        if (rAdmit <= admitTarget && admitTarget <= rDis) return false;
       } else if (rAdmit) {
-        if (rAdmit.getTime() === target.getTime()) return false;
+        if (disTarget) {
+          // rDis 미정: rAdmit이 우리 기간 내에 있으면 겹침
+          if (rAdmit >= admitTarget && rAdmit <= disTarget) return false;
+        } else {
+          if (rAdmit.getTime() === admitTarget.getTime()) return false;
+        }
       }
     }
     return true;
@@ -602,11 +613,22 @@ export default function ConsultationPage() {
           <div style={S.section}>
             <div style={S.sectionTitle}>📅 입원 희망</div>
 
-            {/* 입원예약일 + 희망병실 한 줄 */}
+            {/* 입원예약일 + 퇴원예정일 + 희망병실 한 줄 */}
             <div style={{display:"flex", gap:16, alignItems:"flex-start", marginBottom:12, flexWrap:"wrap"}}>
               <div style={{minWidth:160}}>
                 <label style={S.lbl}>입원 예약일</label>
                 <input style={{...S.inp, width:160}} type="date" value={form.admitDate} onChange={e=>setF("admitDate",e.target.value)}/>
+              </div>
+              <div style={{minWidth:160}}>
+                <label style={S.lbl}>퇴원 예정일</label>
+                <input style={{...S.inp, width:160}} type="date" value={form.dischargeDate} onChange={e=>setF("dischargeDate",e.target.value)}/>
+                {form.admitDate && form.dischargeDate && (() => {
+                  const a = new Date(form.admitDate), d = new Date(form.dischargeDate);
+                  const days = Math.round((d - a) / 86400000);
+                  if (days > 0) return <span style={{fontSize:11, color:"#059669", fontWeight:700}}>→ {days}일 입원</span>;
+                  if (days < 0) return <span style={{fontSize:11, color:"#dc2626", fontWeight:700}}>날짜 오류</span>;
+                  return null;
+                })()}
               </div>
               <div style={{flex:1}}>
                 <label style={S.lbl}>희망 병실 (복수 선택)</label>
@@ -880,30 +902,43 @@ export default function ConsultationPage() {
             </div>
             <div style={{fontSize:12, color:"#64748b", marginBottom:12}}>
               입원예정: {fmtDate(reserveModal.consultation.admitDate)}
+              {reserveModal.consultation.dischargeDate && ` ~ ${fmtDate(reserveModal.consultation.dischargeDate)}`}
+              {reserveModal.consultation.admitDate && reserveModal.consultation.dischargeDate && (() => {
+                const days = Math.round((new Date(reserveModal.consultation.dischargeDate) - new Date(reserveModal.consultation.admitDate)) / 86400000);
+                return days > 0 ? <span style={{marginLeft:4, fontWeight:700, color:"#0369a1"}}>{days}일</span> : null;
+              })()}
               {reserveModal.consultation.roomTypes?.length>0 && ` · 희망: ${reserveModal.consultation.roomTypes.join(", ")}`}
             </div>
 
             <label style={{fontSize:12, fontWeight:700, color:"#475569", display:"block", marginBottom:6}}>병상 선택</label>
             <div style={{maxHeight:280, overflowY:"auto"}}>
               {allRooms.map(room=>{
-                const isPreferred = reserveModal.consultation.roomTypes?.includes(room.type);
+                const c = reserveModal.consultation;
+                const isPreferred = c.roomTypes?.includes(room.type);
+                // 이 병실의 모든 슬롯 중 추천(희망타입+기간가용) 슬롯이 있는지
+                const roomSlots = getRoomSlots(room.id, room.cap);
+                const hasRecommended = isPreferred && roomSlots.some(({slotKey}) =>
+                  isAvailableForPeriod(slotKey, c.admitDate, c.dischargeDate));
                 return (
                   <div key={room.id} style={{marginBottom:8}}>
-                    <div style={{fontSize:11, fontWeight:700, color: isPreferred ? TYPE_COLOR[room.type] : "#94a3b8",
-                      background: isPreferred ? TYPE_BG[room.type] : "#f8fafc",
+                    <div style={{fontSize:11, fontWeight:700,
+                      color: hasRecommended ? TYPE_COLOR[room.type] : isPreferred ? TYPE_COLOR[room.type] : "#94a3b8",
+                      background: hasRecommended ? TYPE_BG[room.type] : isPreferred ? TYPE_BG[room.type] : "#f8fafc",
                       borderRadius:4, padding:"2px 8px", marginBottom:4, display:"inline-block"}}>
-                      {room.id}호 {room.type}{isPreferred ? " ★ 희망" : ""}
+                      {room.id}호 {room.type}{hasRecommended ? " ★ 추천" : isPreferred ? " ☆ 희망" : ""}
                     </div>
                     <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
-                      {getRoomSlots(room.id, room.cap).map(({slotKey, bed})=>{
-                        const admitIso = reserveModal.consultation.admitDate;
-                        const available = isAvailableOn(slotKey, admitIso);
+                      {roomSlots.map(({slotKey, bed})=>{
+                        const admitIso = c.admitDate;
+                        const disIso   = c.dischargeDate;
+                        const available = isAvailableForPeriod(slotKey, admitIso, disIso);
                         const occupied  = slots[slotKey]?.current?.name;
                         const hasReserve = (slots[slotKey]?.reservations||[]).length > 0;
                         const selected = reserveSlot === slotKey;
-                        const btnBorder = selected ? "#0f2744" : !available ? "#e2e8f0" : (available && hasReserve) ? "#f59e0b" : "#10b981";
-                        const btnBg     = selected ? "#0f2744" : !available ? "#f1f5f9" : (available && hasReserve) ? "#fffbeb" : "#f0fdf4";
-                        const btnColor  = selected ? "#fff"    : !available ? "#94a3b8" : (available && hasReserve) ? "#92400e" : "#065f46";
+                        const isRec = isPreferred && available;
+                        const btnBorder = selected ? "#0f2744" : !available ? "#e2e8f0" : isRec ? TYPE_COLOR[room.type] : (available && hasReserve) ? "#f59e0b" : "#10b981";
+                        const btnBg     = selected ? "#0f2744" : !available ? "#f1f5f9" : isRec ? TYPE_BG[room.type] : (available && hasReserve) ? "#fffbeb" : "#f0fdf4";
+                        const btnColor  = selected ? "#fff"    : !available ? "#94a3b8" : isRec ? TYPE_COLOR[room.type] : (available && hasReserve) ? "#92400e" : "#065f46";
                         return (
                           <button key={slotKey}
                             style={{padding:"4px 10px", borderRadius:6, fontSize:12, fontWeight:700,
