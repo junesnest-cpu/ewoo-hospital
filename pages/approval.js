@@ -995,7 +995,7 @@ function TaxForm({ data, onChange, readonly }) {
 
   if (readonly) {
     const allItems = (f.groups||[]).flatMap(g => g.items||[]);
-    const vendorAmt = (keyword) => allItems.filter(it => it.vendor && it.vendor.includes(keyword) && it.amount).reduce((s,it)=>s+(Number(it.amount)||0),0);
+    const vendorAmt = (keyword) => allItems.filter(it => it.vendor && it.vendor.includes(keyword) && it.amount && it.method === "청구").reduce((s,it)=>s+(Number(it.amount)||0),0);
     const MED_VENDORS = ["제인스메디칼","바른메디팜","휴온스","파","리서치메디케어","삼송바이오","삼광의료재단","메디풀"];
     // 파+리서치메디케어를 하나의 업체로 처리하기 위해 직접 검색
     const medRows = [
