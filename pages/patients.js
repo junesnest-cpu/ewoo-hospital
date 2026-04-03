@@ -5,6 +5,18 @@ import { db } from "../lib/firebaseConfig";
 import { findPatientByPhone, findPatientByChartNo, searchPatientsByName, normalizePhone } from "../lib/patientSearch";
 import useIsMobile from "../lib/useismobile";
 
+const ROOM_TYPE = {
+  "201":"4인실","202":"1인실","203":"4인실","204":"2인실","205":"6인실","206":"6인실",
+  "301":"4인실","302":"1인실","303":"4인실","304":"2인실","305":"2인실","306":"6인실",
+  "501":"4인실","502":"1인실","503":"4인실","504":"2인실","505":"6인실","506":"6인실",
+  "601":"6인실","602":"1인실","603":"6인실",
+};
+function roomLabel(slotKey) {
+  const [roomId, bed] = slotKey.split("-");
+  const type = ROOM_TYPE[roomId] || "";
+  return { roomId, bed, type, label: `${roomId}호 ${bed}번${type ? ` (${type})` : ""}` };
+}
+
 const S = {
   app:    { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", minHeight:"100vh", color:"#0f172a" },
   header: { background:"#0f2744", color:"#fff", padding:"10px 16px", display:"flex", alignItems:"center", gap:10, position:"sticky", top:0, zIndex:40, boxShadow:"0 2px 8px rgba(0,0,0,0.15)" },
@@ -509,19 +521,24 @@ export default function PatientsPage() {
                     {reservations.length > 0 && (
                       <>
                         <div style={{ fontSize:14, fontWeight:800, color:"#7c3aed", marginBottom:6 }}>📅 입원 예약 ({reservations.length}건)</div>
-                        {[...reservations].sort((a, b) => (a.data.admitDate||"").localeCompare(b.data.admitDate||"")).map((r, i) => (
-                          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", border:"1px solid #e9d5ff", borderRadius:7, padding:"7px 12px", marginBottom:5, background:"#faf5ff" }}>
-                            <div style={{ fontSize:13 }}>
-                              <span style={{ fontWeight:700 }}>{r.data.admitDate}</span>
-                              {r.data.discharge && <><span style={{ color:"#94a3b8", margin:"0 6px" }}>→</span><span style={{ color:"#7c3aed" }}>{r.data.discharge}</span></>}
-                              <span style={{ marginLeft:8, color:"#7c3aed", fontWeight:600 }}>{r.slotKey.replace("-"," 호 ")}번</span>
+                        {[...reservations].sort((a, b) => (a.data.admitDate||"").localeCompare(b.data.admitDate||"")).map((r, i) => {
+                          const rm = roomLabel(r.slotKey);
+                          return (
+                            <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", border:"1px solid #e9d5ff", borderRadius:7, padding:"7px 12px", marginBottom:5, background:"#faf5ff" }}>
+                              <div style={{ fontSize:13, display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                                <span style={{ fontWeight:800, color:"#7c3aed" }}>{rm.roomId}호 {rm.bed}번</span>
+                                {rm.type && <span style={{ fontSize:11, background:"#ede9fe", color:"#6d28d9", borderRadius:4, padding:"1px 6px", fontWeight:700 }}>{rm.type}</span>}
+                                <span style={{ color:"#94a3b8", fontSize:12 }}>|</span>
+                                <span style={{ fontWeight:600 }}>{r.data.admitDate}</span>
+                                {r.data.discharge && <><span style={{ color:"#94a3b8" }}>→</span><span style={{ color:"#475569" }}>{r.data.discharge}</span></>}
+                              </div>
+                              <button onClick={() => deleteReservation(r.slotKey, r.resIndex)} disabled={deletingRes}
+                                style={{ flexShrink:0, background:"#fee2e2", color:"#dc2626", border:"1px solid #fca5a5", borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:700, cursor:"pointer" }}>
+                                삭제
+                              </button>
                             </div>
-                            <button onClick={() => deleteReservation(r.slotKey, r.resIndex)} disabled={deletingRes}
-                              style={{ flexShrink:0, background:"#fee2e2", color:"#dc2626", border:"1px solid #fca5a5", borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:700, cursor:"pointer" }}>
-                              삭제
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </>
                     )}
 
