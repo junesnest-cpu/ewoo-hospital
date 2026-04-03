@@ -1,8 +1,9 @@
 import "../styles/globals.css";
 import Head from "next/head";
 import { useState, useEffect } from "react";
-import { auth } from "../lib/firebaseConfig";
+import { auth, db } from "../lib/firebaseConfig";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "firebase/auth";
+import { ref, onValue, set } from "firebase/database";
 
 function LoginScreen() {
   const [name,     setName]     = useState("");
@@ -87,7 +88,11 @@ function ChangePasswordModal({ user, onClose }) {
       const credential = EmailAuthProvider.credential(user.email, curPw);
       await reauthenticateWithCredential(user, credential);
       await updatePassword(user, newPw);
+      // 모든 기기 강제 로그아웃용 타임스탬프 기록
+      await set(ref(db, `userPwChangedAt/${user.uid}`), Date.now());
       setSuccess(true);
+      // 현재 기기도 2초 후 로그아웃
+      setTimeout(() => signOut(auth), 2000);
     } catch (err) {
       if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
         setError("현재 비밀번호가 올바르지 않습니다.");
@@ -108,9 +113,9 @@ function ChangePasswordModal({ user, onClose }) {
         {success ? (
           <>
             <div style={{ background:"#f0fdf4", color:"#166534", borderRadius:8, padding:"12px", fontSize:14, fontWeight:700, textAlign:"center", marginBottom:16 }}>
-              ✅ 비밀번호가 변경되었습니다.
+              ✅ 비밀번호가 변경되었습니다.<br/>
+              <span style={{ fontSize:12, fontWeight:400 }}>잠시 후 자동으로 로그아웃됩니다.</span>
             </div>
-            <button onClick={onClose} style={{ width:"100%", background:"#0f2744", color:"#fff", border:"none", borderRadius:9, padding:"12px", fontSize:14, fontWeight:700, cursor:"pointer" }}>닫기</button>
           </>
         ) : (
           <form onSubmit={handleSubmit}>
@@ -151,6 +156,18 @@ export default function App({ Component, pageProps }) {
     const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setLoading(false); });
     return () => unsub();
   }, []);
+
+  // 비밀번호 변경 시 모든 기기 강제 로그아웃
+  useEffect(() => {
+    if (!user) return;
+    const unsub = onValue(ref(db, `userPwChangedAt/${user.uid}`), (snap) => {
+      const pwChangedAt = snap.val();
+      if (!pwChangedAt) return;
+      const lastSignIn = new Date(user.metadata.lastSignInTime).getTime();
+      if (pwChangedAt > lastSignIn) signOut(auth);
+    });
+    return () => unsub();
+  }, [user?.uid]);
 
   const userName = user?.email?.replace("@ewoo.com","") || "";
 
