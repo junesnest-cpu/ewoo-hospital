@@ -508,22 +508,18 @@ export default function PatientsPage() {
                     )}
                     {reservations.length > 0 && (
                       <>
-                        <div style={{ fontSize:14, fontWeight:800, color:"#7c3aed", marginBottom:8 }}>📅 입원 예약 ({reservations.length}건)</div>
-                        {reservations.map((r, i) => (
-                          <div key={i} style={{ background:"#faf5ff", border:"1px solid #e9d5ff", borderRadius:8, padding:"10px 12px", marginBottom:6 }}>
-                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
-                              <InfoGrid items={[
-                                { label:"병실·병상",  value:r.slotKey.replace("-"," 호 ")+"번" },
-                                { label:"입원 예정",  value:r.data.admitDate },
-                                { label:"퇴원 예정",  value:r.data.discharge },
-                              ]} />
-                              <button
-                                onClick={() => deleteReservation(r.slotKey, r.resIndex)}
-                                disabled={deletingRes}
-                                style={{ flexShrink:0, background:"#fee2e2", color:"#dc2626", border:"1px solid #fca5a5", borderRadius:6, padding:"4px 10px", fontSize:12, fontWeight:700, cursor:"pointer" }}>
-                                삭제
-                              </button>
+                        <div style={{ fontSize:14, fontWeight:800, color:"#7c3aed", marginBottom:6 }}>📅 입원 예약 ({reservations.length}건)</div>
+                        {[...reservations].sort((a, b) => (a.data.admitDate||"").localeCompare(b.data.admitDate||"")).map((r, i) => (
+                          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", border:"1px solid #e9d5ff", borderRadius:7, padding:"7px 12px", marginBottom:5, background:"#faf5ff" }}>
+                            <div style={{ fontSize:13 }}>
+                              <span style={{ fontWeight:700 }}>{r.data.admitDate}</span>
+                              {r.data.discharge && <><span style={{ color:"#94a3b8", margin:"0 6px" }}>→</span><span style={{ color:"#7c3aed" }}>{r.data.discharge}</span></>}
+                              <span style={{ marginLeft:8, color:"#7c3aed", fontWeight:600 }}>{r.slotKey.replace("-"," 호 ")}번</span>
                             </div>
+                            <button onClick={() => deleteReservation(r.slotKey, r.resIndex)} disabled={deletingRes}
+                              style={{ flexShrink:0, background:"#fee2e2", color:"#dc2626", border:"1px solid #fca5a5", borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:700, cursor:"pointer" }}>
+                              삭제
+                            </button>
                           </div>
                         ))}
                       </>
