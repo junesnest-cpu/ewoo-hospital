@@ -608,11 +608,66 @@ async function main() {
   console.log(`   입원 반영: ${setCount}개 / 퇴원 제거: ${clearCount}개\n`);
 
   // ════════════════════════════════════════════════════════════════
+  // [3] 과거 입원이력 동기화
+  // ════════════════════════════════════════════════════════════════
+  console.log('─'.repeat(50));
+  console.log('[3] 과거 입원이력 동기화 시작');
+
+  const admitHistResult = await pool.request().query(`
+    SELECT
+      CHARTNO,
+      INDAT   AS admitDate,
+      OUTDAT  AS dischargeDate,
+      INSUCLS AS insuCls
+    FROM BrWonmu.dbo.SILVER_PATIENT_INFO
+    WHERE OUTDAT IS NOT NULL AND OUTDAT <> ''
+      AND INDAT  IS NOT NULL AND INDAT  <> ''
+    ORDER BY CHARTNO, INDAT DESC
+  `);
+
+  // chartNo 기준으로 그룹핑
+  const admitHistMap = new Map(); // normChart → [{admitDate, dischargeDate, insuCls?}]
+  for (const row of admitHistResult.recordset) {
+    const normChart = normalizeChartNo(row.CHARTNO);
+    if (!normChart) continue;
+    const entry = {
+      admitDate:     formatDate(row.admitDate),
+      dischargeDate: formatDate(row.dischargeDate),
+    };
+    if (!entry.admitDate) continue;
+    if (row.insuCls) entry.insuCls = String(row.insuCls).trim();
+    if (!admitHistMap.has(normChart)) admitHistMap.set(normChart, []);
+    admitHistMap.get(normChart).push(entry);
+  }
+
+  console.log(`  대상 환자: ${admitHistMap.size}명 / 총 이력: ${admitHistResult.recordset.length}건`);
+
+  const histUpdates = {};
+  for (const [normChart, history] of admitHistMap) {
+    // 중복 제거 (admitDate + dischargeDate 기준)
+    const seen = new Set();
+    const dedup = history.filter(h => {
+      const key = `${h.admitDate}__${h.dischargeDate}`;
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+    histUpdates[`patients/${normChart}/emrAdmissions`] = dedup;
+  }
+
+  const histEntries = Object.entries(histUpdates);
+  for (let i = 0; i < histEntries.length; i += 500) {
+    await db.ref('/').update(Object.fromEntries(histEntries.slice(i, i + 500)));
+    process.stdout.write(`\r  ↑ ${Math.min(i + 500, histEntries.length)} / ${histEntries.length}`);
+  }
+  console.log(`\n✅ 과거 입원이력 동기화 완료\n`);
+
+  // ════════════════════════════════════════════════════════════════
   console.log('🎉 전체 동기화 완료!');
   console.log(`   [0]   차트번호 중복 정리`);
   console.log(`   [0.5] 구형 슬롯 키 마이그레이션`);
   console.log(`   [1]   환자 마스터: ${patEntries.length}명`);
   console.log(`   [2]   병상 입원:   ${setCount}개 / 퇴원: ${clearCount}개`);
+  console.log(`   [3]   입원이력:    ${admitHistMap.size}명 / ${admitHistResult.recordset.length}건`);
 
   await sql.close();
   process.exit(0);

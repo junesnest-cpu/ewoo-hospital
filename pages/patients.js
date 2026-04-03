@@ -532,13 +532,25 @@ export default function PatientsPage() {
                     {/* 입원 이력 */}
                     {(() => {
                       const history = [];
+                      // 현재 입원
+                      if (currentSlot?.data?.admitDate) {
+                        history.push({ admitDate: currentSlot.data.admitDate, discharge: currentSlot.data.discharge, isCurrent: true, source: "slot" });
+                      }
+                      // 상담 기록 기반 (입원완료)
                       const completedCons = consultations.filter(c => c.status === "입원완료" && c.admitDate);
                       completedCons.forEach(c => {
-                        history.push({ admitDate: c.admitDate, discharge: null, isCurrent: false });
+                        history.push({ admitDate: c.admitDate, discharge: c.dischargeDate || null, isCurrent: false, source: "consultation" });
                       });
-                      if (currentSlot?.data?.admitDate) {
-                        history.unshift({ admitDate: currentSlot.data.admitDate, discharge: currentSlot.data.discharge, isCurrent: true });
-                      }
+                      // EMR 입원이력 (SILVER_PATIENT_INFO)
+                      const emrList = selected?.emrAdmissions || [];
+                      emrList.forEach(e => {
+                        // 현재 입원/상담 이력과 입원일 중복이면 스킵
+                        const dup = history.some(h => h.admitDate && e.admitDate && h.admitDate.slice(0,10) === e.admitDate.slice(0,10));
+                        if (!dup) history.push({ admitDate: e.admitDate, discharge: e.dischargeDate || null, isCurrent: false, source: "emr" });
+                      });
+                      // 최신순 정렬
+                      history.sort((a, b) => (b.admitDate || "").localeCompare(a.admitDate || ""));
+
                       const totalDays = history.reduce((sum, h) => {
                         const d = daysBetween(h.admitDate, h.discharge);
                         return sum + (d || 0);
@@ -548,19 +560,24 @@ export default function PatientsPage() {
                         <div style={{ marginTop:16, paddingTop:16, borderTop:"1px solid #f1f5f9" }}>
                           <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
                             <span style={{ fontSize:14, fontWeight:800, color:"#0f2744" }}>📊 입원 이력</span>
+                            <span style={{ fontSize:11, color:"#94a3b8" }}>{history.length}건</span>
                             {totalDays > 0 && (
                               <span style={{ fontSize:12, background:"#dbeafe", color:"#1e40af", borderRadius:5, padding:"2px 8px", fontWeight:700 }}>합계 {totalDays}일</span>
                             )}
                           </div>
                           {history.map((h, i) => {
                             const days = daysBetween(h.admitDate, h.discharge);
+                            const isEmr = h.source === "emr";
                             return (
                               <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", border:"1px solid #e2e8f0", borderRadius:7, padding:"7px 12px", marginBottom:5, background: h.isCurrent ? "#f0fdf4" : "#f8fafc" }}>
                                 <div style={{ fontSize:13 }}>
                                   <span style={{ fontWeight:700 }}>{h.admitDate}</span>
                                   <span style={{ color:"#94a3b8", margin:"0 6px" }}>→</span>
-                                  <span style={{ color: h.isCurrent ? "#059669" : "#475569" }}>{h.isCurrent ? (h.discharge && h.discharge !== "미정" ? h.discharge : "재원 중") : (h.discharge || "미상")}</span>
+                                  <span style={{ color: h.isCurrent ? "#059669" : "#475569" }}>
+                                    {h.isCurrent ? (h.discharge && h.discharge !== "미정" ? h.discharge : "재원 중") : (h.discharge || "미상")}
+                                  </span>
                                   {h.isCurrent && <span style={{ marginLeft:6, fontSize:11, background:"#dcfce7", color:"#166534", borderRadius:3, padding:"1px 5px", fontWeight:700 }}>현재</span>}
+                                  {isEmr && <span style={{ marginLeft:6, fontSize:10, background:"#f1f5f9", color:"#64748b", borderRadius:3, padding:"1px 5px" }}>EMR</span>}
                                 </div>
                                 {days && <span style={{ fontSize:12, color:"#64748b", background:"#e2e8f0", borderRadius:4, padding:"1px 8px", fontWeight:600, flexShrink:0 }}>{days}일</span>}
                               </div>
@@ -570,7 +587,7 @@ export default function PatientsPage() {
                       );
                     })()}
 
-                    {!currentSlot && reservations.length === 0 && consultations.filter(c => c.status === "입원완료").length === 0 && (
+                    {!currentSlot && reservations.length === 0 && consultations.filter(c => c.status === "입원완료").length === 0 && !(selected?.emrAdmissions?.length > 0) && (
                       <div style={{ color:"#94a3b8", fontSize:13, marginTop:8 }}>입원 이력 없음</div>
                     )}
                   </div>
