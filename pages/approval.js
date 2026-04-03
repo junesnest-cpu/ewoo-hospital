@@ -993,9 +993,73 @@ function TaxForm({ data, onChange, readonly }) {
     );
   };
 
-  if (readonly) return (
+  if (readonly) {
+    const allItems = (f.groups||[]).flatMap(g => g.items||[]);
+    const vendorAmt = (keyword) => allItems.filter(it => it.vendor && it.vendor.includes(keyword) && it.amount).reduce((s,it)=>s+(Number(it.amount)||0),0);
+    const MED_VENDORS = ["제인스메디칼","바른메디팜","휴온스","파","리서치메디케어","삼송바이오","삼광의료재단","메디풀"];
+    // 파+리서치메디케어를 하나의 업체로 처리하기 위해 직접 검색
+    const medRows = [
+      { label:"제인스메디칼",    amt: vendorAmt("제인스메디칼") },
+      { label:"바른메디팜",      amt: vendorAmt("바른메디팜") },
+      { label:"휴온스",          amt: vendorAmt("휴온스") },
+      { label:"파아리서치메디케어", amt: vendorAmt("파아리서치") || vendorAmt("파마리서치") || vendorAmt("리서치메디케어") },
+      { label:"삼송바이오",      amt: vendorAmt("삼송바이오") },
+      { label:"삼광의료재단",    amt: vendorAmt("삼광의료재단") },
+      { label:"메디풀",          amt: vendorAmt("메디풀") },
+    ];
+    const foodRows = [
+      { label:"에코푸드코리아",  amt: vendorAmt("에코푸드") },
+      { label:"도준푸드",        amt: vendorAmt("도준푸드") },
+    ];
+    const medTotal  = medRows.reduce((s,r)=>s+r.amt,0);
+    const foodTotal = foodRows.reduce((s,r)=>s+r.amt,0);
+    const keyTotal  = medTotal + foodTotal;
+    const hasKeyData = keyTotal > 0;
+
+  return (
     <div>
       <ReadVal label="보고 월" value={f.reportMonth} />
+      {/* 핵심 청구금액 (최상단) */}
+      {hasKeyData && (
+        <div style={{ background:"#fffbeb", borderRadius:10, padding:"14px 16px", marginBottom:14, border:"2px solid #fbbf24" }}>
+          <div style={{ fontWeight:800, fontSize:14, color:"#92400e", marginBottom:12 }}>📋 핵심 청구금액</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            {/* 의료/의약품 */}
+            <div style={{ background:"#fff", borderRadius:8, padding:"10px 12px", border:"1px solid #fde68a" }}>
+              <div style={{ fontSize:12, fontWeight:800, color:"#b45309", marginBottom:8 }}>의약품·검사·소모품</div>
+              {medRows.map(r => r.amt > 0 && (
+                <div key={r.label} style={{ display:"flex", justifyContent:"space-between", fontSize:13, marginBottom:4 }}>
+                  <span style={{ color:"#64748b" }}>{r.label}</span>
+                  <span style={{ fontWeight:700, color:"#0f2744" }}>{fmtNum(r.amt)}원</span>
+                </div>
+              ))}
+              {medTotal > 0 && (
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, fontWeight:800, borderTop:"1px solid #fde68a", marginTop:6, paddingTop:6, color:"#b45309" }}>
+                  <span>소계</span><span>{fmtNum(medTotal)}원</span>
+                </div>
+              )}
+            </div>
+            {/* 식자재 */}
+            <div style={{ background:"#fff", borderRadius:8, padding:"10px 12px", border:"1px solid #fde68a" }}>
+              <div style={{ fontSize:12, fontWeight:800, color:"#b45309", marginBottom:8 }}>식자재</div>
+              {foodRows.map(r => r.amt > 0 && (
+                <div key={r.label} style={{ display:"flex", justifyContent:"space-between", fontSize:13, marginBottom:4 }}>
+                  <span style={{ color:"#64748b" }}>{r.label}</span>
+                  <span style={{ fontWeight:700, color:"#0f2744" }}>{fmtNum(r.amt)}원</span>
+                </div>
+              ))}
+              {foodTotal > 0 && (
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, fontWeight:800, borderTop:"1px solid #fde68a", marginTop:6, paddingTop:6, color:"#b45309" }}>
+                  <span>소계</span><span>{fmtNum(foodTotal)}원</span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={{ marginTop:10, borderTop:"2px solid #fbbf24", paddingTop:8, display:"flex", justifyContent:"flex-end" }}>
+            <div style={{ fontSize:16, fontWeight:900, color:"#92400e" }}>합계 {fmtNum(keyTotal)}원</div>
+          </div>
+        </div>
+      )}
       {/* 지출 요약 (상단) */}
       {(grandPaid > 0 || grandBilled > 0) && (
         <div style={{ background:"#fff1f2", borderRadius:10, padding:"12px 16px", marginBottom:16, border:"1px solid #fca5a5" }}>
@@ -1081,6 +1145,7 @@ function TaxForm({ data, onChange, readonly }) {
       </div>
     </div>
   );
+  }
 
   return (
     <div>
