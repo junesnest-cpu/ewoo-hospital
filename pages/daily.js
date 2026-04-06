@@ -334,7 +334,7 @@ const DS = {
   headerTitle: { fontSize:18, fontWeight:800 },
   headerSub: { fontSize:12, color:"#7dd3fc", marginTop:2 },
   dateNav: { display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" },
-  btnDay: { background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#fff", borderRadius:6, padding:"5px 12px", cursor:"pointer", fontSize:13, fontWeight:600 },
+  btnDay: { background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:7, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:600 },
   dateInput: { border:"1px solid rgba(255,255,255,0.3)", background:"rgba(255,255,255,0.1)", color:"#fff", borderRadius:6, padding:"5px 8px", fontSize:13, outline:"none", fontFamily:"inherit" },
   btnPrint: { background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.3)", color:"#fff", borderRadius:6, padding:"5px 12px", cursor:"pointer", fontSize:13, fontWeight:600 },
   summaryBar: { background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"10px 20px", display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" },

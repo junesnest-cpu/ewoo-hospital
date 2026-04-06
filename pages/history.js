@@ -1630,7 +1630,7 @@ function WebhookLogsTab({ logs }) {
 // ── 스타일 ────────────────────────────────────────────────────────────────────
 const H = {
   page: { fontFamily: "'Noto Sans KR','Pretendard',sans-serif", background: "#f0f4f8", minHeight: "100vh", color: "#0f172a" },
-  header: { background: "#0f2744", color: "#fff", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 40, boxShadow: "0 2px 8px rgba(0,0,0,0.15)" },
+  header: { background: "#0f2744", color: "#fff", padding: "12px 20px", display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 40, boxShadow: "0 2px 8px rgba(0,0,0,0.15)" },
   btnBack: { background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: 7, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, flexShrink: 0 },
   title: { fontSize: 18, fontWeight: 800 },
   badge: { background: "#ef4444", color: "#fff", borderRadius: 12, padding: "2px 10px", fontSize: 13, fontWeight: 700, marginLeft: "auto" },

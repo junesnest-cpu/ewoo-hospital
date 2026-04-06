@@ -19,7 +19,7 @@ function roomLabel(slotKey) {
 
 const S = {
   app:    { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", minHeight:"100vh", color:"#0f172a" },
-  header: { background:"#0f2744", color:"#fff", padding:"10px 16px", display:"flex", alignItems:"center", gap:10, position:"sticky", top:0, zIndex:40, boxShadow:"0 2px 8px rgba(0,0,0,0.15)" },
+  header: { background:"#0f2744", color:"#fff", padding:"12px 20px", display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:40, boxShadow:"0 2px 8px rgba(0,0,0,0.15)" },
   body:   { maxWidth:860, margin:"0 auto", padding:"16px 12px" },
   card:   { background:"#fff", borderRadius:12, padding:"16px 18px", boxShadow:"0 1px 6px rgba(0,0,0,0.07)", marginBottom:12 },
   label:  { fontSize:11, fontWeight:700, color:"#94a3b8", marginBottom:2 },

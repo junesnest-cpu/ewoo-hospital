@@ -57,10 +57,10 @@ const S = {
   page:       { display:"flex", flexDirection:"column", minHeight:"100vh", background:"#f0f4f8", fontFamily:"'Noto Sans KR',sans-serif" },
   header:     { background:"#0f2744", color:"#fff", padding:"12px 24px", display:"flex", alignItems:"center", gap:12, boxShadow:"0 2px 8px rgba(0,0,0,0.2)", position:"sticky", top:0, zIndex:200, flexShrink:0 },
   main:       { maxWidth:920, margin:"0 auto", padding:"24px 16px" },
-  sidebar:    { width:220, flexShrink:0, background:"#fff", borderRight:"1px solid #e2e8f0", display:"flex", flexDirection:"column", position:"sticky", top:60, height:"calc(100vh - 60px)", overflowY:"auto" },
+  sidebar:    { width:175, flexShrink:0, background:"#fff", borderRight:"1px solid #e2e8f0", display:"flex", flexDirection:"column", position:"sticky", top:60, height:"calc(100vh - 60px)", overflowY:"auto" },
   content:    { flex:1, padding:"24px 20px", minWidth:0, overflowX:"auto" },
-  navGroup:   { fontSize:10, fontWeight:800, color:"#94a3b8", letterSpacing:"0.08em", padding:"16px 16px 5px", textTransform:"uppercase" },
-  navItem: a => ({ display:"flex", alignItems:"center", gap:9, padding:"9px 16px", cursor:"pointer", fontWeight:a?700:500, fontSize:13, color:a?"#0f2744":"#475569", background:a?"#e0f2fe":"transparent", borderLeft:a?"3px solid #0f2744":"3px solid transparent", transition:"all 0.12s", border:"none", width:"100%", textAlign:"left", boxSizing:"border-box" }),
+  navGroup:   { fontSize:10, fontWeight:800, color:"#94a3b8", letterSpacing:"0.08em", padding:"14px 14px 7px", textTransform:"uppercase" },
+  navItem: a => ({ display:"flex", alignItems:"center", gap:9, padding:"8px 14px 8px 22px", cursor:"pointer", fontWeight:a?700:500, fontSize:13, color:a?"#0f2744":"#475569", background:a?"#eff6ff":"transparent", borderLeft:a?"3px solid #0f2744":"3px solid transparent", transition:"all 0.12s", border:"none", width:"100%", textAlign:"left", boxSizing:"border-box" }),
   card:       { background:"#fff", borderRadius:12, boxShadow:"0 1px 6px rgba(0,0,0,0.08)", padding:"20px", marginBottom:16 },
   tabs:       { display:"flex", gap:4, marginBottom:20, background:"#fff", borderRadius:10, padding:4, boxShadow:"0 1px 4px rgba(0,0,0,0.06)" },
   tab:   a => ({ flex:1, padding:"9px 0", border:"none", borderRadius:8, cursor:"pointer", fontWeight:700, fontSize:13, background:a?"#0f2744":"transparent", color:a?"#fff":"#64748b", transition:"all 0.15s" }),
@@ -2141,9 +2141,9 @@ export default function ApprovalPage() {
 
         {/* ── 좌측 사이드바 ── */}
         <aside style={isMobile ? {
-          width:220, background:"#fff", borderRight:"1px solid #e2e8f0",
+          width:175, background:"#fff", borderRight:"1px solid #e2e8f0",
           display:"flex", flexDirection:"column",
-          position:"fixed", top:0, left: sidebarOpen ? 0 : -224, height:"100vh",
+          position:"fixed", top:0, left: sidebarOpen ? 0 : -179, height:"100vh",
           overflowY:"auto", zIndex:500, transition:"left 0.25s ease",
           boxShadow: sidebarOpen ? "4px 0 20px rgba(0,0,0,0.18)" : "none",
         } : S.sidebar}>

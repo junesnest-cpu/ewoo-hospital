@@ -501,8 +501,8 @@ export default function MonthlySchedule() {
       <style>{printStyle}</style>
 
       {/* 헤더 */}
-      <header className="no-print" style={{ background:"#0f2744", color:"#fff", padding:"10px 16px",
-        display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:30 }}>
+      <header className="no-print" style={{ background:"#0f2744", color:"#fff", padding:"12px 20px",
+        display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:40, boxShadow:"0 2px 8px rgba(0,0,0,0.18)" }}>
         <span style={{ fontWeight:800, fontSize:16 }}>월간 입퇴원 예정표</span>
         <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
           <button onClick={() => window.print()} style={{ ...NS.navBtn, background:"#1e3a5f" }}>🖨 인쇄</button>
@@ -1049,8 +1049,8 @@ function PatientAutocomplete({ value, onChange, onSelect, patients, placeholder,
 }
 
 const NS = {
-  navBtn: { background:"transparent", color:"#fff", border:"1px solid rgba(255,255,255,0.3)",
-    borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:13, fontWeight:600 },
+  navBtn: { background:"rgba(255,255,255,0.1)", color:"#e2e8f0", border:"1px solid rgba(255,255,255,0.2)",
+    borderRadius:7, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:600 },
   monthBtn: { background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:6,
     padding:"4px 12px", cursor:"pointer", fontSize:14, fontWeight:700, color:"#374151" },
 };

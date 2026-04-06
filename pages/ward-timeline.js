@@ -679,7 +679,7 @@ export default function WardTimeline() {
       )}
 
       {/* ── 헤더 ── */}
-      <header style={{ background:"#0f2744", color:"#fff", padding:"10px 16px", display:"flex", alignItems:"center", gap:10, flexShrink:0, boxShadow:"0 2px 8px rgba(0,0,0,0.18)", flexWrap:"wrap" }}>
+      <header style={{ background:"#0f2744", color:"#fff", padding:"12px 20px", display:"flex", alignItems:"center", gap:12, flexShrink:0, boxShadow:"0 2px 8px rgba(0,0,0,0.18)", flexWrap:"wrap", position:"sticky", top:0, zIndex:40 }}>
         <span style={{ fontSize:17, fontWeight:800 }}>병동 타임라인</span>
         <span style={{ fontSize:12, color:"#94a3b8" }}>
           {syncing ? "🔄 동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")} 저장됨` : ""}
@@ -1189,6 +1189,6 @@ export default function WardTimeline() {
 }
 
 const hBtn = {
-  background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.3)",
-  color:"#fff", borderRadius:7, padding:"5px 13px", cursor:"pointer", fontSize:13, fontWeight:600,
+  background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)",
+  color:"#e2e8f0", borderRadius:7, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:600,
 };

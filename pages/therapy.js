@@ -1118,13 +1118,13 @@ function HyperPrint({patients,selected,weekDates}){
 
 const S={
   page:    {fontFamily:"'Noto Sans KR','Pretendard',sans-serif",background:"#f0f4f8",minHeight:"100vh",display:"flex",flexDirection:"column"},
-  header:  {background:"#0f2744",color:"#fff",display:"flex",alignItems:"center",gap:12,padding:"10px 16px",boxShadow:"0 2px 8px rgba(0,0,0,0.15)",flexShrink:0,flexWrap:"wrap"},
+  header:  {background:"#0f2744",color:"#fff",display:"flex",alignItems:"center",gap:12,padding:"12px 20px",boxShadow:"0 2px 8px rgba(0,0,0,0.15)",flexShrink:0,flexWrap:"wrap",position:"sticky",top:0,zIndex:40},
   btnBack: {background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"#fff",borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600},
   hcenter: {flex:1,textAlign:"center"},
   htitle:  {fontSize:16,fontWeight:800},
   hsub:    {fontSize:10,color:"#94a3b8",marginTop:1},
   hright:  {display:"flex",gap:6,flexWrap:"wrap"},
-  btnW:    {background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"#fff",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:600},
+  btnW:    {background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.2)",color:"#e2e8f0",borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600},
   legend:  {background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"7px 16px",display:"flex",gap:14,alignItems:"center",flexShrink:0,flexWrap:"wrap"},
   printBar:{background:"#faf5ff",borderBottom:"1px solid #e9d5ff",padding:"8px 16px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",flexShrink:0},
   tableWrap:{flex:1,overflowX:"auto",overflowY:"auto"},

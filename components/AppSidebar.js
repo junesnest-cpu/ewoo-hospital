@@ -74,6 +74,15 @@ export default function AppSidebar({ open, onClose, onAvailOpen }) {
 
   return (
     <aside style={S.sidebar}>
+      {/* 상단 브랜드 섹션 — 헤더와 시각적 통일 */}
+      <div style={S.brand}>
+        <img src="/favicon.png" style={{ width:28, height:28, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
+        <div>
+          <div style={S.brandName}>이우요양병원</div>
+          <div style={S.brandSub}>병동관리시스템</div>
+        </div>
+      </div>
+
       {/* 환자 이름 검색 */}
       <div style={S.searchSection}>
         <form onSubmit={handleSearch} style={S.searchForm}>
@@ -126,6 +135,17 @@ const S = {
     overflowY: "auto",
     fontFamily: "'Noto Sans KR','Pretendard',sans-serif",
   },
+  brand: {
+    background: "#0f2744",
+    padding: "11px 14px",
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    borderBottom: "1px solid rgba(255,255,255,0.07)",
+  },
+  brandName: { color: "#fff", fontWeight: 800, fontSize: 12, letterSpacing: -0.3 },
+  brandSub:  { color: "#7dd3fc", fontSize: 9, marginTop: 1, letterSpacing: 0.3 },
   searchSection: {
     padding: "12px 10px 10px",
     borderBottom: "1px solid #e2e8f0",

@@ -791,42 +791,32 @@ export default function HospitalWardManager() {
       )}
 
       {/* 헤더 */}
-      <header style={{ ...S.header, position:"sticky", top:0, zIndex:40, background: isPreview ? "#0d3320" : movingPatient ? "#1e1b4b" : "#0f2744",
-        flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center",
-        padding: isMobile ? "8px 12px" : "10px 16px", gap: isMobile ? 6 : 12 }}>
-        {/* 로고+타이틀 */}
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <img src="/favicon.png" style={{ width: isMobile?32:40, height: isMobile?32:40, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
-          <div style={{ flex:1 }}>
-            <div style={{ ...S.title, fontSize: isMobile ? 13 : 15 }}>이우 병동 현황 관리</div>
-            {!isMobile && <div style={S.subtitle}>EWOO Ward Management System</div>}
-          </div>
-        </div>
+      <header style={{ ...S.header, position:"sticky", top:0, zIndex:40,
+        background: isPreview ? "#0d3320" : movingPatient ? "#1e1b4b" : "#0f2744",
+        padding:"12px 20px" }}>
+        {/* 타이틀 */}
+        <span style={{ fontWeight:800, fontSize:15, flexShrink:0 }}>병동 현황 관리</span>
         {/* 통계 필 + 토글 버튼 */}
-        <div style={{ ...S.headerCenter, justifyContent: isMobile ? "flex-start" : "center" }}>
+        <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap", flex:1, marginLeft:12 }}>
           <StatPill label="사용 중"  value={stats.occupied}  color={isPreview ? "#34d399":"#0ea5e9"} />
           <StatPill label="재원"     value={stats.actual}    color={isPreview ? "#6ee7b7":"#7c3aed"} />
           <StatPill label="빈 병상"  value={stats.available} color={isPreview ? "#a7f3d0":"#10b981"} />
           {!isPreview && (
             <>
-              <button onClick={() => setShowReserved(v => !v)}
-                style={{ ...S.reserveToggle, background: showReserved ? "#312e81":"#1e293b", color: showReserved ? "#a5b4fc":"#94a3b8" }}>
-                📅 예약 {showReserved ? "포함":"미포함"}
+              <button onClick={() => setShowReserved(v => !v)} style={{ ...S.hBtn, background: showReserved ? "#312e81":"rgba(255,255,255,0.1)", color: showReserved ? "#a5b4fc":"#94a3b8" }}>
+                예약 {showReserved ? "포함":"미포함"}
               </button>
-              <button onClick={handleHighlightEmpty}
-                style={{ ...S.reserveToggle, background: highlightEmpty ? "#065f46":"#1e293b", color: highlightEmpty ? "#34d399":"#94a3b8", position:"relative" }}>
-                🔍 빈 병상 {highlightEmpty ? `(${emptySlotIdx + 1}/${emptySlots.length})` : `(${emptySlots.length})`}
+              <button onClick={handleHighlightEmpty} style={{ ...S.hBtn, background: highlightEmpty ? "#065f46":"rgba(255,255,255,0.1)", color: highlightEmpty ? "#34d399":"#94a3b8" }}>
+                빈 병상 {highlightEmpty ? `(${emptySlotIdx + 1}/${emptySlots.length})` : `(${emptySlots.length})`}
               </button>
-              {highlightEmpty && (
-                <button onClick={stopHighlight} style={{ ...S.reserveToggle, background:"#7f1d1d", color:"#fca5a5" }}>✕ 해제</button>
-              )}
+              {highlightEmpty && <button onClick={stopHighlight} style={{ ...S.hBtn, background:"rgba(127,29,29,0.7)", color:"#fca5a5" }}>✕ 해제</button>}
             </>
           )}
         </div>
-        {/* 우측: 동기화 상태 + 새로고침 */}
-        <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
-          <span style={S.syncInfo}>{syncing ? "🔄 동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")} 저장됨` : ""}</span>
-          <button style={S.btnRefresh} onClick={manualRefresh} title="새로고침">↻</button>
+        {/* 우측: 동기화 + 새로고침 */}
+        <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+          <span style={S.syncInfo}>{syncing ? "동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")}` : ""}</span>
+          <button style={S.hBtn} onClick={manualRefresh} title="새로고침">↻</button>
         </div>
       </header>
 
@@ -1428,15 +1418,9 @@ const S = {
   app: { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", height:"100vh", display:"flex", flexDirection:"column", overflow:"hidden", color:"#0f172a" },
   movingBanner: { position:"sticky", top:0, zIndex:200, background:"#1e1b4b", color:"#e0e7ff", padding:"10px 24px", fontSize:14, fontWeight:600, display:"flex", alignItems:"center", gap:12 },
   movingCancelBtn: { marginLeft:"auto", background:"#4c1d95", color:"#e9d5ff", border:"none", borderRadius:6, padding:"4px 12px", cursor:"pointer", fontSize:13, fontWeight:700 },
-  header: { color:"#fff", display:"flex", alignItems:"center", padding:"10px 16px", gap:12, flexWrap:"wrap", boxShadow:"0 2px 12px rgba(0,0,0,0.18)", transition:"background 0.4s" },
-  headerLeft: { display:"flex", alignItems:"center", gap:12, minWidth:180 },
-  logoMark: { fontSize:24 }, title: { fontSize:15, fontWeight:800, letterSpacing:-0.5 }, subtitle: { fontSize:10, color:"#7dd3fc", letterSpacing:0.5 },
-  headerCenter: { display:"flex", gap:8, flex:1, justifyContent:"center", alignItems:"center", flexWrap:"wrap" },
-  headerRight: { display:"flex", alignItems:"center", gap:8 },
+  header: { color:"#fff", display:"flex", alignItems:"center", padding:"12px 20px", gap:12, flexWrap:"wrap", boxShadow:"0 2px 12px rgba(0,0,0,0.18)", transition:"background 0.4s" },
   syncInfo: { fontSize:11, color:"#94a3b8" },
-  btnRefresh: { background:"none", border:"1px solid #334155", color:"#94a3b8", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontSize:16 },
-  navBtn: { border:"1px solid #334155", color:"#e2e8f0", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, fontWeight:600, background:"transparent" },
-  reserveToggle: { border:"none", borderRadius:8, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:700 },
+  hBtn: { background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:7, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:600, fontFamily:"inherit" },
   statPill: { border:"1.5px solid", borderRadius:10, padding:"4px 14px", textAlign:"center", minWidth:70, background:"rgba(255,255,255,0.06)" },
   statVal: { display:"block", fontSize:22, fontWeight:800, lineHeight:1.1 }, statLabel: { display:"block", fontSize:11, color:"#94a3b8" },
   datebar: { display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 12px", flexWrap:"wrap", gap:8, transition:"background 0.3s", position:"sticky", top:0, zIndex:30, boxShadow:"0 1px 4px rgba(0,0,0,0.06)" },
