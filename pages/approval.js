@@ -53,9 +53,13 @@ async function getNextDocNumber(type) {
 
 // ─── 스타일 ──────────────────────────────────────────────────────────────────
 const S = {
-  page:       { minHeight:"100vh", background:"#f0f4f8", fontFamily:"'Noto Sans KR',sans-serif" },
-  header:     { background:"#0f2744", color:"#fff", padding:"12px 24px", display:"flex", alignItems:"center", gap:12, boxShadow:"0 2px 8px rgba(0,0,0,0.2)" },
+  page:       { display:"flex", flexDirection:"column", minHeight:"100vh", background:"#f0f4f8", fontFamily:"'Noto Sans KR',sans-serif" },
+  header:     { background:"#0f2744", color:"#fff", padding:"12px 24px", display:"flex", alignItems:"center", gap:12, boxShadow:"0 2px 8px rgba(0,0,0,0.2)", position:"sticky", top:0, zIndex:200, flexShrink:0 },
   main:       { maxWidth:920, margin:"0 auto", padding:"24px 16px" },
+  sidebar:    { width:220, flexShrink:0, background:"#fff", borderRight:"1px solid #e2e8f0", display:"flex", flexDirection:"column", position:"sticky", top:60, height:"calc(100vh - 60px)", overflowY:"auto" },
+  content:    { flex:1, padding:"24px 20px", minWidth:0, overflowX:"auto" },
+  navGroup:   { fontSize:10, fontWeight:800, color:"#94a3b8", letterSpacing:"0.08em", padding:"16px 16px 5px", textTransform:"uppercase" },
+  navItem: a => ({ display:"flex", alignItems:"center", gap:9, padding:"9px 16px", cursor:"pointer", fontWeight:a?700:500, fontSize:13, color:a?"#0f2744":"#475569", background:a?"#e0f2fe":"transparent", borderLeft:a?"3px solid #0f2744":"3px solid transparent", transition:"all 0.12s", border:"none", width:"100%", textAlign:"left", boxSizing:"border-box" }),
   card:       { background:"#fff", borderRadius:12, boxShadow:"0 1px 6px rgba(0,0,0,0.08)", padding:"20px", marginBottom:16 },
   tabs:       { display:"flex", gap:4, marginBottom:20, background:"#fff", borderRadius:10, padding:4, boxShadow:"0 1px 4px rgba(0,0,0,0.06)" },
   tab:   a => ({ flex:1, padding:"9px 0", border:"none", borderRadius:8, cursor:"pointer", fontWeight:700, fontSize:13, background:a?"#0f2744":"transparent", color:a?"#fff":"#64748b", transition:"all 0.15s" }),
@@ -2169,17 +2173,30 @@ export default function ApprovalPage() {
     : activeTab === "tax"       ? sortedDocs(taxDisplay)
     : sortedDocs(allPendingDocs);
 
-  const tabConfig = [
-    { key:"mine",     label:`내 문서함 (${myDocs.length})` },
-    { key:"pending",  label:`결재 대기 (${pendingDocs.length})` },
-    { key:"vacation", label:`휴가신청서 (${vacationDisplay.length})` },
-    { key:"vacation_summary", label:"📊 연차 현황" },
-    { key:"supply",   label:`물품청구서 (${supplyDisplay.length})` },
-    ...(canSeeSupplySummary ? [{ key:"supply_summary", label:"📊 물품 월간 합산" }] : []),
-    ...(canAccessRefund  ? [{ key:"refund",  label:`위탁진료 환불금 (${refundDisplay.length})` }] : []),
-    ...(canAccessWeekly  ? [{ key:"weekly",  label:`영양팀 월간보고` }] : []),
-    ...(canAccessTax     ? [{ key:"tax",     label:`세금계산서` }] : []),
-    ...(isDirector       ? [{ key:"all",     label:`전체 진행중 (${allPendingDocs.length})` }] : []),
+  const navGroups = [
+    {
+      label: "내 업무",
+      items: [
+        { key:"mine",    label:"내 문서함", badge: myDocs.length,      badgeColor:"#64748b" },
+        { key:"pending", label:"결재 대기", badge: pendingDocs.length, badgeColor:"#dc2626" },
+      ],
+    },
+    {
+      label: "문서함",
+      items: [
+        { key:"vacation",         label:"휴가신청서"   },
+        { key:"vacation_summary", label:"연차 현황"    },
+        { key:"supply",           label:"물품청구서"   },
+        ...(canSeeSupplySummary ? [{ key:"supply_summary", label:"물품 합산"      }] : []),
+        ...(canAccessRefund      ? [{ key:"refund",         label:"위탁진료 환불금" }] : []),
+        ...(canAccessWeekly      ? [{ key:"weekly",         label:"영양팀 월간보고" }] : []),
+        ...(canAccessTax         ? [{ key:"tax",            label:"세금계산서"     }] : []),
+      ],
+    },
+    ...(isDirector ? [{
+      label: "관리",
+      items: [{ key:"all", label:"전체 진행중", badge: allPendingDocs.length, badgeColor:"#f59e0b" }],
+    }] : []),
   ];
 
   return (
@@ -2191,7 +2208,35 @@ export default function ApprovalPage() {
           {profile.name} · {profile.department} · {profile.role==="director"?"병원장":profile.role==="dept_head"?"부서장":"직원"}
         </div>
       </header>
-      <div style={S.main}>
+      <div style={{ display:"flex", flex:1 }}>
+        {/* ── 좌측 사이드바 ── */}
+        <aside style={S.sidebar}>
+          <div style={{ padding:"14px 12px 8px" }}>
+            <button style={{ ...S.btnPri, width:"100%", borderRadius:10, fontSize:14, padding:"11px 0", textAlign:"center" }}
+              onClick={()=>{setView("new");setNewType(null);}}>
+              ＋ 새 문서 작성
+            </button>
+          </div>
+          {navGroups.map(group => (
+            <div key={group.label}>
+              <div style={S.navGroup}>{group.label}</div>
+              {group.items.map(item => (
+                <button key={item.key} style={S.navItem(activeTab===item.key)}
+                  onClick={()=>setActiveTab(item.key)}>
+                  <span style={{ flex:1 }}>{item.label}</span>
+                  {item.badge > 0 && (
+                    <span style={{ fontSize:11, fontWeight:800, color:"#fff", background:item.badgeColor||"#94a3b8", borderRadius:10, padding:"1px 7px", minWidth:20, textAlign:"center", flexShrink:0 }}>
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ))}
+        </aside>
+
+        {/* ── 우측 컨텐츠 영역 ── */}
+        <main style={S.content}>
         {pendingDocs.length > 0 && (
           <div style={{ background:"#fef3c7", border:"1.5px solid #f59e0b", borderRadius:10, padding:"10px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
             <span style={{ fontSize:16 }}>🔔</span>
@@ -2199,17 +2244,6 @@ export default function ApprovalPage() {
             <button onClick={()=>setActiveTab("pending")} style={{ marginLeft:"auto", border:"none", background:"#f59e0b", color:"#fff", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontWeight:700, fontSize:12 }}>확인하기</button>
           </div>
         )}
-        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-          <button style={{ ...S.btnPri, padding:"10px 22px", fontSize:14, borderRadius:10 }}
-            onClick={()=>{setView("new");setNewType(null);}}>
-            + 새 문서
-          </button>
-        </div>
-        <div style={S.tabs}>
-          {tabConfig.map(t=>(
-            <button key={t.key} style={S.tab(activeTab===t.key)} onClick={()=>setActiveTab(t.key)}>{t.label}</button>
-          ))}
-        </div>
         {/* 연차 현황 탭 */}
         {activeTab === "vacation_summary" && (
           <div style={S.card}>
@@ -2571,6 +2605,7 @@ export default function ApprovalPage() {
           })}
         </div>
         )}
+        </main>
       </div>
 
       {/* 반려 모달 */}
