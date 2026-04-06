@@ -146,7 +146,6 @@ async function analyzeMessengerText(text) {
 export default function HospitalWardManager() {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [slots,          setSlots]          = useState({});
   const [consultations,  setConsultations]  = useState({});
   const [view,           setView]           = useState("ward");
@@ -158,7 +157,6 @@ export default function HospitalWardManager() {
   const [uploading,      setUploading]      = useState(false);
   const [uploadResult,   setUploadResult]   = useState(null);
   const [jsonPasteOpen,  setJsonPasteOpen]  = useState(false);
-  const [moreOpen,       setMoreOpen]       = useState(false);
   const [jsonPasteText,  setJsonPasteText]  = useState("");
   const [logs,           setLogs]           = useState([]);
   const [pendingCount,   setPendingCount]   = useState(0);
@@ -354,10 +352,19 @@ export default function HospitalWardManager() {
 
   // URL query param ?q= 로 검색 초기화 (사이드바에서 넘어올 때)
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const q = router.query.q;
     if (q && Object.keys(slots).length > 0) doSearch(q);
   }, [router.query.q, Object.keys(slots).length]);
+
+  // 사이드바에서 가용병실 조회 버튼 클릭 시 열기
+  useEffect(() => {
+    if (router.query.avail === "1") {
+      setAvailOpen(true);
+      setView("ward");
+    }
+  }, [router.query.avail]);
 
   const scrollToCard = (roomId, slotKey) => {
     setView("ward");
@@ -779,52 +786,13 @@ export default function HospitalWardManager() {
       <header style={{ ...S.header, position:"sticky", top:0, zIndex:40, background: isPreview ? "#0d3320" : movingPatient ? "#1e1b4b" : "#0f2744",
         flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center",
         padding: isMobile ? "8px 12px" : "10px 16px", gap: isMobile ? 6 : 12 }}>
-        {/* 첫 줄: 로고+타이틀 + 새로고침 + 햄버거 */}
+        {/* 로고+타이틀 */}
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <img src="/favicon.png" style={{ width: isMobile?32:40, height: isMobile?32:40, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
           <div style={{ flex:1 }}>
             <div style={{ ...S.title, fontSize: isMobile ? 13 : 15 }}>이우 병동 현황 관리</div>
             {!isMobile && <div style={S.subtitle}>EWOO Ward Management System</div>}
           </div>
-          {isMobile && (
-            <>
-              <button style={S.btnRefresh} onClick={manualRefresh} title="새로고침">↻</button>
-              <div style={{ position:"relative" }}>
-                <button style={{ ...S.navBtn, fontSize:18, padding:"4px 10px" }}
-                  onClick={() => setMobileMenuOpen(v => !v)}>☰</button>
-                {mobileMenuOpen && (
-                  <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, zIndex:999 }}
-                    onClick={() => setMobileMenuOpen(false)}>
-                    <div style={{ position:"absolute", top:54, right:8, background:"#1e293b", borderRadius:10,
-                      boxShadow:"0 8px 32px rgba(0,0,0,0.4)", minWidth:180, overflow:"hidden" }}
-                      onClick={e => e.stopPropagation()}>
-                      {[
-                        { label:"🏠 홈", action:() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); } },
-                        { label:`🔔 웹훅 승인${pendingCount > 0 ? ` (${pendingCount})` : ""}`, action:() => router.push("/history") },
-                        { label:"📊 타임라인", action:() => router.push("/ward-timeline") },
-                        { label:"📅 월간 예정표", action:() => router.push("/monthly") },
-                        { label:"🏥 치료실", action:() => router.push("/therapy") },
-                        { label:"📋 상담일지", action:() => router.push("/consultation") },
-                        { label:"📋 일일 현황판", action:() => router.push("/daily-board") },
-                        { label:"📋 일일 치료", action:() => router.push("/daily") },
-                        { label:"📜 변경 이력", action:() => setView("log") },
-                        { label:"👤 환자조회", action:() => router.push("/patients") },
-                        { label:"⚙️ 설정", action:() => router.push("/settings") },
-                      ].map(item => (
-                        <button key={item.label}
-                          style={{ display:"block", width:"100%", textAlign:"left", padding:"12px 18px",
-                            background:"none", border:"none", borderBottom:"1px solid #334155",
-                            color:"#e2e8f0", fontSize:14, fontWeight:600, cursor:"pointer" }}
-                          onClick={() => { item.action(); setMobileMenuOpen(false); }}>
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
         </div>
         {/* 통계 필 + 토글 버튼 */}
         <div style={{ ...S.headerCenter, justifyContent: isMobile ? "flex-start" : "center" }}>
@@ -847,53 +815,11 @@ export default function HospitalWardManager() {
             </>
           )}
         </div>
-        {/* 데스크탑 전용 네비 */}
-        {!isMobile && (
-          <div style={S.headerRight}>
-            <span style={S.syncInfo}>{syncing ? "🔄 동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")} 저장됨` : ""}</span>
-            <button style={S.btnRefresh} onClick={manualRefresh} title="새로고침">↻</button>
-            {/* 주요 메뉴 */}
-            <button style={{ ...S.navBtn, display:"flex", alignItems:"center", gap:5 }}
-              onClick={() => { setView("ward"); setSelectedRoom(null); clearPreview(); stopHighlight(); setMovingPatient(null); }}>
-              🏠 홈
-            </button>
-            <button style={{ ...S.navBtn, background:"#431407", color:"#fed7aa" }} onClick={() => router.push("/history")}>
-              🔔 웹훅 승인{pendingCount > 0 && <span style={{ marginLeft:4, background:"#dc2626", color:"#fff", borderRadius:9, padding:"0 5px", fontSize:11, fontWeight:800 }}>{pendingCount}</span>}
-            </button>
-            <button style={{ ...S.navBtn, background:"#312e81", color:"#c4b5fd" }} onClick={() => router.push("/ward-timeline")}>📊 타임라인</button>
-            <button style={{ ...S.navBtn, background:"#1e3a5f", color:"#a5f3fc" }} onClick={() => router.push("/monthly")}>📅 월간 예정표</button>
-            <button style={{ ...S.navBtn, background:"#064e3b", color:"#6ee7b7" }} onClick={() => router.push("/therapy")}>🏥 치료실</button>
-            <button style={{ ...S.navBtn, background:"#713f12", color:"#fef08a" }} onClick={() => router.push("/consultation")}>📋 상담일지</button>
-            {/* 더보기 드롭다운 */}
-            <div style={{ position:"relative" }}>
-              <button style={{ ...S.navBtn, background:"#334155", color:"#cbd5e1" }}
-                onClick={() => setMoreOpen(v => !v)}>
-                ⋯ 더보기
-              </button>
-              {moreOpen && (
-                <div style={{ position:"absolute", top:"calc(100% + 6px)", right:0, background:"#1e293b",
-                  borderRadius:8, boxShadow:"0 8px 24px rgba(0,0,0,0.4)", minWidth:160, overflow:"hidden", zIndex:50 }}
-                  onMouseLeave={() => setMoreOpen(false)}>
-                  {[
-                    { label:"📋 일일 현황판", action:() => router.push("/daily-board"), color:"#fde68a" },
-                    { label:"📋 일일 치료", action:() => router.push("/daily"), color:"#6ee7b7" },
-                    { label:"📜 변경 이력", action:() => { setView("log"); setMoreOpen(false); }, color:"#cbd5e1" },
-                    { label:"👤 환자조회", action:() => router.push("/patients"), color:"#93c5fd" },
-                    { label:"⚙️ 설정", action:() => router.push("/settings"), color:"#cbd5e1" },
-                  ].map(item => (
-                    <button key={item.label}
-                      style={{ display:"block", width:"100%", textAlign:"left", padding:"10px 16px",
-                        background:"none", border:"none", borderBottom:"1px solid #334155",
-                        color: item.color, fontSize:13, fontWeight:600, cursor:"pointer" }}
-                      onClick={() => { item.action(); setMoreOpen(false); }}>
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* 우측: 동기화 상태 + 새로고침 */}
+        <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
+          <span style={S.syncInfo}>{syncing ? "🔄 동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")} 저장됨` : ""}</span>
+          <button style={S.btnRefresh} onClick={manualRefresh} title="새로고침">↻</button>
+        </div>
       </header>
 
       {/* 날짜 바 */}
@@ -910,183 +836,107 @@ export default function HospitalWardManager() {
         </div>
       </div>
 
-      {/* 검색 + 가용병실 조회 바 */}
-      {!isPreview && (
-        <div style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"8px 16px",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",position:"sticky",top:0,zIndex:29}}>
-          {/* 환자 검색 */}
-          <div style={{position:"relative",flexShrink:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:0,border:"1.5px solid #e2e8f0",borderRadius:8,overflow:"hidden",background:"#f8fafc"}}>
-              <span style={{padding:"0 8px",fontSize:14,color:"#94a3b8"}}>🔍</span>
-              <input
-                ref={searchRef}
-                style={{border:"none",outline:"none",background:"transparent",padding:"7px 4px",fontSize:13,width:140,fontFamily:"inherit"}}
-                placeholder="환자 이름 검색..."
-                value={searchQuery}
-                onChange={e=>doSearch(e.target.value)}
-                onFocus={()=>setSearchFocused(true)}
-                onBlur={()=>setTimeout(()=>setSearchFocused(false),200)}
-              />
-              {searchQuery&&<button onClick={()=>{setSearchQuery("");setSearchResults([]);}} style={{border:"none",background:"none",cursor:"pointer",padding:"0 8px",color:"#94a3b8",fontSize:14}}>✕</button>}
-            </div>
-            {/* 검색 결과 드롭다운 */}
-            {searchFocused && searchResults.length > 0 && (
-              <div style={{position:"absolute",top:"100%",left:0,minWidth:240,background:"#fff",borderRadius:8,
-                boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid #e2e8f0",zIndex:100,maxHeight:280,overflowY:"auto",marginTop:4}}>
-                {searchResults.map((r,i)=>(
-                  <div key={i} onClick={()=>{ scrollToCard(r.roomId, r.slotKey); setSearchFocused(false); }}
-                    style={{padding:"8px 14px",cursor:"pointer",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",gap:8,
-                      background:"#fff",transition:"background 0.1s"}}
-                    onMouseEnter={e=>e.currentTarget.style.background="#f0f9ff"}
-                    onMouseLeave={e=>e.currentTarget.style.background="#fff"}>
-                    <span style={{fontSize:11,background:r.type==="current"?"#dbeafe":"#f5f3ff",color:r.type==="current"?"#1d4ed8":"#7c3aed",
-                      borderRadius:4,padding:"1px 6px",fontWeight:700,flexShrink:0}}>
-                      {r.type==="current"?"입원중":"예약"}
-                    </span>
-                    <span style={{fontWeight:700,fontSize:13}}>{r.name}</span>
-                    <span style={{fontSize:11,color:"#94a3b8",marginLeft:"auto"}}>{r.roomId}호{r.admitDate&&` · ${r.admitDate} 예정`}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {searchFocused && searchQuery.trim() && searchResults.length === 0 && (
-              <div style={{position:"absolute",top:"100%",left:0,width:240,background:"#fff",borderRadius:8,
-                boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid #e2e8f0",zIndex:100,padding:"12px 14px",marginTop:4,
-                fontSize:13,color:"#94a3b8",textAlign:"center"}}>검색 결과 없음</div>
-            )}
+      {/* 가용병실 조회 패널 — 사이드바에서 열림 */}
+      {!isPreview && availOpen && (
+        <div style={{background:"#f8fafc",borderBottom:"1.5px solid #e2e8f0",padding:"12px 16px",display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap"}}>
+          <div style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+            <span style={{fontSize:13,fontWeight:800,color:"#0f2744"}}>가용 병실 조회</span>
+            <button onClick={()=>{setAvailOpen(false);setAvailResults(null);}}
+              style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#94a3b8",padding:"0 4px",lineHeight:1}}>✕</button>
           </div>
-
-          {/* 구분선 */}
-          <div style={{width:1,height:28,background:"#e2e8f0",flexShrink:0}}/>
-
-          {/* 가용병실 조회 토글 버튼 */}
-          <button onClick={()=>{setAvailOpen(o=>!o);setAvailResults(null);}}
-            style={{background:availOpen?"#0f2744":"#f1f5f9",color:availOpen?"#fff":"#475569",
-              border:"1.5px solid "+(availOpen?"#0f2744":"#e2e8f0"),borderRadius:8,padding:"6px 13px",
-              cursor:"pointer",fontSize:12,fontWeight:700,flexShrink:0,display:"flex",alignItems:"center",gap:5}}>
-            🏠 가용 병실 조회{availOpen?" ▲":" ▼"}
-          </button>
-
-          {/* 가용병실 조회 패널 */}
-          {availOpen && (
-            <div style={{width:"100%",background:"#f8fafc",borderRadius:10,border:"1.5px solid #e2e8f0",
-              padding:"12px 16px",display:"flex",gap:12,alignItems:"flex-start",flexWrap:"wrap",marginTop:4}}>
-              {/* 날짜 입력 */}
-              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                  <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>입원 예정일</label>
-                  <input type="date" value={availAdmit} onChange={e=>setAvailAdmit(e.target.value)}
-                    style={{border:"1.5px solid #e2e8f0",borderRadius:7,padding:"5px 8px",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
-                </div>
-                <div style={{fontSize:16,color:"#94a3b8",marginTop:16}}>~</div>
-                <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                  <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>퇴원 예정일 (선택)</label>
-                  <input type="date" value={availDischarge} onChange={e=>setAvailDischarge(e.target.value)}
-                    style={{border:"1.5px solid #e2e8f0",borderRadius:7,padding:"5px 8px",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
-                </div>
-              </div>
-              {/* 병실 종류 */}
-              <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>병실 종류 (복수 선택)</label>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {["1인실","2인실","4인실","6인실"].map(t=>(
-                    <button key={t} onClick={()=>setAvailTypes(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t])}
-                      style={{border:`1.5px solid ${TYPE_COLOR[t]}`,borderRadius:6,padding:"4px 12px",cursor:"pointer",fontSize:12,fontWeight:700,
-                        background:availTypes.includes(t)?TYPE_COLOR[t]:TYPE_BG[t],
-                        color:availTypes.includes(t)?"#fff":TYPE_COLOR[t]}}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{display:"flex",alignItems:"flex-end",paddingBottom:1}}>
-                <button onClick={() => doAvailCheck()} disabled={!availAdmit}
-                  style={{background:availAdmit?"#0f2744":"#94a3b8",color:"#fff",border:"none",borderRadius:8,
-                    padding:"8px 18px",cursor:availAdmit?"pointer":"not-allowed",fontSize:13,fontWeight:700}}>
-                  조회
+          {/* 날짜 입력 */}
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{display:"flex",flexDirection:"column",gap:3}}>
+              <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>입원 예정일</label>
+              <input type="date" value={availAdmit} onChange={e=>setAvailAdmit(e.target.value)}
+                style={{border:"1.5px solid #e2e8f0",borderRadius:7,padding:"5px 8px",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+            </div>
+            <div style={{fontSize:16,color:"#94a3b8",marginTop:16}}>~</div>
+            <div style={{display:"flex",flexDirection:"column",gap:3}}>
+              <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>퇴원 예정일 (선택)</label>
+              <input type="date" value={availDischarge} onChange={e=>setAvailDischarge(e.target.value)}
+                style={{border:"1.5px solid #e2e8f0",borderRadius:7,padding:"5px 8px",fontSize:12,outline:"none",fontFamily:"inherit"}}/>
+            </div>
+          </div>
+          {/* 병실 종류 */}
+          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>병실 종류 (복수 선택)</label>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {["1인실","2인실","4인실","6인실"].map(t=>(
+                <button key={t} onClick={()=>setAvailTypes(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t])}
+                  style={{border:`1.5px solid ${TYPE_COLOR[t]}`,borderRadius:6,padding:"4px 12px",cursor:"pointer",fontSize:12,fontWeight:700,
+                    background:availTypes.includes(t)?TYPE_COLOR[t]:TYPE_BG[t],
+                    color:availTypes.includes(t)?"#fff":TYPE_COLOR[t]}}>
+                  {t}
                 </button>
-              </div>
-              {/* 결과 */}
-              {availResults !== null && (
-                <div style={{width:"100%",marginTop:4}}>
-                  {/* ① 직접 가용 병상 */}
-                  {availResults.length > 0 ? (
-                    <div style={{marginBottom:10}}>
-                      <div style={{fontSize:12,fontWeight:700,color:"#16a34a",marginBottom:6}}>
-                        ✅ 직접 가용 병상 {availResults.length}개
-                        {availTypes.length>0&&<span style={{fontWeight:400,color:"#64748b",marginLeft:4}}>({availTypes.join("·")})</span>}
-                      </div>
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                        {availResults.map((r,i)=>(
-                          <button key={i} onClick={()=>scrollToCard(r.roomId)}
-                            style={{background:TYPE_BG[r.roomType],border:`1.5px solid ${TYPE_COLOR[r.roomType]}`,
-                              borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700,
-                              color:TYPE_COLOR[r.roomType],display:"flex",alignItems:"center",gap:4}}>
-                            <span style={{fontSize:11,color:"#64748b"}}>{r.wardName}</span>
-                            {r.roomId}호 {r.bedNum}번
-                            <span style={{fontSize:10,background:TYPE_COLOR[r.roomType],color:"#fff",borderRadius:3,padding:"1px 5px"}}>{r.roomType}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{color:"#ef4444",fontWeight:700,fontSize:12,marginBottom:8}}>
-                      ⚠️ 직접 가용한 병상 없음
-                    </div>
-                  )}
-
-                  {/* ② 예약 조정으로 확보 가능 */}
-                  {availAdjustments.length > 0 && (
-                    <div style={{borderTop:"1.5px solid #e9d5ff",paddingTop:10}}>
-                      <div style={{fontSize:12,fontWeight:700,color:"#7c3aed",marginBottom:8}}>
-                        🔄 예약 조정으로 확보 가능 (우선순위 상위 {availAdjustments.length}건)
-                        <span style={{fontSize:11,fontWeight:400,color:"#64748b",marginLeft:6}}>
-                          — 예약자를 같은 조건의 다른 병상으로 이동 시
-                        </span>
-                      </div>
-                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                        {availAdjustments.map((adj, i) => (
-                          <div key={i} style={{background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:8,padding:"8px 12px"}}>
-                            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:5}}>
-                              <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,flexShrink:0}}>#{i+1}</span>
-                              <span style={{background:"#7c3aed",color:"#fff",borderRadius:5,padding:"2px 8px",fontSize:11,fontWeight:700,flexShrink:0}}>
-                                {adj.roomId}호 {adj.bedNum}번
-                              </span>
-                              <span style={{fontSize:10,background:TYPE_BG[adj.roomType],color:TYPE_COLOR[adj.roomType],borderRadius:4,padding:"1px 6px",fontWeight:700}}>
-                                {adj.roomType}
-                              </span>
-                              <span style={{fontSize:12,color:"#374151"}}>
-                                <strong>{adj.blocker.name}</strong>님 예약 {adj.blocker.admitDate}~{adj.blocker.discharge||"미정"}
-                              </span>
-                            </div>
-                            <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
-                              <span style={{fontSize:11,color:"#7c3aed",fontWeight:700,flexShrink:0}}>이동 →</span>
-                              {adj.alternatives.slice(0, 3).map((alt, ai) => (
-                                <button key={ai}
-                                  disabled={applyingMove}
-                                  onClick={() => applyReservationMove(adj.slotKey, adj.blocker.resIndex, alt.slotKey, adj.blocker.name)}
-                                  style={{
-                                    border:"1.5px solid #7c3aed",
-                                    borderRadius:6,padding:"3px 10px",
-                                    fontSize:11,fontWeight:700,
-                                    background:"#fff",color:"#7c3aed",
-                                    cursor:"pointer",opacity:applyingMove?0.6:1,
-                                  }}>
-                                  {alt.wardName} {alt.roomId}호 {alt.bedNum}번 ✓ 적용
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {availResults.length===0 && availAdjustments.length===0 && (
-                    <div style={{color:"#94a3b8",fontSize:12,marginTop:4}}>
-                      조정 가능한 예약도 없습니다.
-                    </div>
-                  )}
+              ))}
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"flex-end",paddingBottom:1}}>
+            <button onClick={() => doAvailCheck()} disabled={!availAdmit}
+              style={{background:availAdmit?"#0f2744":"#94a3b8",color:"#fff",border:"none",borderRadius:8,
+                padding:"8px 18px",cursor:availAdmit?"pointer":"not-allowed",fontSize:13,fontWeight:700}}>
+              조회
+            </button>
+          </div>
+          {/* 결과 */}
+          {availResults !== null && (
+            <div style={{width:"100%",marginTop:4}}>
+              {availResults.length > 0 ? (
+                <div style={{marginBottom:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#16a34a",marginBottom:6}}>
+                    ✅ 직접 가용 병상 {availResults.length}개
+                    {availTypes.length>0&&<span style={{fontWeight:400,color:"#64748b",marginLeft:4}}>({availTypes.join("·")})</span>}
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {availResults.map((r,i)=>(
+                      <button key={i} onClick={()=>scrollToCard(r.roomId)}
+                        style={{background:TYPE_BG[r.roomType],border:`1.5px solid ${TYPE_COLOR[r.roomType]}`,
+                          borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700,
+                          color:TYPE_COLOR[r.roomType],display:"flex",alignItems:"center",gap:4}}>
+                        <span style={{fontSize:11,color:"#64748b"}}>{r.wardName}</span>
+                        {r.roomId}호 {r.bedNum}번
+                        <span style={{fontSize:10,background:TYPE_COLOR[r.roomType],color:"#fff",borderRadius:3,padding:"1px 5px"}}>{r.roomType}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              ) : (
+                <div style={{color:"#ef4444",fontWeight:700,fontSize:12,marginBottom:8}}>⚠️ 직접 가용한 병상 없음</div>
+              )}
+              {availAdjustments.length > 0 && (
+                <div style={{borderTop:"1.5px solid #e9d5ff",paddingTop:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#7c3aed",marginBottom:8}}>
+                    🔄 예약 조정으로 확보 가능 (우선순위 상위 {availAdjustments.length}건)
+                    <span style={{fontSize:11,fontWeight:400,color:"#64748b",marginLeft:6}}>— 예약자를 같은 조건의 다른 병상으로 이동 시</span>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {availAdjustments.map((adj, i) => (
+                      <div key={i} style={{background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:8,padding:"8px 12px"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:5}}>
+                          <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,flexShrink:0}}>#{i+1}</span>
+                          <span style={{background:"#7c3aed",color:"#fff",borderRadius:5,padding:"2px 8px",fontSize:11,fontWeight:700,flexShrink:0}}>{adj.roomId}호 {adj.bedNum}번</span>
+                          <span style={{fontSize:10,background:TYPE_BG[adj.roomType],color:TYPE_COLOR[adj.roomType],borderRadius:4,padding:"1px 6px",fontWeight:700}}>{adj.roomType}</span>
+                          <span style={{fontSize:12,color:"#374151"}}><strong>{adj.blocker.name}</strong>님 예약 {adj.blocker.admitDate}~{adj.blocker.discharge||"미정"}</span>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                          <span style={{fontSize:11,color:"#7c3aed",fontWeight:700,flexShrink:0}}>이동 →</span>
+                          {adj.alternatives.slice(0, 3).map((alt, ai) => (
+                            <button key={ai} disabled={applyingMove}
+                              onClick={() => applyReservationMove(adj.slotKey, adj.blocker.resIndex, alt.slotKey, adj.blocker.name)}
+                              style={{border:"1.5px solid #7c3aed",borderRadius:6,padding:"3px 10px",fontSize:11,fontWeight:700,
+                                background:"#fff",color:"#7c3aed",cursor:"pointer",opacity:applyingMove?0.6:1}}>
+                              {alt.wardName} {alt.roomId}호 {alt.bedNum}번 ✓ 적용
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {availResults.length===0 && availAdjustments.length===0 && (
+                <div style={{color:"#94a3b8",fontSize:12,marginTop:4}}>조정 가능한 예약도 없습니다.</div>
               )}
             </div>
           )}

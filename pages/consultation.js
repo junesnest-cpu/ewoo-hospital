@@ -694,8 +694,7 @@ export default function ConsultationPage() {
   return (
     <div style={S.page}>
       <header style={S.header}>
-        <button style={S.btnBack} onClick={()=>router.push("/")}>← 병동</button>
-        <span style={S.htitle}>📋 입원 상담 일지</span>
+        <span style={S.htitle}>입원 상담 일지</span>
         <button style={{...S.btnBack, background:"#0f4c35", color:"#fff", marginLeft:"auto"}}
           onClick={()=>{ setForm({...EMPTY_FORM, createdAt:today()}); setEditId(null); setPtSearchOpen(true); setView("form"); }}>
           + 신규 등록

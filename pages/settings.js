@@ -38,11 +38,9 @@ export default function SettingsPage() {
   return (
     <div style={S.page}>
       <header style={S.header}>
-        <button style={S.btnBack} onClick={() => router.push("/")}>← 현황판</button>
         <div style={S.hcenter}>
-          <div style={S.htitle}>⚙️ 설정</div>
+          <div style={S.htitle}>설정</div>
         </div>
-        <div style={{ width: 90 }} />
       </header>
 
       <div style={S.body}>

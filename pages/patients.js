@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, get, set, update } from "firebase/database";
+import { ref, onValue, get, set, update, remove } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import { findPatientByPhone, findPatientByChartNo, searchPatientsByName, normalizePhone } from "../lib/patientSearch";
 import useIsMobile from "../lib/useismobile";
@@ -369,6 +369,65 @@ export default function PatientsPage() {
     return diff >= 0 ? diff + 1 : null;
   };
 
+  const calcAge = (birthDate, birthYear) => {
+    const str = String(birthDate || birthYear || "");
+    const year = parseInt(str.slice(0, 4));
+    if (!year || isNaN(year) || year < 1900) return null;
+    const now = new Date();
+    let age = now.getFullYear() - year;
+    if (birthDate && str.length >= 10) {
+      const m = parseInt(str.slice(5, 7)), d = parseInt(str.slice(8, 10));
+      if (!isNaN(m) && !isNaN(d) && (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d))) age--;
+    }
+    return age;
+  };
+
+  const mergePhoneDupGroup = async (grp) => {
+    const sorted = [...grp].sort((a, b) => {
+      if (a.chartNo && !b.chartNo) return -1;
+      if (!a.chartNo && b.chartNo) return 1;
+      return parseInt((a.internalId||"P99999").replace(/\D/g,"")) - parseInt((b.internalId||"P99999").replace(/\D/g,""));
+    });
+    const primary = sorted[0], secondary = sorted[1];
+    if (!window.confirm(`[중복 통합 확인]\n\n유지: ${primary.internalId} ${primary.name} (차트:${primary.chartNo||"없음"})\n삭제: ${secondary.internalId} ${secondary.name} (차트:${secondary.chartNo||"없음"})\n\n삭제된 ID의 상담·병실 기록은 유지 ID로 이전됩니다.`)) return;
+    setDiagFixing(true); setDiagFixMsg("");
+    try {
+      const updates = {};
+      // 1. primary 레코드에 secondary 필드 보완 (primary 우선, 누락 필드만 보완)
+      const merged = { ...secondary };
+      Object.entries(primary).forEach(([k,v]) => { if (v !== undefined && v !== null && v !== "" && k !== "dbKey") merged[k] = v; });
+      if (!primary.chartNo && secondary.chartNo) merged.chartNo = secondary.chartNo;
+      merged.internalId = primary.internalId;
+      delete merged.dbKey;
+      updates[`patients/${primary.dbKey}`] = merged;
+      // 2. 상담 patientId 이전
+      const cSnap = await get(ref(db, "consultations"));
+      Object.entries(cSnap.val() || {}).forEach(([k,c]) => {
+        if (c?.patientId === secondary.internalId) updates[`consultations/${k}/patientId`] = primary.internalId;
+      });
+      // 3. 슬롯 patientId 이전
+      const sSnap = await get(ref(db, "slots"));
+      Object.entries(sSnap.val() || {}).forEach(([sk, slot]) => {
+        if (!slot) return;
+        if (slot.current?.patientId === secondary.internalId) updates[`slots/${sk}/current/patientId`] = primary.internalId;
+        (Array.isArray(slot.reservations)?slot.reservations:Object.values(slot.reservations||{})).forEach((r,i) => {
+          if (r?.patientId === secondary.internalId) updates[`slots/${sk}/reservations/${i}/patientId`] = primary.internalId;
+        });
+      });
+      // 4. 인덱스 갱신
+      const allPhones = [primary.phone, secondary.phone].filter(Boolean);
+      allPhones.forEach(p => { const n=p.replace(/\D/g,""); if(n.length>=10) updates[`patientByPhone/${n}`]=primary.internalId; });
+      if (secondary.chartNo) updates[`patientByChartNo/${secondary.chartNo}`] = primary.internalId;
+      if (primary.chartNo)   updates[`patientByChartNo/${primary.chartNo}`]   = primary.internalId;
+      await update(ref(db), updates);
+      // 5. secondary 레코드 삭제
+      await remove(ref(db, `patients/${secondary.dbKey}`));
+      setDiagFixMsg(`✅ 통합 완료 — ${secondary.internalId}(${secondary.name}) → ${primary.internalId}`);
+      await runDiagnosis();
+    } catch(e) { setDiagFixMsg(`❌ 통합 오류: ${e.message}`); }
+    setDiagFixing(false);
+  };
+
   const phoneDisplay = (p) => {
     if (!p) return "";
     const n = normalizePhone(p);
@@ -383,11 +442,7 @@ export default function PatientsPage() {
     <div style={S.app}>
       {/* 헤더 */}
       <header style={S.header}>
-        <button onClick={() => router.push("/")}
-          style={{ background:"rgba(255,255,255,0.15)", border:"1px solid rgba(255,255,255,0.3)", color:"#fff", borderRadius:7, padding:"5px 12px", cursor:"pointer", fontSize:13, fontWeight:600 }}>
-          ← 병실 현황
-        </button>
-        <span style={{ fontSize:18, fontWeight:900 }}>👤 환자 조회</span>
+        <span style={{ fontSize:16, fontWeight:800 }}>환자 조회</span>
       </header>
 
       <div style={S.body}>
@@ -468,7 +523,7 @@ export default function PatientsPage() {
                 </button>
               </div>
               <InfoGrid items={[
-                { label:"생년월일",     value:selected.birthDate || selected.birthYear },
+                { label:"생년월일",     value: (() => { const bd = selected.birthDate || selected.birthYear; if (!bd) return null; const age = calcAge(selected.birthDate, selected.birthYear); return age ? `${bd} (${age}세)` : bd; })() },
                 { label:"성별",         value:selected.gender==="M"?"남성":selected.gender==="F"?"여성":"" },
                 { label:"전화번호",     value:phoneDisplay(selected.phone) },
                 { label:"주소증",       value:selected.chiefComplaint },
@@ -746,8 +801,12 @@ export default function PatientsPage() {
 
                   <DiagSection title="⑦ 중복 전화번호" count={d.dupPhones.length} color="#7c3aed" bg="#ede9fe">
                     {d.dupPhones.map((grp, i) => (
-                      <div key={i} style={{ marginLeft:8, marginBottom:4, fontSize:12 }}>
-                        <strong>{grp[0].phone}</strong>: {grp.map(p => `${p.name}(${p.internalId})`).join(" / ")}
+                      <div key={i} style={{ display:"flex", alignItems:"center", gap:8, marginLeft:8, marginBottom:6, fontSize:12, flexWrap:"wrap" }}>
+                        <span><strong>{grp[0].phone}</strong>: {grp.map(p => `${p.name}(${p.internalId}${p.chartNo?` 차트:${p.chartNo}`:""})`).join(" / ")}</span>
+                        <button onClick={() => mergePhoneDupGroup(grp)} disabled={diagFixing}
+                          style={{ background:"#7c3aed", color:"#fff", border:"none", borderRadius:5, padding:"2px 10px", fontSize:11, fontWeight:700, cursor:"pointer", flexShrink:0 }}>
+                          통합
+                        </button>
                       </div>
                     ))}
                   </DiagSection>

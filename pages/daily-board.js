@@ -242,13 +242,10 @@ export default function DailyBoard() {
       <style>{printStyle}</style>
 
       {/* 헤더 */}
-      <header className="no-print" style={{ background:"#0f2744", color:"#fff", padding:"8px 16px",
+      <header className="no-print" style={{ background:"#0f2744", color:"#fff", padding:"10px 16px",
         display:"flex", alignItems:"center", gap:10, position:"sticky", top:0, zIndex:30, flexWrap:"wrap" }}>
-        <button onClick={() => router.push("/")} style={S.navBtn}>🏠 홈</button>
-        <span style={{ fontWeight:800, fontSize:17 }}>📋 일일 현황판</span>
+        <span style={{ fontWeight:800, fontSize:16 }}>일일 현황판</span>
         <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
-          <button onClick={() => router.push("/monthly")} style={S.navBtn}>📅 월간</button>
-          <button onClick={() => router.push("/consultation")} style={S.navBtn}>📋 상담일지</button>
           <button onClick={() => window.print()} style={{ ...S.navBtn, background:"#1e3a5f" }}>🖨 인쇄</button>
         </div>
       </header>

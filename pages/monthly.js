@@ -501,13 +501,10 @@ export default function MonthlySchedule() {
       <style>{printStyle}</style>
 
       {/* 헤더 */}
-      <header className="no-print" style={{ background:"#0f2744", color:"#fff", padding:"10px 20px",
+      <header className="no-print" style={{ background:"#0f2744", color:"#fff", padding:"10px 16px",
         display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:30 }}>
-        <button onClick={() => router.push("/")} style={NS.navBtn}>🏠 홈</button>
-        <span style={{ fontWeight:800, fontSize:16 }}>📅 월간 입퇴원 예정표</span>
+        <span style={{ fontWeight:800, fontSize:16 }}>월간 입퇴원 예정표</span>
         <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
-          <button onClick={() => router.push("/consultation")} style={NS.navBtn}>📋 상담일지</button>
-          <button onClick={() => router.push("/patients")} style={NS.navBtn}>👤 환자조회</button>
           <button onClick={() => window.print()} style={{ ...NS.navBtn, background:"#1e3a5f" }}>🖨 인쇄</button>
         </div>
       </header>

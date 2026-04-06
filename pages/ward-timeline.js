@@ -680,8 +680,7 @@ export default function WardTimeline() {
 
       {/* ── 헤더 ── */}
       <header style={{ background:"#0f2744", color:"#fff", padding:"10px 16px", display:"flex", alignItems:"center", gap:10, flexShrink:0, boxShadow:"0 2px 8px rgba(0,0,0,0.18)", flexWrap:"wrap" }}>
-        <button onClick={() => router.push("/")} style={hBtn}>← 병실현황</button>
-        <span style={{ fontSize:17, fontWeight:800 }}>📊 병동 타임라인</span>
+        <span style={{ fontSize:17, fontWeight:800 }}>병동 타임라인</span>
         <span style={{ fontSize:12, color:"#94a3b8" }}>
           {syncing ? "🔄 동기화 중..." : lastSync ? `✓ ${lastSync.toLocaleTimeString("ko")} 저장됨` : ""}
         </span>

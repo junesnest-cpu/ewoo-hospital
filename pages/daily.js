@@ -184,9 +184,8 @@ export default function DailyPage() {
     <div style={DS.page}>
       {/* 헤더 */}
       <header style={DS.header}>
-        <button style={DS.btnBack} onClick={() => router.push("/")}>← 현황판</button>
         <div style={DS.headerCenter}>
-          <div style={DS.headerTitle}>📋 일일 치료 일정</div>
+          <div style={DS.headerTitle}>일일 치료 일정</div>
           <div style={DS.headerSub}>{toKoreanDate(selectedDate)}</div>
         </div>
         <div style={DS.dateNav}>

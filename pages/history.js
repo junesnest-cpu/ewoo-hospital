@@ -702,8 +702,7 @@ export default function HistoryPage() {
   return (
     <div style={H.page}>
       <header style={H.header}>
-        <button onClick={() => router.push("/")} style={H.btnBack}>← 현황판</button>
-        <span style={H.title}>📋 웹훅 변경 이력</span>
+        <span style={H.title}>웹훅 변경 이력</span>
         {pendingList.length > 0 && (
           <span style={H.badge}>{pendingList.length}건 대기</span>
         )}

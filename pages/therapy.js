@@ -413,9 +413,8 @@ export default function TherapyPage() {
   return (
     <div style={S.page}>
       <header style={S.header}>
-        <button style={S.btnBack} onClick={()=>router.push("/")}>← 현황판</button>
         <div style={S.hcenter}>
-          <div style={S.htitle}>🏥 치료실 통합 일정표</div>
+          <div style={S.htitle}>치료실 통합 일정표</div>
           <div style={S.hsub}>{fmtDate(weekDates[0])} ~ {fmtDate(weekDates[6])}</div>
         </div>
         <div style={S.hright}>

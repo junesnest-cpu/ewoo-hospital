@@ -254,9 +254,8 @@ export default function PhysicalPage() {
     <div style={S.page}>
       {/* 헤더 */}
       <header style={S.header}>
-        <button style={S.btnBack} onClick={() => router.push("/")}>← 현황판</button>
         <div style={S.hcenter}>
-          <div style={S.htitle}>🏃 물리치료실 주간 계획표</div>
+          <div style={S.htitle}>물리치료실 주간 계획표</div>
           <div style={S.hsub}>
             {fmtDate(weekDates[0])} ~ {fmtDate(weekDates[6])}
             &nbsp;|&nbsp; {therapists[0]} · {therapists[1]}

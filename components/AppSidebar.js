@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/router";
 
 const NAV_GROUPS = [
@@ -41,7 +41,7 @@ export default function AppSidebar({ open, onClose }) {
   const [searchQ, setSearchQ] = useState("");
   const inputRef = useRef();
 
-  const isMobileDrawer = open !== undefined; // 모바일 drawer 모드
+  const isMobileDrawer = open !== undefined;
 
   const navigate = (href) => {
     router.push(href);
@@ -52,10 +52,14 @@ export default function AppSidebar({ open, onClose }) {
     e.preventDefault();
     const q = searchQ.trim();
     if (!q) return;
-    // 현재 페이지가 검색 가능한 페이지면 거기에, 아니면 홈(/)으로
     const searchable = ["/", "/consultation", "/patients"];
     const target = searchable.includes(router.pathname) ? router.pathname : "/";
     router.push({ pathname: target, query: { q } });
+    if (isMobileDrawer) onClose();
+  };
+
+  const handleAvail = () => {
+    router.push({ pathname: "/", query: { avail: "1" } });
     if (isMobileDrawer) onClose();
   };
 
@@ -78,6 +82,10 @@ export default function AppSidebar({ open, onClose }) {
           />
           <button type="submit" style={S.searchBtn}>검색</button>
         </form>
+        {/* 가용병실 조회 버튼 */}
+        <button style={S.availBtn} onClick={handleAvail}>
+          가용 병실 조회
+        </button>
       </div>
 
       {/* 네비게이션 그룹 */}
@@ -115,8 +123,11 @@ const S = {
     fontFamily: "'Noto Sans KR','Pretendard',sans-serif",
   },
   searchSection: {
-    padding: "12px 10px 8px",
-    borderBottom: "1px solid #f1f5f9",
+    padding: "12px 10px 10px",
+    borderBottom: "1px solid #e2e8f0",
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
   },
   searchForm: {
     display: "flex",
@@ -143,9 +154,22 @@ const S = {
     cursor: "pointer",
     flexShrink: 0,
   },
+  availBtn: {
+    background: "#f1f5f9",
+    color: "#334155",
+    border: "1.5px solid #e2e8f0",
+    borderRadius: 7,
+    padding: "7px 10px",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    textAlign: "center",
+    width: "100%",
+    fontFamily: "inherit",
+  },
   navGroup: {
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingTop: 14,
+    paddingBottom: 10,
     borderBottom: "1px solid #f1f5f9",
   },
   groupLabel: {
@@ -154,7 +178,7 @@ const S = {
     color: "#94a3b8",
     letterSpacing: 0.5,
     textTransform: "uppercase",
-    padding: "2px 14px 6px",
+    padding: "0 14px 8px",
   },
   navItem: {
     display: "block",
@@ -162,7 +186,7 @@ const S = {
     textAlign: "left",
     background: "none",
     border: "none",
-    padding: "7px 14px",
+    padding: "7px 14px 7px 22px",
     fontSize: 13,
     color: "#334155",
     cursor: "pointer",
