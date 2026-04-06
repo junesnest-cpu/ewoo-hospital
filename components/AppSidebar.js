@@ -24,8 +24,6 @@ const NAV_GROUPS = [
     label: "치료실",
     items: [
       { label: "치료실 현황", href: "/therapy" },
-      { label: "물리치료", href: "/physical" },
-      { label: "고주파·산소", href: "/hyperthermia" },
     ],
   },
   {
