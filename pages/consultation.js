@@ -135,6 +135,12 @@ export default function ConsultationPage() {
     return unsub;
   }, [filterMonth, search]);
 
+  // URL query param ?q= 로 검색 초기화 (사이드바에서 넘어올 때)
+  useEffect(() => {
+    const q = router.query.q;
+    if (q) { setSearch(q); setFilterMonth(""); }
+  }, [router.query.q]);
+
   useEffect(() => {
     const unsub2 = onValue(ref(db,"slots"), snap => {
       setSlots(snap.val() || {});

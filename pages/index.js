@@ -180,6 +180,7 @@ export default function HospitalWardManager() {
   const searchRef = useRef();
   const highlightTimer = useRef(null);
 
+
   // ── 가용 병실 조회 ────────────────────────────────────────────────────────
   const [availOpen,        setAvailOpen]        = useState(false);
   const [availAdmit,       setAvailAdmit]       = useState("");
@@ -350,6 +351,13 @@ export default function HospitalWardManager() {
     });
     setSearchResults(results);
   };
+
+  // URL query param ?q= 로 검색 초기화 (사이드바에서 넘어올 때)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const q = router.query.q;
+    if (q && Object.keys(slots).length > 0) doSearch(q);
+  }, [router.query.q, Object.keys(slots).length]);
 
   const scrollToCard = (roomId, slotKey) => {
     setView("ward");

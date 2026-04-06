@@ -5,6 +5,8 @@ import { useRouter } from "next/router";
 import { auth, db } from "../lib/firebaseConfig";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "firebase/auth";
 import { ref, onValue, set } from "firebase/database";
+import AppSidebar from "../components/AppSidebar";
+import useIsMobile from "../lib/useismobile";
 
 function LoginScreen() {
   const [name,     setName]     = useState("");
@@ -152,8 +154,11 @@ export default function App({ Component, pageProps }) {
   const [user,    setUser]    = useState(undefined);
   const [loading, setLoading] = useState(true);
   const [showChangePw, setShowChangePw] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const router = useRouter();
-  const pageTitle = router.pathname === "/approval" ? "이우 전자결재시스템" : "이우 병동관리시스템";
+  const isMobile = useIsMobile();
+  const isApproval = router.pathname === "/approval";
+  const pageTitle = isApproval ? "이우 전자결재시스템" : "이우 병동관리시스템";
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setLoading(false); });
@@ -217,7 +222,39 @@ export default function App({ Component, pageProps }) {
         </div>
       </div>
       {showChangePw && <ChangePasswordModal user={user} onClose={()=>setShowChangePw(false)} />}
-      <Component {...pageProps}/>
+      {isApproval ? (
+        <Component {...pageProps}/>
+      ) : (
+        <div style={{ display:"flex", minHeight:"calc(100vh - 28px)" }}>
+          {/* 모바일: 햄버거 버튼 */}
+          {isMobile && (
+            <>
+              <button
+                onClick={() => setSidebarOpen(true)}
+                style={{ position:"fixed", bottom:16, left:16, zIndex:300, background:"#0f2744", color:"#fff",
+                  border:"none", borderRadius:"50%", width:44, height:44, fontSize:20, cursor:"pointer",
+                  boxShadow:"0 4px 16px rgba(0,0,0,0.3)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                ☰
+              </button>
+              {sidebarOpen && (
+                <div style={{ position:"fixed", inset:0, zIndex:299, background:"rgba(0,0,0,0.4)" }}
+                  onClick={() => setSidebarOpen(false)}>
+                  <div style={{ position:"absolute", top:0, left:0, bottom:0, width:200, background:"#fff",
+                    boxShadow:"4px 0 20px rgba(0,0,0,0.2)" }}
+                    onClick={e => e.stopPropagation()}>
+                    <AppSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)}/>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {/* 데스크탑: 고정 사이드바 */}
+          {!isMobile && <AppSidebar/>}
+          <div style={{ flex:1, minWidth:0 }}>
+            <Component {...pageProps}/>
+          </div>
+        </div>
+      )}
     </>
   );
 }
