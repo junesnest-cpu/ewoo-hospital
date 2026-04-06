@@ -1462,10 +1462,11 @@ export default function ApprovalPage() {
   const [actionLoading, setActionLoading] = useState(false);
 
   // 새 문서 작성 / 임시저장 편집
-  const [formData,   setFormData]   = useState({});
-  const [files,      setFiles]      = useState([]);
-  const [tempDocId]                 = useState(uid7());
-  const [saving,     setSaving]     = useState(false);
+  const [formData,     setFormData]     = useState({});
+  const [files,        setFiles]        = useState([]);
+  const [tempDocId]                     = useState(uid7());
+  const [saving,       setSaving]       = useState(false);
+  const [newMenuOpen,  setNewMenuOpen]  = useState(false);
   const [editDocId,  setEditDocId]  = useState(null); // 임시저장 편집 중인 docId
 
   // Auth 감지
@@ -1974,117 +1975,21 @@ export default function ApprovalPage() {
     );
   }
 
-  // ── 임시저장 편집 뷰 ─────────────────────────────────────────────────────────
-  if (view === "edit" && editDocId) {
-    const editDoc = docs[editDocId];
-    // 수정 재제출로 방금 생성된 문서는 Firebase 동기화 전까지 잠시 로딩 상태
-    if (!editDoc) return <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", fontSize:16 }}>로딩 중...</div>;
-    const typeInfo = DOC_TYPES[editDoc.type] || DOC_TYPES.vacation;
-    const isRevision = !!editDoc.originalDocId;
-    const cancelEdit = () => {
-      if (isRevision) {
-        // 수정본은 취소 시 새로 생성된 draft 삭제
-        if (window.confirm("수정 재제출을 취소하면 작성 중인 내용이 삭제됩니다. 취소하시겠습니까?")) {
-          remove(ref(db, `approvals/${editDocId}`));
-          setView("list"); setEditDocId(null); setFormData({}); setFiles([]);
-        }
-      } else {
-        setView("detail"); setEditDocId(null);
+  // ── 편집/새문서 공통 변수 ────────────────────────────────────────────────────
+  const editingDoc   = view === "edit" && editDocId ? docs[editDocId] : null;
+  const editTypeInfo = editingDoc ? (DOC_TYPES[editingDoc.type] || DOC_TYPES.vacation) : null;
+  const isRevision   = editingDoc ? !!editingDoc.originalDocId : false;
+  const cancelEdit   = () => {
+    if (isRevision) {
+      if (window.confirm("수정 재제출을 취소하면 작성 중인 내용이 삭제됩니다. 취소하시겠습니까?")) {
+        remove(ref(db, `approvals/${editDocId}`));
+        setView("list"); setEditDocId(null); setFormData({}); setFiles([]);
       }
-    };
-    return (
-      <div style={S.page}>
-        <header style={S.header}>
-          <button onClick={cancelEdit}
-            style={{ border:"none", background:"rgba(255,255,255,0.15)", color:"#fff", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:13 }}>
-            ← 취소
-          </button>
-          <img src="/favicon.png" style={{ width:30, height:30, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
-          <div style={{ flex:1, fontWeight:800, fontSize:16 }}>{typeInfo.label} {isRevision ? "수정 재제출" : "수정"}</div>
-          <div style={{ fontSize:12, color:"#94a3b8" }}>
-            {editDoc.docNumber || "임시저장"} · {editDoc.authorName}
-          </div>
-        </header>
-        <div style={S.main}>
-          {isRevision ? (
-            <div style={{ background:"#fff7ed", border:"1.5px solid #fb923c", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#9a3412" }}>
-              🔄 승인된 문서의 수정본입니다. 수정 후 제출하면 기존 결재 라인을 다시 거치며, 최종 승인 시 원본 문서는 삭제됩니다.
-            </div>
-          ) : (
-            <div style={{ background:"#fef9c3", border:"1.5px solid #fde047", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#713f12" }}>
-              ✏️ 임시저장 문서를 수정 중입니다. 저장 후에도 임시저장 상태가 유지됩니다.
-            </div>
-          )}
-          <div style={S.card}>
-            <div style={{ ...S.sectionTit, color: typeInfo.color }}>{typeInfo.label}</div>
-            {renderDocForm(editDoc.type, formData, setFormData, editDocId, files, setFiles, false)}
-          </div>
-          <div style={{ display:"flex", gap:10, justifyContent:"space-between", flexWrap:"wrap" }}>
-            <button style={{ ...S.btnRed, background:"#fff1f2", fontSize:13 }}
-              onClick={()=>handleDeleteDraft(editDocId)} disabled={saving}>
-              🗑 삭제
-            </button>
-            <div style={{ display:"flex", gap:10 }}>
-              <button style={S.btnSec} onClick={handleUpdateDraft} disabled={saving}>
-                {saving ? "저장 중..." : "💾 임시저장"}
-              </button>
-              <button style={S.btnPri} onClick={handleUpdateAndSubmit} disabled={saving}>
-                {saving ? "처리 중..." : "→ 제출하기"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── 새 문서 작성 뷰 ──────────────────────────────────────────────────────────
-  if (view === "new") {
-    if (!newType) return (
-      <div style={S.page}>
-        <header style={S.header}>
-          <button onClick={()=>setView("list")} style={{ border:"none", background:"rgba(255,255,255,0.15)", color:"#fff", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700 }}>← 취소</button>
-          <img src="/favicon.png" style={{ width:30, height:30, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
-          <div style={{ flex:1, fontWeight:800, fontSize:16 }}>새 문서 작성</div>
-        </header>
-        <div style={S.main}>
-          <div style={S.card}>
-            <div style={{ fontSize:15, fontWeight:800, color:"#1e3a5f", marginBottom:20 }}>문서 종류를 선택하세요</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-              {Object.entries(DOC_TYPES).map(([key,t]) => (
-                <button key={key} onClick={()=>{setNewType(key);setFormData({});setFiles([]);}}
-                  style={{ padding:"20px", border:`2px solid ${t.color}`, borderRadius:12, background:t.bg, cursor:"pointer", textAlign:"left" }}>
-                  <div style={{ fontSize:15, fontWeight:800, color:t.color, marginBottom:4 }}>{t.label}</div>
-                  <div style={{ fontSize:12, color:"#64748b" }}>{key==="vacation"?"연차·병가·생리휴가 등":key==="supply"?"각 부서 물품 요청":key==="refund"?"위탁진료 환자 환불 처리":key==="weekly"?"영양팀 월간 식비 보고":"월별 지출 세금계산서 내역"}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-    const typeInfo = DOC_TYPES[newType];
-    return (
-      <div style={S.page}>
-        <header style={S.header}>
-          <button onClick={()=>setNewType(null)} style={{ border:"none", background:"rgba(255,255,255,0.15)", color:"#fff", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700 }}>← 뒤로</button>
-          <img src="/favicon.png" style={{ width:30, height:30, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
-          <div style={{ flex:1, fontWeight:800, fontSize:16 }}>{typeInfo.label} 작성</div>
-          <div style={{ fontSize:13, color:"#94a3b8" }}>{profile.name} · {profile.department}</div>
-        </header>
-        <div style={S.main}>
-          <div style={S.card}>
-            <div style={{ ...S.sectionTit, color: typeInfo.color }}>{typeInfo.label}</div>
-            {renderDocForm(newType, formData, setFormData, tempDocId, files, setFiles, false)}
-          </div>
-          <div style={{ display:"flex", gap:12, justifyContent:"flex-end" }}>
-            <button style={S.btnSec} onClick={()=>handleSubmit(true)} disabled={saving}>임시저장</button>
-            <button style={S.btnPri} onClick={()=>handleSubmit(false)} disabled={saving}>{saving?"처리 중...":"→ 제출하기"}</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+    } else {
+      setView("detail"); setEditDocId(null);
+    }
+  };
+  const newTypeInfo = newType ? DOC_TYPES[newType] : null;
 
   // ── 목록 뷰 ──────────────────────────────────────────────────────────────────
   const sortedDocs = (list) => [...list].sort(([,a],[,b])=>(b.createdAt||0)-(a.createdAt||0));
@@ -2211,11 +2116,24 @@ export default function ApprovalPage() {
       <div style={{ display:"flex", flex:1 }}>
         {/* ── 좌측 사이드바 ── */}
         <aside style={S.sidebar}>
-          <div style={{ padding:"14px 12px 8px" }}>
-            <button style={{ ...S.btnPri, width:"100%", borderRadius:10, fontSize:14, padding:"11px 0", textAlign:"center" }}
-              onClick={()=>{setView("new");setNewType(null);}}>
+          <div style={{ padding:"14px 12px 6px" }}>
+            <button
+              style={{ ...S.btnPri, width:"100%", borderRadius:10, fontSize:14, padding:"11px 0", textAlign:"center", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}
+              onClick={()=>setNewMenuOpen(o=>!o)}>
               ＋ 새 문서 작성
+              <span style={{ fontSize:10, opacity:0.8 }}>{newMenuOpen ? "▲" : "▼"}</span>
             </button>
+            {newMenuOpen && (
+              <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:2 }}>
+                {Object.entries(DOC_TYPES).map(([key,t]) => (
+                  <button key={key}
+                    style={{ padding:"8px 12px", border:`1.5px solid ${t.color}33`, borderRadius:8, background:t.bg, color:t.color, cursor:"pointer", fontWeight:700, fontSize:12, textAlign:"left" }}
+                    onClick={()=>{ setNewType(key); setFormData({}); setFiles([]); setView("new"); setNewMenuOpen(false); }}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {navGroups.map(group => (
             <div key={group.label}>
@@ -2237,13 +2155,75 @@ export default function ApprovalPage() {
 
         {/* ── 우측 컨텐츠 영역 ── */}
         <main style={S.content}>
-        {pendingDocs.length > 0 && (
+        {view === "list" && pendingDocs.length > 0 && (
           <div style={{ background:"#fef3c7", border:"1.5px solid #f59e0b", borderRadius:10, padding:"10px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
             <span style={{ fontSize:16 }}>🔔</span>
             <span style={{ fontWeight:700, color:"#92400e", fontSize:13 }}>결재 대기 문서 {pendingDocs.length}건이 있습니다.</span>
             <button onClick={()=>setActiveTab("pending")} style={{ marginLeft:"auto", border:"none", background:"#f59e0b", color:"#fff", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontWeight:700, fontSize:12 }}>확인하기</button>
           </div>
         )}
+
+        {/* ── 새 문서 작성 폼 ── */}
+        {view === "new" && newTypeInfo && (
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+              <span style={S.badge(newTypeInfo.color, newTypeInfo.bg)}>{newTypeInfo.label}</span>
+              <span style={{ fontWeight:800, fontSize:16, color:"#1e3a5f" }}>새 문서 작성</span>
+              <button style={{ ...S.btnSec, marginLeft:"auto", fontSize:13 }}
+                onClick={()=>{ setView("list"); setNewType(null); setFormData({}); setFiles([]); }}>
+                ✕ 취소
+              </button>
+            </div>
+            <div style={S.card}>
+              <div style={{ ...S.sectionTit, color: newTypeInfo.color }}>{newTypeInfo.label}</div>
+              {renderDocForm(newType, formData, setFormData, tempDocId, files, setFiles, false)}
+            </div>
+            <div style={{ display:"flex", gap:12, justifyContent:"flex-end", marginBottom:24 }}>
+              <button style={S.btnSec} onClick={()=>handleSubmit(true)} disabled={saving}>임시저장</button>
+              <button style={S.btnPri} onClick={()=>handleSubmit(false)} disabled={saving}>{saving?"처리 중...":"→ 제출하기"}</button>
+            </div>
+          </div>
+        )}
+
+        {/* ── 임시저장 편집 폼 ── */}
+        {view === "edit" && editDocId && (
+          editingDoc ? (
+            <div>
+              {isRevision ? (
+                <div style={{ background:"#fff7ed", border:"1.5px solid #fb923c", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#9a3412" }}>
+                  🔄 승인된 문서의 수정본입니다. 수정 후 제출하면 기존 결재 라인을 다시 거치며, 최종 승인 시 원본 문서는 삭제됩니다.
+                </div>
+              ) : (
+                <div style={{ background:"#fef9c3", border:"1.5px solid #fde047", borderRadius:10, padding:"10px 16px", marginBottom:12, fontSize:13, color:"#713f12" }}>
+                  ✏️ 임시저장 문서를 수정 중입니다. 저장 후에도 임시저장 상태가 유지됩니다.
+                </div>
+              )}
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+                <span style={S.badge(editTypeInfo.color, editTypeInfo.bg)}>{editTypeInfo.label}</span>
+                <span style={{ fontWeight:800, fontSize:16, color:"#1e3a5f" }}>{isRevision ? "수정 재제출" : "수정"}</span>
+                <span style={{ fontSize:12, color:"#94a3b8", marginLeft:"auto" }}>{editingDoc.docNumber || "임시저장"} · {editingDoc.authorName}</span>
+                <button style={{ ...S.btnSec, fontSize:13 }} onClick={cancelEdit}>← 취소</button>
+              </div>
+              <div style={S.card}>
+                <div style={{ ...S.sectionTit, color: editTypeInfo.color }}>{editTypeInfo.label}</div>
+                {renderDocForm(editingDoc.type, formData, setFormData, editDocId, files, setFiles, false)}
+              </div>
+              <div style={{ display:"flex", gap:10, justifyContent:"space-between", flexWrap:"wrap", marginBottom:24 }}>
+                <button style={{ ...S.btnRed, background:"#fff1f2", fontSize:13 }}
+                  onClick={()=>handleDeleteDraft(editDocId)} disabled={saving}>
+                  🗑 삭제
+                </button>
+                <div style={{ display:"flex", gap:10 }}>
+                  <button style={S.btnSec} onClick={handleUpdateDraft} disabled={saving}>{saving?"저장 중...":"💾 임시저장"}</button>
+                  <button style={S.btnPri} onClick={handleUpdateAndSubmit} disabled={saving}>{saving?"처리 중...":"→ 제출하기"}</button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"center", padding:"60px 0", fontSize:15, color:"#94a3b8" }}>로딩 중...</div>
+          )
+        )}
+        {view === "list" && (<>
         {/* 연차 현황 탭 */}
         {activeTab === "vacation_summary" && (
           <div style={S.card}>
@@ -2605,6 +2585,7 @@ export default function ApprovalPage() {
           })}
         </div>
         )}
+        </>)}
         </main>
       </div>
 
