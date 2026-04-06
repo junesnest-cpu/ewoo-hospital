@@ -26,4 +26,24 @@ button, input, select, textarea {
   input, select, textarea {
     font-size: 16px !important; /* iOS 자동 줌 방지 */
   }
+
+  /* 넓은 테이블을 감싸는 오버플로우 컨테이너 */
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 모달 내부 여백 축소 */
+  [style*="maxWidth: 600"], [style*="maxWidth:600"],
+  [style*="maxWidth: 640"], [style*="maxWidth:640"] {
+    padding: 16px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  /* 상단 유저 바 텍스트 숨김 */
+  .user-bar-name { display: none; }
+
+  /* 모달 패딩 축소 */
+  body { overflow-x: hidden; }
 }

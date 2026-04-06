@@ -203,15 +203,15 @@ export default function App({ Component, pageProps }) {
         <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet"/>
       </Head>
       {/* 로그인 사용자 표시 바 */}
-      <div style={{ background:"#0f2744", color:"#94a3b8", fontSize:11, padding:"4px 16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <span>👤 <b style={{color:"#e2e8f0"}}>{userName}</b>님 로그인 중</span>
-        <div style={{ display:"flex", gap:6 }}>
+      <div style={{ background:"#0f2744", color:"#94a3b8", fontSize:11, padding:"4px 12px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:4 }}>
+        <span className="user-bar-name">👤 <b style={{color:"#e2e8f0"}}>{userName}</b>님 로그인 중</span>
+        <div style={{ display:"flex", gap:6, marginLeft:"auto" }}>
           <button onClick={()=>setShowChangePw(true)}
-            style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:5, padding:"2px 10px", cursor:"pointer", fontSize:11, fontWeight:600 }}>
-            🔑 비밀번호 변경
+            style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:5, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:600 }}>
+            🔑 <span className="user-bar-name">비밀번호 변경</span>
           </button>
           <button onClick={()=>signOut(auth)}
-            style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:5, padding:"2px 10px", cursor:"pointer", fontSize:11, fontWeight:600 }}>
+            style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:5, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:600 }}>
             로그아웃
           </button>
         </div>

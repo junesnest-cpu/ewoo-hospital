@@ -276,6 +276,14 @@ export default function WardTimeline() {
   const [singleRoomMemoText, setSingleRoomMemoText] = useState("");
   const [localSingleMemo,    setLocalSingleMemo]    = useState("");
   const [singleMemoOpen,     setSingleMemoOpen]     = useState(true);
+
+  // 모바일에서 초기 로드 시 메모 패널 접기
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setMemoOpen(false);
+      setSingleMemoOpen(false);
+    }
+  }, []);
   const [tlSearchQuery,    setTlSearchQuery]    = useState("");
   const [tlSearchResults,  setTlSearchResults]  = useState([]);
   const [tlSearchFocused,  setTlSearchFocused]  = useState(false);

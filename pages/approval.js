@@ -3,6 +3,7 @@ import { ref, onValue, set, get, push, runTransaction, update, remove } from "fi
 import { ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { db, auth, storage } from "../lib/firebaseConfig";
 import { parseRefundExcel, parseWeeklyExcel, parseTaxExcel } from "../lib/excelParsers";
+import useIsMobile from "../lib/useismobile";
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
 const DOC_TYPES = {
@@ -1467,6 +1468,10 @@ export default function ApprovalPage() {
   const [tempDocId]                     = useState(uid7());
   const [saving,       setSaving]       = useState(false);
   const [newMenuOpen,  setNewMenuOpen]  = useState(false);
+
+  // 모바일 반응형
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen]   = useState(false);
   const [editDocId,  setEditDocId]  = useState(null); // 임시저장 편집 중인 docId
 
   // Auth 감지
@@ -1870,10 +1875,12 @@ export default function ApprovalPage() {
         <header style={S.header}>
           <button onClick={()=>setView("list")} style={{ border:"none", background:"rgba(255,255,255,0.15)", color:"#fff", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontWeight:700, fontSize:13 }}>← 목록</button>
           <img src="/favicon.png" style={{ width:30, height:30, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
-          <div style={{ flex:1, fontWeight:800, fontSize:16 }}>이우요양병원 결재 시스템</div>
-          <div style={{ fontSize:13, color:"#94a3b8" }}>{profile.name} · {profile.department}</div>
+          <div style={{ flex:1, fontWeight:800, fontSize: isMobile ? 14 : 16 }}>
+            {isMobile ? "결재 상세" : "이우요양병원 결재 시스템"}
+          </div>
+          {!isMobile && <div style={{ fontSize:13, color:"#94a3b8" }}>{profile.name} · {profile.department}</div>}
         </header>
-        <div style={S.main}>
+        <div style={{ ...S.main, padding: isMobile ? "14px 10px" : undefined }}>
           <div style={S.card}>
             <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:8, flexWrap:"wrap" }}>
               <span style={{ fontFamily:"monospace", fontSize:13, color:"#64748b" }}>{doc.docNumber||"임시저장"}</span>
@@ -2107,16 +2114,47 @@ export default function ApprovalPage() {
   return (
     <div style={S.page}>
       <header style={S.header}>
+        {/* 모바일 햄버거 버튼 */}
+        {isMobile && (
+          <button onClick={()=>setSidebarOpen(o=>!o)}
+            style={{ border:"none", background:"rgba(255,255,255,0.2)", color:"#fff", borderRadius:8, padding:"6px 10px", cursor:"pointer", fontSize:20, flexShrink:0, lineHeight:1 }}>
+            ☰
+          </button>
+        )}
         <img src="/favicon.png" style={{ width:36, height:36, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
-        <div style={{ fontWeight:800, fontSize:17, flex:1 }}>이우요양병원 결재 시스템</div>
-        <div style={{ fontSize:13, background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"4px 12px" }}>
-          {profile.name} · {profile.department} · {profile.role==="director"?"병원장":profile.role==="dept_head"?"부서장":"직원"}
+        <div style={{ fontWeight:800, fontSize: isMobile ? 14 : 17, flex:1 }}>
+          {isMobile ? "전자결재" : "이우요양병원 결재 시스템"}
         </div>
+        {!isMobile && (
+          <div style={{ fontSize:13, background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"4px 12px" }}>
+            {profile.name} · {profile.department} · {profile.role==="director"?"병원장":profile.role==="dept_head"?"부서장":"직원"}
+          </div>
+        )}
       </header>
-      <div style={{ display:"flex", flex:1 }}>
+      <div style={{ display:"flex", flex:1, position:"relative" }}>
+
+        {/* 모바일 백드롭 */}
+        {isMobile && sidebarOpen && (
+          <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:499 }}
+            onClick={()=>setSidebarOpen(false)} />
+        )}
+
         {/* ── 좌측 사이드바 ── */}
-        <aside style={S.sidebar}>
+        <aside style={isMobile ? {
+          width:220, background:"#fff", borderRight:"1px solid #e2e8f0",
+          display:"flex", flexDirection:"column",
+          position:"fixed", top:0, left: sidebarOpen ? 0 : -224, height:"100vh",
+          overflowY:"auto", zIndex:500, transition:"left 0.25s ease",
+          boxShadow: sidebarOpen ? "4px 0 20px rgba(0,0,0,0.18)" : "none",
+        } : S.sidebar}>
           <div style={{ padding:"14px 12px 6px" }}>
+            {isMobile && (
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                <span style={{ fontWeight:800, fontSize:13, color:"#0f2744" }}>메뉴</span>
+                <button onClick={()=>setSidebarOpen(false)}
+                  style={{ border:"none", background:"none", cursor:"pointer", fontSize:18, color:"#94a3b8", padding:0 }}>✕</button>
+              </div>
+            )}
             <button
               style={{ ...S.btnPri, width:"100%", borderRadius:10, fontSize:14, padding:"11px 0", textAlign:"center", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}
               onClick={()=>setNewMenuOpen(o=>!o)}>
@@ -2128,7 +2166,7 @@ export default function ApprovalPage() {
                 {Object.entries(DOC_TYPES).map(([key,t]) => (
                   <button key={key}
                     style={{ padding:"8px 12px", border:`1.5px solid ${t.color}33`, borderRadius:8, background:t.bg, color:t.color, cursor:"pointer", fontWeight:700, fontSize:12, textAlign:"left" }}
-                    onClick={()=>{ setNewType(key); setFormData({}); setFiles([]); setView("new"); setNewMenuOpen(false); }}>
+                    onClick={()=>{ setNewType(key); setFormData({}); setFiles([]); setView("new"); setNewMenuOpen(false); if(isMobile) setSidebarOpen(false); }}>
                     {t.label}
                   </button>
                 ))}
@@ -2140,7 +2178,7 @@ export default function ApprovalPage() {
               <div style={S.navGroup}>{group.label}</div>
               {group.items.map(item => (
                 <button key={item.key} style={S.navItem(activeTab===item.key)}
-                  onClick={()=>setActiveTab(item.key)}>
+                  onClick={()=>{ setActiveTab(item.key); if(isMobile) setSidebarOpen(false); }}>
                   <span style={{ flex:1 }}>{item.label}</span>
                   {item.badge > 0 && (
                     <span style={{ fontSize:11, fontWeight:800, color:"#fff", background:item.badgeColor||"#94a3b8", borderRadius:10, padding:"1px 7px", minWidth:20, textAlign:"center", flexShrink:0 }}>
@@ -2154,7 +2192,7 @@ export default function ApprovalPage() {
         </aside>
 
         {/* ── 우측 컨텐츠 영역 ── */}
-        <main style={S.content}>
+        <main style={{ ...S.content, padding: isMobile ? "14px 12px" : "24px 20px" }}>
         {view === "list" && pendingDocs.length > 0 && (
           <div style={{ background:"#fef3c7", border:"1.5px solid #f59e0b", borderRadius:10, padding:"10px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
             <span style={{ fontSize:16 }}>🔔</span>
