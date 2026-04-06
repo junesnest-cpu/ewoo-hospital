@@ -1,6 +1,7 @@
 import "../styles/globals.css";
 import Head from "next/head";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import { auth, db } from "../lib/firebaseConfig";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "firebase/auth";
 import { ref, onValue, set } from "firebase/database";
@@ -151,6 +152,8 @@ export default function App({ Component, pageProps }) {
   const [user,    setUser]    = useState(undefined);
   const [loading, setLoading] = useState(true);
   const [showChangePw, setShowChangePw] = useState(false);
+  const router = useRouter();
+  const pageTitle = router.pathname === "/approval" ? "이우 전자결재시스템" : "이우 병동관리시스템";
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => { setUser(u); setLoading(false); });
@@ -180,7 +183,7 @@ export default function App({ Component, pageProps }) {
   if (!user) return (
     <>
       <Head>
-        <title>이우요양병원 병동관리</title>
+        <title>{pageTitle}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <link rel="icon" type="image/png" href="/favicon.png"/>
         <link rel="shortcut icon" href="/favicon.png"/>
@@ -193,7 +196,7 @@ export default function App({ Component, pageProps }) {
   return (
     <>
       <Head>
-        <title>이우요양병원 병동관리</title>
+        <title>{pageTitle}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <link rel="icon" type="image/png" href="/favicon.png"/>
         <link rel="shortcut icon" href="/favicon.png"/>
