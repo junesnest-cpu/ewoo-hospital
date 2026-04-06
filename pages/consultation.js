@@ -135,7 +135,20 @@ export default function ConsultationPage() {
     return unsub;
   }, [filterMonth, search]);
 
-  // URL query param ?q= 로 검색 초기화 (사이드바에서 넘어올 때)
+  // 사이드바 검색 이벤트 수신 (이름/전화번호/메모 통합 검색)
+  useEffect(() => {
+    const handler = (e) => {
+      const q = e.detail?.q;
+      if (!q) return;
+      setSearch(q);
+      setFilterMonth(""); // 전체 기간 검색
+      setView("list");
+    };
+    window.addEventListener("sidebar-search", handler);
+    return () => window.removeEventListener("sidebar-search", handler);
+  }, []);
+
+  // URL query param ?q= 로 검색 (다른 페이지에서 넘어올 때)
   useEffect(() => {
     const q = router.query.q;
     if (q) { setSearch(q); setFilterMonth(""); }

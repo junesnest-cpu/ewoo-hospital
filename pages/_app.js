@@ -6,6 +6,7 @@ import { auth, db } from "../lib/firebaseConfig";
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "firebase/auth";
 import { ref, onValue, set } from "firebase/database";
 import AppSidebar from "../components/AppSidebar";
+import AvailPanel from "../components/AvailPanel";
 import useIsMobile from "../lib/useismobile";
 
 function LoginScreen() {
@@ -155,6 +156,7 @@ export default function App({ Component, pageProps }) {
   const [loading, setLoading] = useState(true);
   const [showChangePw, setShowChangePw] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showAvailPanel, setShowAvailPanel] = useState(false);
   const router = useRouter();
   const isMobile = useIsMobile();
   const isApproval = router.pathname === "/approval";
@@ -222,6 +224,7 @@ export default function App({ Component, pageProps }) {
         </div>
       </div>
       {showChangePw && <ChangePasswordModal user={user} onClose={()=>setShowChangePw(false)} />}
+      {showAvailPanel && <AvailPanel onClose={() => setShowAvailPanel(false)} />}
       {isApproval ? (
         <Component {...pageProps}/>
       ) : (
@@ -242,14 +245,14 @@ export default function App({ Component, pageProps }) {
                   <div style={{ position:"absolute", top:0, left:0, bottom:0, width:200, background:"#fff",
                     boxShadow:"4px 0 20px rgba(0,0,0,0.2)" }}
                     onClick={e => e.stopPropagation()}>
-                    <AppSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)}/>
+                    <AppSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onAvailOpen={() => setShowAvailPanel(true)}/>
                   </div>
                 </div>
               )}
             </>
           )}
           {/* 데스크탑: 고정 사이드바 */}
-          {!isMobile && <AppSidebar/>}
+          {!isMobile && <AppSidebar onAvailOpen={() => setShowAvailPanel(true)}/>}
           <div style={{ flex:1, minWidth:0 }}>
             <Component {...pageProps}/>
           </div>

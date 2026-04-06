@@ -34,7 +34,7 @@ const NAV_GROUPS = [
   },
 ];
 
-export default function AppSidebar({ open, onClose }) {
+export default function AppSidebar({ open, onClose, onAvailOpen }) {
   const router = useRouter();
   const [searchQ, setSearchQ] = useState("");
   const inputRef = useRef();
@@ -50,14 +50,20 @@ export default function AppSidebar({ open, onClose }) {
     e.preventDefault();
     const q = searchQ.trim();
     if (!q) return;
-    const searchable = ["/", "/consultation", "/patients"];
-    const target = searchable.includes(router.pathname) ? router.pathname : "/";
-    router.push({ pathname: target, query: { q } });
-    if (isMobileDrawer) onClose();
+    // 검색 지원 페이지: custom event 발송, 아닌 경우 병동현황으로 이동 후 검색
+    const searchable = ["/", "/consultation"];
+    if (searchable.includes(router.pathname)) {
+      window.dispatchEvent(new CustomEvent("sidebar-search", { detail: { q } }));
+      if (isMobileDrawer) onClose();
+    } else {
+      router.push({ pathname: "/", query: { q } });
+      if (isMobileDrawer) onClose();
+    }
+    setSearchQ("");
   };
 
   const handleAvail = () => {
-    router.push({ pathname: "/", query: { avail: "1" } });
+    if (onAvailOpen) onAvailOpen();
     if (isMobileDrawer) onClose();
   };
 
