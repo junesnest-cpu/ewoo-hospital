@@ -84,6 +84,9 @@ export default function MonthlySchedule() {
   // 인라인 추가 팝오버
   const [popover, setPopover] = useState(null); // { dateKey, type, rect }
 
+  // 과거 날짜 자동 스냅샷 추적용
+  const frozenKeysRef = useRef(new Set());
+
   // 사이드바 환자 이름 하이라이트
   const [filterName, setFilterName] = useState("");
   useEffect(() => {
@@ -233,6 +236,46 @@ export default function MonthlySchedule() {
     return data;
   }, [slots, consultations, year, month]);
 
+  // 과거 날짜 자동 스냅샷: 슬롯 데이터가 변해도 과거 기록 유지
+  useEffect(() => {
+    if (!Object.keys(slots).length) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const total = daysInMonth(year, month);
+    const ym = toYM(year, month);
+    for (let d = 1; d <= total; d++) {
+      const key = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      const dayDate = new Date(year, month - 1, d);
+      if (dayDate >= today) continue;
+      if (boardData[key]?.frozen) continue;
+      if (frozenKeysRef.current.has(key)) continue;
+      // calendarData + boardData 병합한 표시 데이터 계산
+      const cd = calendarData[key] || { admissions:[], discharges:[] };
+      const bd = boardData[key];
+      let admissions, discharges;
+      if (!bd) {
+        admissions = cd.admissions || []; discharges = cd.discharges || [];
+      } else {
+        const hiddenAdm = new Set(bd.hiddenAdmissions || []);
+        const hiddenDis = new Set(bd.hiddenDischarges || []);
+        const baseAdm = (cd.admissions || []).filter(a => !hiddenAdm.has(normName(a.name)));
+        const baseDis = (cd.discharges || []).filter(dd => !hiddenDis.has(normName(dd.name)));
+        const cdAdmNorms = new Set((cd.admissions || []).map(a => normName(a.name)));
+        const cdDisNorms = new Set((cd.discharges || []).map(dd => normName(dd.name)));
+        const manualAdm = (bd.admissions || []).filter(a => !cdAdmNorms.has(normName(a.name)));
+        const manualDis = (bd.discharges || []).filter(dd => !cdDisNorms.has(normName(dd.name)));
+        admissions = [...baseAdm, ...manualAdm];
+        discharges = [...baseDis, ...manualDis];
+      }
+      if (!admissions.length && !discharges.length) { frozenKeysRef.current.add(key); continue; }
+      frozenKeysRef.current.add(key);
+      set(ref(db, `monthlyBoards/${ym}/${key}`), { frozen: true, admissions, discharges });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarData, boardData, year, month, slots]);
+
+  // 월 변경 시 스냅샷 추적 초기화
+  useEffect(() => { frozenKeysRef.current = new Set(); }, [year, month]);
+
   // 날짜별 재원 환자 수: 오늘 실제 재원 수 기준으로 입/퇴원 이벤트 누적
   const censusData = useMemo(() => {
     const counts = {};
@@ -369,8 +412,16 @@ export default function MonthlySchedule() {
 
   // 표시 데이터: calendarData 기반 + boardData 수동 추가/숨김 병합
   function getDisplayData(key) {
-    const cd = calendarData[key] || { admissions:[], discharges:[] };
     const bd = boardData[key];
+    // frozen(스냅샷) 데이터: 과거 날짜는 저장된 데이터를 그대로 사용
+    if (bd?.frozen) {
+      return {
+        admissions: dedupList(bd.admissions || []),
+        discharges: dedupList(bd.discharges || []),
+        isManual: true,
+      };
+    }
+    const cd = calendarData[key] || { admissions:[], discharges:[] };
     if (!bd) return { admissions: dedupList(cd.admissions), discharges: dedupList(cd.discharges), isManual: false };
     const hiddenAdm = new Set(bd.hiddenAdmissions || []);
     const hiddenDis = new Set(bd.hiddenDischarges || []);
@@ -399,6 +450,18 @@ export default function MonthlySchedule() {
   // 편집 저장 (calendarData 기반 수동 추가/숨김만 저장)
   async function saveEdit() {
     setEditSaving(true);
+    const bd = boardData[editModal];
+    // frozen 데이터: 전체 목록을 직접 저장
+    if (bd?.frozen) {
+      await set(ref(db, `monthlyBoards/${toYM(year, month)}/${editModal}`), {
+        frozen: true,
+        admissions: editAdm,
+        discharges: editDis,
+      });
+      setEditSaving(false);
+      setEditModal(null);
+      return;
+    }
     const cd = calendarData[editModal] || { admissions:[], discharges:[] };
     const cdAdmNorms = new Set((cd.admissions || []).map(a => normName(a.name)));
     const cdDisNorms = new Set((cd.discharges || []).map(d => normName(d.name)));
@@ -417,29 +480,45 @@ export default function MonthlySchedule() {
 
   // 인라인 삭제
   async function deleteEntry(dKey, type, entryId) {
+    const bd = boardData[dKey];
+    // frozen 데이터: 직접 필터
+    if (bd?.frozen) {
+      const newBd = { frozen: true, admissions: [...(bd.admissions || [])], discharges: [...(bd.discharges || [])] };
+      if (type === "admission") newBd.admissions = newBd.admissions.filter(a => a.id !== entryId);
+      else newBd.discharges = newBd.discharges.filter(d => d.id !== entryId);
+      await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), newBd);
+      return;
+    }
     const merged = getDisplayData(dKey);
     const all = type === "admission" ? (merged.admissions || []) : (merged.discharges || []);
     const deleted = all.find(e => (e.id || "") === entryId);
     const deletedNorm = normName(deleted?.name || "");
     const cd = calendarData[dKey] || { admissions:[], discharges:[] };
-    const bd = boardData[dKey] || {};
-    const newBd = { admissions: bd.admissions || [], discharges: bd.discharges || [], hiddenAdmissions: bd.hiddenAdmissions || [], hiddenDischarges: bd.hiddenDischarges || [] };
+    const newBd2 = { admissions: (bd||{}).admissions || [], discharges: (bd||{}).discharges || [], hiddenAdmissions: (bd||{}).hiddenAdmissions || [], hiddenDischarges: (bd||{}).hiddenDischarges || [] };
     if (type === "admission") {
       if ((cd.admissions || []).some(a => normName(a.name) === deletedNorm))
-        newBd.hiddenAdmissions = [...newBd.hiddenAdmissions.filter(n => n !== deletedNorm), deletedNorm];
-      else newBd.admissions = newBd.admissions.filter(a => a.id !== entryId);
+        newBd2.hiddenAdmissions = [...newBd2.hiddenAdmissions.filter(n => n !== deletedNorm), deletedNorm];
+      else newBd2.admissions = newBd2.admissions.filter(a => a.id !== entryId);
     } else {
       if ((cd.discharges || []).some(d => normName(d.name) === deletedNorm))
-        newBd.hiddenDischarges = [...newBd.hiddenDischarges.filter(n => n !== deletedNorm), deletedNorm];
-      else newBd.discharges = newBd.discharges.filter(d => d.id !== entryId);
+        newBd2.hiddenDischarges = [...newBd2.hiddenDischarges.filter(n => n !== deletedNorm), deletedNorm];
+      else newBd2.discharges = newBd2.discharges.filter(d => d.id !== entryId);
     }
-    const hasAny = newBd.admissions.length || newBd.discharges.length || newBd.hiddenAdmissions.length || newBd.hiddenDischarges.length;
-    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), hasAny ? newBd : null);
+    const hasAny = newBd2.admissions.length || newBd2.discharges.length || newBd2.hiddenAdmissions.length || newBd2.hiddenDischarges.length;
+    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), hasAny ? newBd2 : null);
   }
 
   // 인라인 추가
   async function addEntry(dKey, type, entry) {
     const bd = boardData[dKey] || {};
+    // frozen 데이터: 직접 추가
+    if (bd?.frozen) {
+      const newBd = { frozen: true, admissions: [...(bd.admissions || [])], discharges: [...(bd.discharges || [])] };
+      if (type === "admission") newBd.admissions.push({...entry, id: uid()});
+      else newBd.discharges.push({...entry, id: uid()});
+      await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), newBd);
+      return;
+    }
     const newBd = { admissions: bd.admissions || [], discharges: bd.discharges || [], hiddenAdmissions: bd.hiddenAdmissions || [], hiddenDischarges: bd.hiddenDischarges || [] };
     if (type === "admission") newBd.admissions = [...newBd.admissions, {...entry, id: uid()}];
     else newBd.discharges = [...newBd.discharges, {...entry, id: uid()}];
