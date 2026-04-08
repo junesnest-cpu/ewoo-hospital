@@ -7,7 +7,7 @@ import useIsMobile from "../lib/useismobile";
 const TREATMENT_GROUPS = [
   {
     group: "고주파 온열치료", color: "#dc2626", bg: "#fef2f2",
-    items: [{ id: "hyperthermia", name: "고주파 온열치료", price: 300000 }],
+    items: [{ id: "hyperthermia", name: "고주파 온열치료", price: 300000, custom: "qty", unit: "회" }],
   },
   {
     group: "싸이모신알파1", color: "#7c3aed", bg: "#faf5ff",
@@ -45,9 +45,9 @@ const TREATMENT_GROUPS = [
   {
     group: "물리치료", color: "#059669", bg: "#f0fdf4",
     items: [
-      { id: "pain",   name: "페인스크렘블러", price: 200000 },
-      { id: "manip2", name: "도수치료2",      price: 200000 },
-      { id: "manip1", name: "도수치료1",      price: 120000 },
+      { id: "pain",   name: "페인스크렘블러", price: 200000, custom: "qty", unit: "회" },
+      { id: "manip2", name: "도수치료2",      price: 200000, custom: "qty", unit: "회" },
+      { id: "manip1", name: "도수치료1",      price: 120000, custom: "qty", unit: "회" },
     ],
   },
   {
@@ -269,32 +269,41 @@ export default function TreatmentPage() {
     return hospDays * 185000;
   };
 
+  // 전체 입원 기간(모든 달) 기준 주차별 정산
   const weeklyStats = (() => {
     if (!admitDate) return [];
     const admit = parseDateStr(admitDate);
     if (!admit) return [];
 
+    const end = dischargeDate ? dateOnly(dischargeDate) : dateOnly(new Date());
     const weeks = {};
-    const daysInM = getDaysInMonth(year, month);
+    let cur = new Date(dateOnly(admit));
 
-    for (let d = 1; d <= daysInM; d++) {
-      const thisDate = new Date(year, month, d);
-      const diff = Math.floor((dateOnly(thisDate) - dateOnly(admit)) / 86400000);
-      if (diff < 0) continue; // 입원일 이전
-      // 퇴원일 다음날부터 제외 (퇴원 당일 치료는 포함)
-      if (dischargeDate && dateOnly(thisDate) > dateOnly(dischargeDate)) continue;
+    while (cur <= end) {
+      const diff = Math.floor((cur - dateOnly(admit)) / 86400000);
       const wk = Math.floor(diff / 7) + 1;
-      if (!weeks[wk]) weeks[wk] = { total: 0, days: [], startDay: d, planTotal: 0, hospDays: 0 };
+      if (!weeks[wk]) weeks[wk] = { total: 0, days: [], planTotal: 0, hospDays: 0 };
       weeks[wk].hospDays++;
-      // 치료 있는 날만 합산
-      const dayTreat = dayTreatTotal(d);
+
+      const cy = cur.getFullYear();
+      const cm = cur.getMonth() + 1;
+      const cd = cur.getDate();
+      const mk = `${cy}-${String(cm).padStart(2, "0")}`;
+      const items = (plan[mk] || {})[String(cd)] || [];
+
+      const dayTreat = items.reduce((s, e) => {
+        const item = ALL_ITEMS.find(i => i.id === e.id);
+        return s + calcPrice(item, e.qty, cur);
+      }, 0);
       if (dayTreat > 0) {
         weeks[wk].total += dayTreat;
-        weeks[wk].days.push(d);
+        weeks[wk].days.push(`${cm}/${cd}`);
       }
+
+      cur = new Date(cur.getTime() + 86400000);
     }
 
-    // 주N회 계획: 오늘이 속한 구간에 표시
+    // 주N회 계획: 오늘이 속한 주차에 표시
     if (weeklyPlanTotal > 0) {
       const todayWk = getWeekNumber(admitDate, new Date());
       if (todayWk !== null) {
@@ -511,7 +520,7 @@ export default function TreatmentPage() {
                     if (!item) return null;
                     return (
                       <span key={e.id} style={{ ...TS.tag, background:grp.bg, color:grp.color, borderColor:grp.color }}>
-                        {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}개`:item.name}
+                        {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}${item.unit||"개"}`:item.name}
                       </span>
                     );
                   })}
@@ -551,7 +560,7 @@ export default function TreatmentPage() {
                           const grp  = getItemGroup(e.id);
                           if (!item) return null;
                           return <span key={e.id} style={{ ...TS.tag, marginRight:4, background:grp.bg, color:grp.color, borderColor:grp.color }}>
-                            {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}개`:item.name}
+                            {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}${item.unit||"개"}`:item.name}
                           </span>;
                         })}
                       </td>
@@ -588,7 +597,7 @@ export default function TreatmentPage() {
                   <tr key={wk.week} style={{ background: wk.total>=wk.weekMin?"#f0fdf4":"#fef2f2" }}>
                     <td colSpan={3} style={{ ...TS.td, fontSize:13 }}>
                       {wk.week}주차
-                      <span style={{ fontSize:11, color:"#64748b", marginLeft:8 }}>({wk.days.map(d=>`${month+1}/${d}`).join(", ")})</span>
+                      <span style={{ fontSize:11, color:"#64748b", marginLeft:8 }}>({wk.days.join(", ")})</span>
                       {wk.hospDays < 7 && <span style={{ fontSize:10, color:"#94a3b8", marginLeft:6 }}>하한 {(wk.weekMin/10000).toFixed(1)}만원 ({wk.hospDays}일)</span>}
                     </td>
                     <td style={{ ...TS.td, textAlign:"right", fontWeight:700, color:wk.total>=wk.weekMin?"#16a34a":"#dc2626" }}>
@@ -634,7 +643,7 @@ export default function TreatmentPage() {
                     <div key={e.id} style={{ ...TS.regItem, borderLeftColor: grp.color }}>
                       <div style={{ flex:1 }}>
                         <span style={{ fontWeight:700, color:grp.color }}>
-                          {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}개`:item.name}
+                          {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}${item.unit||"개"}`:item.name}
                         </span>
                         <span style={{ color:"#64748b", fontSize:12, marginLeft:8 }}>{calcPrice(item,e.qty,new Date(year,month,modalDay)).toLocaleString()}원</span>
                       </div>
@@ -678,7 +687,7 @@ export default function TreatmentPage() {
                       ) : (
                         <>
                           <input type="number" min="1" style={TS.qtyInput} value={selection[item.id]} onChange={e => setQty(item.id, e.target.value)} />
-                          <span style={{ fontSize:12, color:"#64748b" }}>개 = {calcPrice(item, selection[item.id]).toLocaleString()}원</span>
+                          <span style={{ fontSize:12, color:"#64748b" }}>{item.unit||"개"} = {calcPrice(item, selection[item.id]).toLocaleString()}원</span>
                         </>
                       )}
                     </div>
