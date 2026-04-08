@@ -392,15 +392,15 @@ export default function TherapyPage() {
   // ── 인쇄용 데이터 (예정 환자 포함) ──────────────────────────────────────
   const physPrintPatients=(()=>{
     const map={};
-    ["th1","th2"].forEach(rid=>{ Object.entries(physSched[wk]?.[rid]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__ph_${rid}_${di}_${time}`:data.slotKey; if(!map[k]) map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,entries:[]}; map[k].entries.push({dayIdx:parseInt(di),time,treatmentId:data.treatmentId,memo:data.memo||"",therapistId:rid}); }); }); });
+    ["th1","th2"].forEach(rid=>{ Object.entries(physSched[wk]?.[rid]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__ph_${rid}_${di}_${time}`:data.slotKey; if(!map[k]){ const {roomId:rm,bedNum:bd}=getRoomFromCell(data); map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,roomId:rm,bedNum:bd,entries:[]}; } map[k].entries.push({dayIdx:parseInt(di),time,treatmentId:data.treatmentId,memo:data.memo||"",therapistId:rid}); }); }); });
     return Object.values(map).sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
   })();
 
   const hyperPrintPatients=(()=>{
     const map={};
     // __pending__은 저장위치(type_di_time_slot)를 고유키로 사용
-    Object.entries(hyperSched[wk]?.["hyperthermia"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__ht_${di}_${time}`:data.slotKey; if(!map[k]) map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,entries:[]}; map[k].entries.push({dayIdx:parseInt(di),time,treatmentName:"고주파 온열치료",memo:data.memo||""}); }); });
-    Object.entries(hyperSched[wk]?.["hyperbaric"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,hbSlots])=>{ ["a","b"].forEach(s=>{ const data=hbSlots?.[s]; if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__hb_${di}_${time}_${s}`:data.slotKey; if(!map[k]) map[k]={name:data.patientName,slotKey:k,entries:[]}; map[k].entries.push({dayIdx:parseInt(di),time:data.subTime||time,treatmentName:"고압산소치료",memo:""}); }); }); });
+    Object.entries(hyperSched[wk]?.["hyperthermia"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__ht_${di}_${time}`:data.slotKey; if(!map[k]){ const {roomId:rm,bedNum:bd}=getRoomFromCell(data); map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,roomId:rm,bedNum:bd,entries:[]}; } map[k].entries.push({dayIdx:parseInt(di),time,treatmentName:"고주파 온열치료",memo:data.memo||""}); }); });
+    Object.entries(hyperSched[wk]?.["hyperbaric"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,hbSlots])=>{ ["a","b"].forEach(s=>{ const data=hbSlots?.[s]; if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__hb_${di}_${time}_${s}`:data.slotKey; if(!map[k]){ const {roomId:rm,bedNum:bd}=getRoomFromCell(data); map[k]={name:data.patientName,slotKey:k,roomId:rm,bedNum:bd,entries:[]}; } map[k].entries.push({dayIdx:parseInt(di),time:data.subTime||time,treatmentName:"고압산소치료",memo:""}); }); }); });
     return Object.values(map).sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
   })();
 
@@ -428,22 +428,6 @@ export default function TherapyPage() {
           </button>
         </div>
       </header>
-
-      {/* 범례 */}
-      <div style={S.legend}>
-        {ROOMS.map(r=>(
-          <span key={r.id} style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:12,fontWeight:700}}>
-            <span style={{width:11,height:11,borderRadius:3,background:r.color,display:"inline-block"}}/>
-            {r.id==="th1"?therapists[0]:r.id==="th2"?therapists[1]:r.label}
-          </span>
-        ))}
-        <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:12,color:"#dc2626",fontWeight:700,marginLeft:8}}>
-          <span style={{width:8,height:8,borderRadius:"50%",background:"#dc2626",display:"inline-block"}}/>겹침
-        </span>
-        <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:12,color:"#d97706",fontWeight:700}}>
-          <span style={{width:8,height:8,borderRadius:"50%",background:"#d97706",display:"inline-block"}}/>외래
-        </span>
-      </div>
 
       {/* 인쇄 선택 바 */}
       {printMode&&(
@@ -1057,11 +1041,7 @@ function PhysPrint({patients,selected,weekDates,therapists}){
             <div style={{fontWeight:900,fontSize:32,borderBottom:"2px solid #ccc",paddingBottom:6,marginBottom:8,display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
               <span>{p.name}님</span>
               {p.isOuter&&<span style={{fontSize:22,color:"#d97706"}}>(외래)</span>}
-              {p.slotKey&&!p.slotKey.startsWith("__")&&!p.slotKey.startsWith("pending_")&&!p.slotKey.startsWith("db_")&&(
-                <span style={{fontSize:24,fontWeight:700,color:"#64748b"}}>
-                  {p.slotKey.split("-")[0]} - {p.slotKey.split("-")[1]}
-                </span>
-              )}
+              {p.roomId&&<span style={{fontSize:24,fontWeight:700,color:"#64748b"}}>{p.roomId} - {p.bedNum}</span>}
             </div>
             <div style={{fontSize:22,color:"#555",marginBottom:6}}>물리치료 안내 · {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:24}}>
@@ -1095,11 +1075,7 @@ function HyperPrint({patients,selected,weekDates}){
             <div style={{fontWeight:900,fontSize:32,borderBottom:"2px solid #ccc",paddingBottom:6,marginBottom:8,display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
               <span>{p.name}님</span>
               {p.isOuter&&<span style={{fontSize:22,color:"#d97706"}}>(외래)</span>}
-              {p.slotKey&&!p.slotKey.startsWith("__")&&!p.slotKey.startsWith("pending_")&&!p.slotKey.startsWith("db_")&&(
-                <span style={{fontSize:24,fontWeight:700,color:"#64748b"}}>
-                  {p.slotKey.split("-")[0]} - {p.slotKey.split("-")[1]}
-                </span>
-              )}
+              {p.roomId&&<span style={{fontSize:24,fontWeight:700,color:"#64748b"}}>{p.roomId} - {p.bedNum}</span>}
             </div>
             <div style={{fontSize:22,color:"#555",marginBottom:6}}>치료 안내 · {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:24}}>
@@ -1120,7 +1096,7 @@ function HyperPrint({patients,selected,weekDates}){
 }
 
 const S={
-  page:    {fontFamily:"'Noto Sans KR','Pretendard',sans-serif",background:"#f0f4f8",minHeight:"100vh",display:"flex",flexDirection:"column"},
+  page:    {fontFamily:"'Noto Sans KR','Pretendard',sans-serif",background:"#f0f4f8",height:"100vh",display:"flex",flexDirection:"column"},
   header:  {background:"#0f2744",color:"#fff",display:"flex",alignItems:"center",gap:12,padding:"12px 20px",boxShadow:"0 2px 8px rgba(0,0,0,0.15)",flexShrink:0,flexWrap:"wrap",position:"sticky",top:0,zIndex:40},
   btnBack: {background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.3)",color:"#fff",borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600},
   hcenter: {flex:1,textAlign:"center"},

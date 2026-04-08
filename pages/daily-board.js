@@ -65,6 +65,7 @@ export default function DailyBoard() {
   const [saving,      setSaving]      = useState(false);
   const [autoFilling, setAutoFilling] = useState(false);
   const [lastSaved,   setLastSaved]   = useState(null);
+  const [filterName,  setFilterName]  = useState("");
 
   // 치료실 스케줄 (선택 날짜 기준 주)
   const [physSched,   setPhysSched]   = useState({});
@@ -92,6 +93,13 @@ export default function DailyBoard() {
     });
     return () => u();
   }, [date]);
+
+  // 사이드바 환자 이름 하이라이트
+  useEffect(() => {
+    const handler = (e) => { const q = e.detail?.q; if (q) setFilterName(q); };
+    window.addEventListener("sidebar-search", handler);
+    return () => window.removeEventListener("sidebar-search", handler);
+  }, []);
 
   // 치료실 스케줄 + 설정 로드
   useEffect(() => {
@@ -245,7 +253,15 @@ export default function DailyBoard() {
       <header className="no-print" style={{ background:"#0f2744", color:"#fff", padding:"12px 20px",
         display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:40, boxShadow:"0 2px 8px rgba(0,0,0,0.18)", flexWrap:"wrap" }}>
         <span style={{ fontWeight:800, fontSize:16 }}>일일 현황판</span>
-        <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
+        <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center" }}>
+          {filterName && (
+            <span style={{ display:"inline-flex", alignItems:"center", gap:4,
+              background:"#fef3c7", color:"#92400e", borderRadius:6, padding:"3px 10px", fontSize:12, fontWeight:700 }}>
+              "{filterName}" 하이라이트
+              <button onClick={() => setFilterName("")} style={{ background:"none", border:"none", cursor:"pointer",
+                color:"#92400e", fontSize:13, padding:0, lineHeight:1, fontWeight:800 }}>✕</button>
+            </span>
+          )}
           <button onClick={() => window.print()} style={{ ...S.navBtn, background:"#1e3a5f" }}>🖨 인쇄</button>
         </div>
       </header>
@@ -288,7 +304,7 @@ export default function DailyBoard() {
             { label:"기   타", flex:1 },
           ]}>
             {admissions.map(row => (
-              <EditRow key={row.id} onDelete={() => deleteRow(setAdmissions, row.id)}>
+              <EditRow key={row.id} onDelete={() => deleteRow(setAdmissions, row.id)} highlight={filterName && row.name?.includes(filterName)}>
                 <EditCell width={100} value={row.room} placeholder="예: 306-1" onChange={v => updateRow(setAdmissions, row.id, "room", v)} />
                 <td style={{ padding:"4px 6px", borderRight:"1px solid #e2e8f0", minWidth:160, verticalAlign:"middle" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:4, flexWrap:"wrap" }}>
@@ -326,7 +342,7 @@ export default function DailyBoard() {
             { label:"기   타 (재입원 일정 등)", flex:1 },
           ]}>
             {discharges.map(row => (
-              <EditRow key={row.id} onDelete={() => deleteRow(setDischarges, row.id)}>
+              <EditRow key={row.id} onDelete={() => deleteRow(setDischarges, row.id)} highlight={filterName && row.name?.includes(filterName)}>
                 <EditCell width={100} value={row.room}  placeholder="예: 505" onChange={v => updateRow(setDischarges, row.id, "room", v)} />
                 <EditCell width={140} value={row.name}  placeholder="이름"    onChange={v => updateRow(setDischarges, row.id, "name", v)} />
                 <EditCell width={130} value={row.time}  placeholder="오전 / 점심 후" onChange={v => updateRow(setDischarges, row.id, "time", v)} />
@@ -352,7 +368,7 @@ export default function DailyBoard() {
                 { label:"이동 시간", flex:1 },
               ]}>
                 {transfers.map(row => (
-                  <EditRow key={row.id} onDelete={() => deleteRow(setTransfers, row.id)}>
+                  <EditRow key={row.id} onDelete={() => deleteRow(setTransfers, row.id)} highlight={filterName && row.name?.includes(filterName)}>
                     <EditCell width={100} value={row.name}     placeholder="이름"   onChange={v => updateRow(setTransfers, row.id, "name",     v)} />
                     <EditCell width={90}  value={row.fromRoom} placeholder="201-1"  onChange={v => updateRow(setTransfers, row.id, "fromRoom", v)} />
                     <EditCell width={90}  value={row.toRoom}   placeholder="501-4"  onChange={v => updateRow(setTransfers, row.id, "toRoom",   v)} />
@@ -371,7 +387,7 @@ export default function DailyBoard() {
                 { label:"재입원", flex:1 },
               ]}>
                 {reservedBeds.map(row => (
-                  <EditRow key={row.id} onDelete={() => deleteRow(setReservedBeds, row.id)}>
+                  <EditRow key={row.id} onDelete={() => deleteRow(setReservedBeds, row.id)} highlight={filterName && row.name?.includes(filterName)}>
                     <EditCell width={100} value={row.name}         placeholder="이름"   onChange={v => updateRow(setReservedBeds, row.id, "name",          v)} />
                     <EditCell width={80}  value={row.room}         placeholder="306-1"  onChange={v => updateRow(setReservedBeds, row.id, "room",          v)} />
                     <EditCell width={95}  value={row.dischargeDate}placeholder="3/21"   onChange={v => updateRow(setReservedBeds, row.id, "dischargeDate", v)} />
@@ -479,9 +495,9 @@ function Table({ cols, children }) {
   );
 }
 
-function EditRow({ children, onDelete }) {
+function EditRow({ children, onDelete, highlight }) {
   return (
-    <tr style={{ borderBottom:"1px solid #e2e8f0" }}>
+    <tr style={{ borderBottom:"1px solid #e2e8f0", background: highlight ? "#fef3c7" : "transparent" }}>
       {children}
       <td className="no-print" style={{ padding:"2px 4px", textAlign:"center", width:32 }}>
         <button onClick={onDelete} title="삭제"

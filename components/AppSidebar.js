@@ -50,15 +50,8 @@ export default function AppSidebar({ open, onClose, onAvailOpen }) {
     e.preventDefault();
     const q = searchQ.trim();
     if (!q) return;
-    // 검색 지원 페이지: custom event 발송, 아닌 경우 병동현황으로 이동 후 검색
-    const searchable = ["/", "/consultation"];
-    if (searchable.includes(router.pathname)) {
-      window.dispatchEvent(new CustomEvent("sidebar-search", { detail: { q } }));
-      if (isMobileDrawer) onClose();
-    } else {
-      router.push({ pathname: "/", query: { q } });
-      if (isMobileDrawer) onClose();
-    }
+    window.dispatchEvent(new CustomEvent("sidebar-search", { detail: { q } }));
+    if (isMobileDrawer) onClose();
     setSearchQ("");
   };
 

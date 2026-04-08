@@ -111,6 +111,13 @@ export default function PatientsPage() {
     return () => clearTimeout(timer);
   }, [query]);
 
+  // 사이드바 검색 이벤트
+  useEffect(() => {
+    const handler = (e) => { const q = e.detail?.q; if (q) setQuery(q); };
+    window.addEventListener("sidebar-search", handler);
+    return () => window.removeEventListener("sidebar-search", handler);
+  }, []);
+
   const loadPatientById = async (internalId) => {
     try {
       const snap = await get(ref(db, "patients"));

@@ -72,8 +72,9 @@ export default function DailyPage() {
   const [slots,        setSlots]        = useState({});
   const [treatPlans,   setTreatPlans]   = useState({});
   const [loading,      setLoading]      = useState(true);
-  // 치료 종류별 필터
+  // 필터
   const [filterGroup,  setFilterGroup]  = useState(null);
+  const [filterName,   setFilterName]   = useState("");
   const [physSched,    setPhysSched]    = useState({});
   const [hyperSched,   setHyperSched]   = useState({});
   const [therapists,   setTherapists]   = useState(["치료사1","치료사2"]);
@@ -85,6 +86,13 @@ export default function DailyPage() {
     const unsubH  = onValue(ref(db, "hyperthermiaSchedule"),  snap => setHyperSched(snap.val() || {}));
     const unsubSt = onValue(ref(db, "settings"),              snap => { const v=snap.val()||{}; setTherapists([v.therapist1||"치료사1",v.therapist2||"치료사2"]); });
     return () => { unsubS(); unsubT(); unsubP(); unsubH(); unsubSt(); };
+  }, []);
+
+  // 사이드바 환자 이름 검색
+  useEffect(() => {
+    const handler = (e) => { const q = e.detail?.q; if (q) setFilterName(q); };
+    window.addEventListener("sidebar-search", handler);
+    return () => window.removeEventListener("sidebar-search", handler);
   }, []);
 
   const applyDate = () => {
@@ -168,9 +176,9 @@ export default function DailyPage() {
   });
 
   // 필터 적용
-  const filtered = filterGroup
-    ? dailyList.filter(p => p.items.some(e => TREATMENT_GROUPS.find(g => g.group === filterGroup)?.items.some(i => i.id === e.id)))
-    : dailyList;
+  const filtered = dailyList
+    .filter(p => !filterGroup || p.items.some(e => TREATMENT_GROUPS.find(g => g.group === filterGroup)?.items.some(i => i.id === e.id)))
+    .filter(p => !filterName || p.patientName.includes(filterName));
 
   // 치료 종류별 집계 (당일 몇 명)
   const groupCounts = TREATMENT_GROUPS.map(g => ({
@@ -215,6 +223,14 @@ export default function DailyPage() {
         <span style={DS.summaryTotal}>
           총 <strong style={{ color:"#0ea5e9", fontSize:18 }}>{filtered.length}</strong>명
           {filterGroup && <span style={{ color:"#94a3b8", fontSize:12, marginLeft:6 }}>({filterGroup} 필터 중)</span>}
+          {filterName && (
+            <span style={{ display:"inline-flex", alignItems:"center", gap:4, marginLeft:6,
+              background:"#fef3c7", color:"#92400e", borderRadius:5, padding:"1px 8px", fontSize:12, fontWeight:700 }}>
+              "{filterName}" 검색 중
+              <button onClick={() => setFilterName("")} style={{ background:"none", border:"none", cursor:"pointer",
+                color:"#92400e", fontSize:13, padding:0, lineHeight:1, fontWeight:800 }}>✕</button>
+            </span>
+          )}
         </span>
         <div style={DS.groupFilters}>
           <button style={{ ...DS.filterBtn, background: filterGroup===null?"#0f2744":"#f1f5f9", color: filterGroup===null?"#fff":"#64748b" }}

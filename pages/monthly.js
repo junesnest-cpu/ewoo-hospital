@@ -84,6 +84,14 @@ export default function MonthlySchedule() {
   // 인라인 추가 팝오버
   const [popover, setPopover] = useState(null); // { dateKey, type, rect }
 
+  // 사이드바 환자 이름 하이라이트
+  const [filterName, setFilterName] = useState("");
+  useEffect(() => {
+    const handler = (e) => { const q = e.detail?.q; if (q) setFilterName(q); };
+    window.addEventListener("sidebar-search", handler);
+    return () => window.removeEventListener("sidebar-search", handler);
+  }, []);
+
   useEffect(() => {
     const u1 = onValue(ref(db,"slots"), snap => setSlots(snap.val() || {}));
     const u2 = onValue(ref(db,"consultations"), snap => setConsultations(snap.val() || {}));
@@ -504,7 +512,15 @@ export default function MonthlySchedule() {
       <header className="no-print" style={{ background:"#0f2744", color:"#fff", padding:"12px 20px",
         display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:40, boxShadow:"0 2px 8px rgba(0,0,0,0.18)" }}>
         <span style={{ fontWeight:800, fontSize:16 }}>월간 입퇴원 예정표</span>
-        <div style={{ marginLeft:"auto", display:"flex", gap:8 }}>
+        <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center" }}>
+          {filterName && (
+            <span style={{ display:"inline-flex", alignItems:"center", gap:4,
+              background:"#fef3c7", color:"#92400e", borderRadius:6, padding:"3px 10px", fontSize:12, fontWeight:700 }}>
+              "{filterName}" 하이라이트
+              <button onClick={() => setFilterName("")} style={{ background:"none", border:"none", cursor:"pointer",
+                color:"#92400e", fontSize:13, padding:0, lineHeight:1, fontWeight:800 }}>✕</button>
+            </span>
+          )}
           <button onClick={() => window.print()} style={{ ...NS.navBtn, background:"#1e3a5f" }}>🖨 인쇄</button>
         </div>
       </header>
@@ -639,6 +655,7 @@ export default function MonthlySchedule() {
                             </div>
                             {(dayData.admissions||[]).map((p, pi) => (
                               <PatientChip key={p.id||pi} p={p} type="admission"
+                                highlight={filterName && p.name?.includes(filterName)}
                                 onDelete={() => deleteEntry(key, "admission", p.id)} />
                             ))}
                           </>
@@ -657,6 +674,7 @@ export default function MonthlySchedule() {
                             </div>
                             {(dayData.discharges||[]).map((p, pi) => (
                               <PatientChip key={p.id||pi} p={p} type="discharge"
+                                highlight={filterName && p.name?.includes(filterName)}
                                 onDelete={() => deleteEntry(key, "discharge", p.id)} />
                             ))}
                           </>
@@ -946,9 +964,11 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
   );
 }
 
-function PatientChip({ p, type, onDelete }) {
+function PatientChip({ p, type, onDelete, highlight }) {
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:3, marginBottom:3, lineHeight:1.4 }}>
+    <div style={{ display:"flex", alignItems:"center", gap:3, marginBottom:3, lineHeight:1.4,
+      borderRadius:4, background: highlight ? "#fef3c7" : "transparent",
+      outline: highlight ? "2px solid #f59e0b" : "none" }}>
       {p.isNew && <span style={{ fontSize:12, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>★신</span>}
       <span style={{ fontSize:16, fontWeight:700, color: type==="admission" ? "#065f46" : "#991b1b", flexShrink:0 }}>{p.name}</span>
       {p.room && <span style={{ fontSize:13, color:"#64748b", flexShrink:0 }}>({p.room})</span>}
