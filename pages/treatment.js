@@ -75,26 +75,6 @@ const TREATMENT_GROUPS = [
 
 const ALL_ITEMS = TREATMENT_GROUPS.flatMap(g => g.items);
 
-// 달력 셀 표시용 짧은 이름
-const SHORT_NAMES = {
-  hyperthermia:"고주파", zadaxin:"자닥신", imualpha:"이뮤알파", scion:"싸이원주",
-  iscador_m:"이스카도M", iscador_q:"이스카도Q",
-  glutathione:"글루타치온", glutathione_qty:"글루타치온",
-  dramin:"닥터라민", thioctic:"티옥트산", thioctic_qty:"티옥트산",
-  gt:"G+T", myers1:"마이어스1", myers2:"마이어스2",
-  selenium_iv:"셀레늄", vitd:"비타민D", vitc:"비타민C",
-  periview_360:"페리주360", periview_560:"페리주560",
-  pain:"페인", manip2:"도수2", manip1:"도수1",
-  hyperbaric:"고압산소", rejuderm:"리쥬더마",
-  meshima:"메시마", selenase_l:"셀레나제액", selenase_t:"셀레나제정", selenase_f:"셀레나제필",
-};
-function getCalLabel(item, qty) {
-  const short = SHORT_NAMES[item.id] || item.name;
-  if (item.custom === "vitc") return `비타민C ${qty}g`;
-  if (item.custom === "qty")  return `${short} ${qty}${item.unit || "개"}`;
-  return short;
-}
-
 function calcPrice(item, qty, dateObj) {
   if (!item) return 0;
   if (item.custom === "vitc") {
@@ -514,77 +494,63 @@ export default function TreatmentPage() {
         </div>
       )}
 
-      {/* ── 달력 + 요약: 하나의 스크롤 영역 ── */}
-      <div style={{ flex:1, overflowY:"auto", overflowX:"auto", minHeight:0 }}>
-        <div style={{ minWidth:1060 }}>
+      {/* 달력 */}
+      <div style={TS.calWrap}>
+        <div style={TS.calGrid}>
+          {DAY_KO.map((d, i) => (
+            <div key={d} style={{ ...TS.dowCell, color: i===0?"#dc2626":i===6?"#2563eb":"#64748b" }}>{d}</div>
+          ))}
+        </div>
+        <div style={TS.calGrid}>
+          {calCells.map((day, idx) => {
+            if (!day) return <div key={`e${idx}`} style={TS.emptyCell} />;
+            const dow       = (firstDow + day - 1) % 7;
+            const items     = monthData[String(day)] || [];
+            const total     = dayTotal(day);
+            const isToday   = year===today.getFullYear() && month===today.getMonth() && day===today.getDate();
+            const thisDate  = new Date(year, month, day);
+            const isDisch   = dischargeDate && dateOnly(dischargeDate).getTime()===dateOnly(thisDate).getTime();
+            const isCopied  = copiedDay && copiedDay.monthKey===monthKey && copiedDay.day===day;
+            const wkNum     = admitDate ? getWeekNumber(admitDate, thisDate) : null;
 
-          {/* 요일 헤더 — sticky */}
-          <div style={{ position:"sticky", top:0, zIndex:10, background:"#f0f4f8",
-            padding:"6px 12px 4px", borderBottom:"2px solid #94a3b8" }}>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(150px, 1fr))", gap:2 }}>
-              {DAY_KO.map((d, i) => (
-                <div key={d} style={{ textAlign:"center", fontSize:13, fontWeight:800, padding:"4px 0",
-                  color: i===0?"#dc2626":i===6?"#2563eb":"#475569" }}>{d}</div>
-              ))}
-            </div>
-          </div>
-
-          {/* 달력 셀 */}
-          <div style={{ padding:"4px 12px 0" }}>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(7, minmax(150px, 1fr))", gap:2 }}>
-              {calCells.map((day, idx) => {
-                if (!day) return <div key={`e${idx}`} style={{ minHeight:120, background:"#f5f7fa" }} />;
-                const dow       = (firstDow + day - 1) % 7;
-                const items     = monthData[String(day)] || [];
-                const total     = dayTotal(day);
-                const isToday   = year===today.getFullYear() && month===today.getMonth() && day===today.getDate();
-                const thisDate  = new Date(year, month, day);
-                const isDisch   = dischargeDate && dateOnly(dischargeDate).getTime()===dateOnly(thisDate).getTime();
-                const isCopied  = copiedDay && copiedDay.monthKey===monthKey && copiedDay.day===day;
-                const wkNum     = admitDate ? getWeekNumber(admitDate, thisDate) : null;
-
-                return (
-                  <div key={day}
-                    style={{ minHeight:120, borderRadius:6, padding:"7px 8px", cursor:"pointer",
-                      display:"flex", flexDirection:"column", transition:"box-shadow 0.15s",
-                      border: isDisch ? "2px solid #f59e0b" : isToday ? "2px solid #0ea5e9" : isCopied ? "2px dashed #7c3aed" : "1.5px solid #94a3b8",
-                      background: isDisch ? "#fffbeb" : items.length>0 ? "#fff" : "#fafafa",
-                    }}
-                    onClick={() => { setModalDay(day); setSelection({}); }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
-                      <div style={{ ...TS.dayNum, background:isToday?"#0ea5e9":undefined, color:isToday?"#fff":dow===0?"#dc2626":dow===6?"#2563eb":"#374151" }}>
-                        {day}
-                      </div>
-                      {wkNum && <span style={{ fontSize:10, color:"#94a3b8", fontWeight:700 }}>{wkNum}주</span>}
-                    </div>
-                    {isDisch && <div style={TS.dischargeTag}>🚪 퇴원 예정</div>}
-                    <div style={{ display:"flex", flexDirection:"column", gap:3, flex:1 }}>
-                      {items.map(e => {
-                        const item = ALL_ITEMS.find(i => i.id === e.id);
-                        const grp  = getItemGroup(e.id);
-                        if (!item) return null;
-                        return (
-                          <span key={e.id} style={{ fontSize:13, fontWeight:700, borderRadius:4,
-                            padding:"2px 7px", border:`1.5px solid ${grp.color}`,
-                            background:grp.bg, color:grp.color,
-                            lineHeight:1.4, display:"block" }}>
-                            {getCalLabel(item, e.qty)}
-                          </span>
-                        );
-                      })}
-                    </div>
-                    {hasRoomCharge(day) && !roomFree && (
-                      <div style={{ fontSize:10, color:"#0369a1", fontWeight:700, marginTop:2 }}>🏠{(chargePerNight/10000)}만</div>
-                    )}
-                    {total > 0 && <div style={{ fontSize:12, fontWeight:800, color:"#dc2626", textAlign:"right", marginTop:"auto", paddingTop:3, borderTop:"1px dashed #e2e8f0" }}>{Math.floor(total/10000)}만원</div>}
+            return (
+              <div key={day}
+                style={{ ...TS.dayCell,
+                  border: isDisch ? "2px solid #f59e0b" : isToday ? "2px solid #0ea5e9" : isCopied ? "2px dashed #7c3aed" : "1px solid #e2e8f0",
+                  background: isDisch ? "#fffbeb" : items.length>0 ? "#fff" : "#fafafa",
+                }}
+                onClick={() => { setModalDay(day); setSelection({}); }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <div style={{ ...TS.dayNum, background:isToday?"#0ea5e9":undefined, color:isToday?"#fff":dow===0?"#dc2626":dow===6?"#2563eb":"#374151" }}>
+                    {day}
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                  {wkNum && <span style={{ fontSize:9, color:"#94a3b8", fontWeight:600 }}>{wkNum}주</span>}
+                </div>
+                {isDisch && <div style={TS.dischargeTag}>🚪 퇴원 예정</div>}
+                <div style={TS.tagList}>
+                  {items.map(e => {
+                    const item = ALL_ITEMS.find(i => i.id === e.id);
+                    const grp  = getItemGroup(e.id);
+                    if (!item) return null;
+                    return (
+                      <span key={e.id} style={{ ...TS.tag, background:grp.bg, color:grp.color, borderColor:grp.color }}>
+                        {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}${item.unit||"개"}`:item.name}
+                      </span>
+                    );
+                  })}
+                </div>
+                {hasRoomCharge(day) && !roomFree && (
+                  <div style={{ fontSize:9, color:"#0369a1", fontWeight:600 }}>🏠{(chargePerNight/10000)}만</div>
+                )}
+                {total > 0 && <div style={TS.dayTotalLabel}>{Math.floor(total/10000)}만원</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
-          {/* 요약 테이블 */}
-          <div style={TS.summaryWrap}>
+      {/* 요약 테이블 */}
+      <div style={TS.summaryWrap}>
         <div style={TS.summaryTitle}>📋 {month+1}월 치료 요약</div>
         {Object.keys(monthData).length === 0
           ? <div style={{ color:"#94a3b8", fontSize:14 }}>등록된 치료가 없습니다.</div>
@@ -689,9 +655,7 @@ export default function TreatmentPage() {
             </table>
           )
         }
-          </div>{/* summaryWrap 끝 */}
-        </div>{/* minWidth 컨테이너 끝 */}
-      </div>{/* 스크롤 컨테이너 끝 */}
+      </div>
 
       {/* 날짜 모달 */}
       {modalDay && (
@@ -941,8 +905,8 @@ const PS = {
 };
 
 const TS = {
-  page: { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", height:"100vh", display:"flex", flexDirection:"column", overflow:"hidden", color:"#0f172a" },
-  header: { background:"#0f2744", color:"#fff", display:"flex", alignItems:"center", gap:16, padding:"12px 20px", boxShadow:"0 2px 12px rgba(0,0,0,0.18)", flexWrap:"wrap", flexShrink:0 },
+  page: { fontFamily:"'Noto Sans KR','Pretendard',sans-serif", background:"#f0f4f8", minHeight:"100vh", color:"#0f172a" },
+  header: { background:"#0f2744", color:"#fff", display:"flex", alignItems:"center", gap:16, padding:"12px 20px", boxShadow:"0 2px 12px rgba(0,0,0,0.18)", flexWrap:"wrap" },
   btnBack: { background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#fff", borderRadius:7, padding:"7px 16px", cursor:"pointer", fontSize:14, fontWeight:600, flexShrink:0 },
   headerCenter: { flex:1, textAlign:"center" },
   roomLabel: { fontSize:14, color:"#7dd3fc", fontWeight:600, marginBottom:2 },
@@ -951,19 +915,19 @@ const TS = {
   monthNav: { display:"flex", alignItems:"center", gap:10, flexShrink:0 },
   btnMonth: { background:"rgba(255,255,255,0.1)", border:"none", color:"#fff", borderRadius:6, width:36, height:36, cursor:"pointer", fontSize:20, display:"flex", alignItems:"center", justifyContent:"center" },
   monthLabel: { fontSize:17, fontWeight:700, minWidth:100, textAlign:"center" },
-  totalBar: { background:"#fff", borderBottom:"1px solid #e2e8f0", display:"flex", alignItems:"center", flexWrap:"wrap", gap:16, padding:"11px 20px", flexShrink:0 },
+  totalBar: { background:"#fff", borderBottom:"1px solid #e2e8f0", display:"flex", alignItems:"center", flexWrap:"wrap", gap:16, padding:"11px 20px" },
   totalItem: { fontSize:14, color:"#0f2744", display:"flex", alignItems:"center", gap:4 },
   btnClearCopy: { background:"none", border:"none", color:"#7c3aed", cursor:"pointer", fontSize:14, marginLeft:4 },
-  calWrap: { padding:"4px 12px 0" },
-  calGrid: { display:"grid", gridTemplateColumns:"repeat(7, minmax(150px, 1fr))", gap:2 },
-  dowCell: { textAlign:"center", fontSize:13, fontWeight:800, padding:"4px 0" },
-  emptyCell: { minHeight:120, background:"#f5f7fa" },
-  dayCell: { minHeight:120, borderRadius:6, padding:"7px 8px", cursor:"pointer", display:"flex", flexDirection:"column", transition:"box-shadow 0.15s", border:"1.5px solid #94a3b8" },
+  calWrap: { padding:"14px 12px 0", overflowX:"auto" },
+  calGrid: { display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4 },
+  dowCell: { textAlign:"center", fontSize:14, fontWeight:700, padding:"7px 0" },
+  emptyCell: { minHeight:100 },
+  dayCell: { minHeight:100, borderRadius:8, padding:"6px", cursor:"pointer", display:"flex", flexDirection:"column", transition:"box-shadow 0.15s" },
   dayNum: { width:26, height:26, borderRadius:"50%", fontSize:14, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
   dischargeTag: { fontSize:10, fontWeight:700, color:"#d97706", background:"#fef3c7", borderRadius:3, padding:"1px 5px", marginBottom:2 },
-  tagList: { display:"flex", flexDirection:"column", gap:3, flex:1 },
-  tag: { fontSize:13, fontWeight:700, borderRadius:4, padding:"2px 7px", border:"1.5px solid", lineHeight:1.4, display:"block" },
-  dayTotalLabel: { fontSize:12, fontWeight:800, color:"#dc2626", textAlign:"right", marginTop:"auto", paddingTop:3, borderTop:"1px dashed #e2e8f0" },
+  tagList: { display:"flex", flexDirection:"column", gap:2, flex:1, overflow:"hidden" },
+  tag: { fontSize:12, fontWeight:700, borderRadius:4, padding:"2px 6px", border:"1px solid", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" },
+  dayTotalLabel: { fontSize:11, fontWeight:800, color:"#dc2626", textAlign:"right", marginTop:"auto" },
   summaryWrap: { padding:"18px 20px 32px" },
   summaryTitle: { fontSize:17, fontWeight:800, color:"#0f2744", marginBottom:12 },
   table: { width:"100%", borderCollapse:"collapse", background:"#fff", borderRadius:10, overflow:"hidden", boxShadow:"0 1px 6px rgba(0,0,0,0.06)" },
