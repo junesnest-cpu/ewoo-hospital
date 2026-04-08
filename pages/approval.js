@@ -2455,14 +2455,19 @@ export default function ApprovalPage() {
               </div>
             ) : (
               supplyApprovedForMonth.map(([id, doc]) => {
-                const total = (doc.formData?.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.price)||0),0);
+                const items = doc.formData?.items || [];
+                const total = items.reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.price)||0),0);
+                const titleLabel = doc.formData?.title?.trim()
+                  || (items[0]?.name ? `${items[0].name}${items.length>1?" 외 "+(items.length-1)+"건":""}` : "");
                 return (
                   <div key={id} style={S.docRow}
                     onClick={()=>{setSelectedId(id);setView("detail");}}
                     onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
                     onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                     <span style={{ fontFamily:"monospace", fontSize:12, color:"#64748b", flexShrink:0, minWidth:110 }}>{doc.docNumber}</span>
-                    <span style={{ fontWeight:600, fontSize:14, flex:1 }}>{doc.formData?.department || doc.authorName}</span>
+                    <span style={{ fontWeight:600, fontSize:14, flex:2, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{titleLabel}</span>
+                    <span style={{ fontSize:12, color:"#475569", flexShrink:0 }}>{doc.authorName}</span>
+                    <span style={{ fontSize:12, color:"#475569", flexShrink:0 }}>{doc.formData?.department}</span>
                     <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{doc.formData?.requestDate}</span>
                     {total > 0 && <span style={{ fontSize:13, color:"#065f46", fontWeight:700, flexShrink:0 }}>{fmtNum(total)}원</span>}
                     <StatusBadge status={doc.status} />
