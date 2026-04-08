@@ -195,6 +195,15 @@ export default function MonthlySchedule() {
       });
     });
 
+    // 이름 → 실제 병실 매핑 (슬롯에 배정된 환자의 실제 병실 조회용)
+    const nameToSlotRoom = {};
+    Object.entries(slots).forEach(([slotKey, slot]) => {
+      if (slot?.current?.name) {
+        const n = normName(slot.current.name);
+        if (n) nameToSlotRoom[n] = slotKeyToRoom(slotKey);
+      }
+    });
+
     // consultations: 정규화된 이름으로 dedup, 슬롯 항목과 겹치면 신환 정보 병합
     Object.values(consultations).forEach(c => {
       if (!c?.name || !c.admitDate) return;
@@ -212,8 +221,11 @@ export default function MonthlySchedule() {
       if (c.radiation) noteFields.push("방사선");
       const cNote = noteFields.join(" · ");
 
-      // 정규화된 이름으로 기존 항목 탐색
       const nc = normName(c.name);
+      // 슬롯에 배정된 환자면 실제 병실 사용, 아니면 상담의 희망 병실유형
+      const actualRoom = nameToSlotRoom[nc] || c.roomTypes?.join("/") || "";
+
+      // 같은 날짜에 이미 슬롯 기반 항목이 있으면 병합
       const existIdx = data[aKey].admissions.findIndex(a => normName(a.name) === nc);
 
       if (existIdx >= 0) {
@@ -225,14 +237,29 @@ export default function MonthlySchedule() {
           note: cNote || ex.note,
         };
       } else {
-        data[aKey].admissions.push({
-          id: uid(),
-          name: c.name,
-          room: c.roomTypes?.join("/") || "",
-          note: cNote,
-          isNew: true,
-          isReserved: false,
-        });
+        // 다른 날짜에 슬롯 항목이 있는지도 확인 (날짜 변경된 경우)
+        let mergedElsewhere = false;
+        if (nameToSlotRoom[nc]) {
+          // 슬롯에 이미 배정된 환자 → 다른 날짜의 기존 항목에 신환 플래그만 추가
+          for (const dk of Object.keys(data)) {
+            const idx = data[dk].admissions.findIndex(a => normName(a.name) === nc);
+            if (idx >= 0) {
+              data[dk].admissions[idx] = { ...data[dk].admissions[idx], isNew: true, note: cNote || data[dk].admissions[idx].note };
+              mergedElsewhere = true;
+              break;
+            }
+          }
+        }
+        if (!mergedElsewhere) {
+          data[aKey].admissions.push({
+            id: uid(),
+            name: c.name,
+            room: actualRoom,
+            note: cNote,
+            isNew: true,
+            isReserved: false,
+          });
+        }
       }
     });
     return data;
