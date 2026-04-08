@@ -10,7 +10,7 @@ const TIMES = ["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","
 const LUNCH = "12:00";
 
 const PHYS_TREATS = [
-  { id:"pain",   name:"페인",  short:"P",  color:"#dc2626", bg:"#fef2f2" },
+  { id:"pain",   name:"페인",  short:"P",  color:"#ea580c", bg:"#fff7ed" },
   { id:"manip2", name:"도수2", short:"D2", color:"#7c3aed", bg:"#faf5ff" },
   { id:"manip1", name:"도수1", short:"D1", color:"#059669", bg:"#f0fdf4" },
 ];
@@ -733,17 +733,13 @@ export default function TherapyPage() {
                                         <div style={{marginBottom:1}}><span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800}}>★신</span></div>
                                       )}
                                       <div style={{display:"flex",alignItems:"center",gap:3,overflow:"hidden",lineHeight:1.4}}>
-                                        <span style={{fontSize:isMobile?14:13,fontWeight:800,flexShrink:1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip",
-                                          color:cell.isOuter?"#d97706":"#1e293b",
-                                          background:cell.isOuter?"#fef3c7":"transparent",
-                                          borderRadius:cell.isOuter?3:0,padding:cell.isOuter?"0 3px":0}}>
+                                        <span style={{fontSize:isMobile?14:13,fontWeight:800,color:"#1e293b",flexShrink:1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip"}}>
                                           {cell.patientName}
                                         </span>
+                                        {cell.isOuter&&<span style={{fontSize:isMobile?10:9,fontWeight:800,background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px",flexShrink:0}}>외래</span>}
                                         {tr2&&<span style={{fontSize:isMobile?11:9,fontWeight:800,background:tr2.color,color:"#fff",borderRadius:3,padding:"0 3px",flexShrink:0}}>{tr2.short}</span>}
                                       </div>
-                                      {cell.isOuter
-                                        ?null
-                                        :cRoomId?<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600}}>{cRoomId}-{cBedNum}</div>:null}
+                                      {!cell.isOuter&&cRoomId?<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600}}>{cRoomId}-{cBedNum}</div>:null}
                                       {cell.memo&&<div style={{fontSize:isMobile?12:11,color:"#475569",lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",maxWidth:"100%",marginTop:1}}>💬 {cell.memo}</div>}
                                       {cell.isPending&&<div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>예정</div>}
                                       {isConflict&&<div style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:"#dc2626"}}/>}
