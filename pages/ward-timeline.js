@@ -566,19 +566,35 @@ export default function WardTimeline() {
       container.scrollTo({ top: relTop - containerRect.height / 2 + ROW_H / 2, behavior: "smooth" });
     }
 
-    // 가로 스크롤: 바의 시작 날짜 위치로
+    // 가로 스크롤: 바의 시작 날짜 위치로 (현재 뷰 범위 밖이면 weekOffset 먼저 이동)
     const admitD = parseDateStr(r.admitDate);
     if (admitD && container) {
-      const ws = days[0].getTime();
-      const di = Math.round((dateOnly(admitD).getTime() - ws) / 86400000);
-      const targetLeft = Math.max(0, di * DAY_W - LEFT_W - DAY_W * 2);
-      container.scrollTo({ left: targetLeft, behavior: "smooth" });
+      const diRelToToday = Math.round((dateOnly(admitD).getTime() - today.getTime()) / 86400000);
+      const windowStart  = weekOffset * 7 - DAYS_BACK;
+      const windowEnd    = windowStart + DAYS_TOTAL - 1;
+
+      const scrollToX = (diInWindow) => {
+        const targetLeft = Math.max(0, diInWindow * DAY_W - DAY_W * 2);
+        container.scrollTo({ left: targetLeft, behavior: "smooth" });
+      };
+
+      if (diRelToToday >= windowStart && diRelToToday <= windowEnd) {
+        // 현재 뷰 안 → 바로 가로 스크롤
+        scrollToX(diRelToToday - windowStart);
+      } else {
+        // 현재 뷰 밖 → weekOffset 변경 후 재렌더링 대기 후 스크롤
+        const newWeekOffset = Math.round((diRelToToday + DAYS_BACK - DAYS_TOTAL / 2) / 7);
+        setWeekOffset(newWeekOffset);
+        const newWindowStart = newWeekOffset * 7 - DAYS_BACK;
+        const newDi = diRelToToday - newWindowStart;
+        setTimeout(() => scrollToX(newDi), 120);
+      }
     }
 
     // 3초 후 하이라이트 해제
     if (resHighlightTimer.current) clearTimeout(resHighlightTimer.current);
     resHighlightTimer.current = setTimeout(() => setResHighlight(null), 3000);
-  }, [days]);
+  }, [today, weekOffset]);
 
   // 신환 이름 집합 (consultations 기준, patientId 없음=신규, 취소/입원완료 제외)
   const newPatientNames = useMemo(() => {
