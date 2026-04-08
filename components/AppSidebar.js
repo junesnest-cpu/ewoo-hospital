@@ -1,5 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
+import { ref, onValue } from "firebase/database";
+import { db } from "../lib/firebaseConfig";
 
 const NAV_GROUPS = [
   {
@@ -17,7 +19,7 @@ const NAV_GROUPS = [
     items: [
       { label: "상담일지", href: "/consultation" },
       { label: "환자 목록", href: "/patients" },
-      { label: "진료 이력", href: "/history" },
+      { label: "정보공유방", href: "/history", badgeKey: "pendingWebhook" },
     ],
   },
   {
@@ -37,7 +39,18 @@ const NAV_GROUPS = [
 export default function AppSidebar({ open, onClose, onAvailOpen }) {
   const router = useRouter();
   const [searchQ, setSearchQ] = useState("");
+  const [pendingCount, setPendingCount] = useState(0);
   const inputRef = useRef();
+
+  useEffect(() => {
+    const u = onValue(ref(db, "pendingChanges"), snap => {
+      const val = snap.val();
+      if (!val) { setPendingCount(0); return; }
+      const count = Object.values(val).filter(v => v?.status === "pending").length;
+      setPendingCount(count);
+    });
+    return () => u();
+  }, []);
 
   const isMobileDrawer = open !== undefined;
 
@@ -98,15 +111,25 @@ export default function AppSidebar({ open, onClose, onAvailOpen }) {
       {NAV_GROUPS.map(group => (
         <div key={group.label} style={S.navGroup}>
           <div style={S.groupLabel}>{group.label}</div>
-          {group.items.map(item => (
-            <button
-              key={item.href}
-              style={{ ...S.navItem, ...(isActive(item.href) ? S.navItemActive : {}) }}
-              onClick={() => navigate(item.href)}
-            >
-              {item.label}
-            </button>
-          ))}
+          {group.items.map(item => {
+            const badge = item.badgeKey === "pendingWebhook" ? pendingCount : 0;
+            return (
+              <button
+                key={item.href}
+                style={{ ...S.navItem, ...(isActive(item.href) ? S.navItemActive : {}),
+                  display:"flex", alignItems:"center", justifyContent:"space-between" }}
+                onClick={() => navigate(item.href)}
+              >
+                {item.label}
+                {badge > 0 && (
+                  <span style={{ background:"#dc2626", color:"#fff", fontSize:10, fontWeight:800,
+                    borderRadius:10, padding:"1px 6px", minWidth:18, textAlign:"center", lineHeight:"16px" }}>
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       ))}
     </aside>
