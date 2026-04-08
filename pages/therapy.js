@@ -583,18 +583,19 @@ export default function TherapyPage() {
         <table style={S.tbl}>
           <colgroup>
             <col style={{width:54}}/>
-            {dayCols.map(di=><col key={di} style={{minWidth:isMobile?340:240}}/>)}
+            {dayCols.map(di=><col key={di} style={{minWidth:isMobile?400:350}}/>)}
           </colgroup>
-          <thead style={{position:"sticky",top:0,zIndex:20}}>
+          <thead>
             <tr>
-              <th style={S.thTime}>시간</th>
+              <th style={{...S.thTime,position:"sticky",top:0,zIndex:20}}>시간</th>
               {dayCols.map(di=>{
                 const date=weekDates[di]; const isWe=di>=5;
                 const isToday=isThisWeek&&new Date().getDay()===(di===6?0:di+1);
                 return (
                   <th key={di} style={{...S.thDay,background:isToday?"#fef3c7":isWe?"#dbeafe":"#f1f5f9",
                     color:isToday?"#92400e":isWe?"#1d4ed8":"#0f2744",
-                    borderLeft:"2px solid #94a3b8",padding:"5px 6px 6px",verticalAlign:"top"}}>
+                    borderLeft:"2px solid #94a3b8",padding:"5px 6px 6px",verticalAlign:"top",
+                    position:"sticky",top:0,zIndex:20}}>
                     {/* 요일 + 월일 한 줄 */}
                     <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:5}}>
                       <span style={{fontSize:14,fontWeight:900}}>{DAYS[di]}</span>
