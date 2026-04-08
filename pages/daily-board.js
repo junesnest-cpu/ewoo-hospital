@@ -289,263 +289,305 @@ export default function DailyBoard() {
   const dRes = editMode ? editRes : reservedBeds;
   const dTher = editMode ? editTherapy : therapy;
 
-  const printStyle = `@media print {
-    @page { size: A4 portrait; margin: 8mm; }
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 12px; }
-    .no-print { display: none !important; }
-    .section-card { break-inside: avoid; margin-bottom: 6mm; }
-    input, textarea { border: none !important; background: transparent !important; padding: 0 !important; }
-  }`;
+  const dow = DOW[dateObj.getDay()];
+  const isWeekend = dateObj.getDay()===0||dateObj.getDay()===6;
 
   return (
-    <div style={{ minHeight:"100vh", background:"#f1f5f9", fontFamily:"'Pretendard','Noto Sans KR',sans-serif" }}>
-      <style>{printStyle}</style>
+    <div style={{ minHeight:"100vh", background:"#f0f2f5", fontFamily:"'Pretendard','Noto Sans KR',sans-serif" }}>
+      <style>{PRINT_CSS}</style>
 
-      {/* 헤더 */}
-      <header className="no-print" style={{ background:"#0f2744", color:"#fff", padding:"12px 20px",
-        display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:40, boxShadow:"0 2px 8px rgba(0,0,0,0.18)", flexWrap:"wrap" }}>
-        <span style={{ fontWeight:800, fontSize:16 }}>일일 현황판</span>
-        <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center" }}>
+      {/* ── 헤더 ── */}
+      <header className="no-print" style={{ background:"linear-gradient(135deg,#0f2744 0%,#1e3a5f 100%)",
+        color:"#fff", padding:"10px 20px", display:"flex", alignItems:"center", gap:12,
+        position:"sticky", top:0, zIndex:40, boxShadow:"0 2px 12px rgba(0,0,0,0.2)", flexWrap:"wrap" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <button onClick={() => changeDate(-1)} style={S.navArrow}>‹</button>
+          <input type="date" value={date} onChange={e => { setDate(e.target.value); setEditMode(false); }}
+            style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)",
+              borderRadius:8, padding:"5px 12px", fontSize:15, fontWeight:700, color:"#fff",
+              outline:"none", colorScheme:"dark" }} />
+          <button onClick={() => changeDate(1)} style={S.navArrow}>›</button>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", lineHeight:1.3 }}>
+          <span style={{ fontSize:18, fontWeight:900, letterSpacing:1 }}>
+            {dateObj.getMonth()+1}월 {dateObj.getDate()}일
+            <span style={{ fontSize:16, fontWeight:700, marginLeft:6,
+              color: isWeekend ? "#fbbf24" : "#94a3b8" }}>({dow})</span>
+          </span>
+          <span style={{ fontSize:11, color:"#94a3b8" }}>일일 현황판{editMode?" · 수정 중":""}</span>
+        </div>
+        <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
           {filterName && (
             <span style={{ display:"inline-flex", alignItems:"center", gap:4,
               background:"#fef3c7", color:"#92400e", borderRadius:6, padding:"3px 10px", fontSize:12, fontWeight:700 }}>
-              "{filterName}" 하이라이트
+              "{filterName}"
               <button onClick={() => setFilterName("")} style={{ background:"none", border:"none", cursor:"pointer",
                 color:"#92400e", fontSize:13, padding:0, lineHeight:1, fontWeight:800 }}>✕</button>
             </span>
           )}
+          {!editMode && savedOverride && <span style={{ fontSize:11, color:"#94a3b8" }}>✓ 수정됨</span>}
           {editMode ? (
             <>
               <button onClick={saveEdit} disabled={saving}
-                style={{ ...S.actionBtn, background:"#059669", color:"#fff" }}>
-                {saving ? "저장 중..." : "💾 저장"}
-              </button>
+                style={{ ...S.headerBtn, background:"rgba(5,150,105,0.3)", border:"1px solid rgba(5,150,105,0.5)" }}>
+                {saving ? "..." : "💾 저장"}</button>
               <button onClick={cancelEdit}
-                style={{ ...S.actionBtn, background:"#64748b", color:"#fff" }}>취소</button>
+                style={{ ...S.headerBtn, background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.15)" }}>취소</button>
             </>
           ) : (
             <>
-              <button onClick={startEdit} style={{ ...S.navBtn, background:"#1e3a5f" }}>✏️ 수정</button>
+              <button onClick={startEdit} style={{ ...S.headerBtn, background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.2)" }}>✏️ 수정</button>
               <button onClick={captureToClipboard} disabled={capturing}
-                style={{ ...S.navBtn, background:"#0ea5e9" }}>
-                {capturing ? "캡처 중..." : "📋 공지"}
-              </button>
-              <button onClick={() => window.print()} style={{ ...S.navBtn, background:"#1e3a5f" }}>🖨 인쇄</button>
+                style={{ ...S.headerBtn, background:"rgba(14,165,233,0.25)", border:"1px solid rgba(14,165,233,0.4)" }}>
+                {capturing ? "캡처 중..." : "📋 공지"}</button>
+              <button onClick={() => window.print()}
+                style={{ ...S.headerBtn, background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.15)" }}>🖨</button>
             </>
           )}
         </div>
       </header>
 
-      {/* 날짜 바 */}
-      <div className="no-print" style={{ background:"#fff", borderBottom:"1px solid #e2e8f0",
-        padding:"8px 16px", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-        <button onClick={() => changeDate(-1)} style={S.dayBtn}>◀</button>
-        <input type="date" value={date} onChange={e => { setDate(e.target.value); setEditMode(false); }}
-          style={{ border:"1px solid #e2e8f0", borderRadius:6, padding:"5px 12px",
-            fontSize:16, fontWeight:700, color:"#0f2744" }} />
-        <button onClick={() => changeDate(1)} style={S.dayBtn}>▶</button>
-        <span style={{ fontSize:18, fontWeight:800, color:"#0f2744" }}>{dateLabel}</span>
-        {editMode && <span style={{ fontSize:13, color:"#0ea5e9", fontWeight:700 }}>— 수정 모드</span>}
-        {!editMode && savedOverride && <span style={{ fontSize:12, color:"#64748b" }}>✓ 수정됨</span>}
-      </div>
-
-      {/* 본문 (캡처 대상) */}
+      {/* ── 본문 (캡처 대상) ── */}
       <div ref={boardRef}>
-        {/* 인쇄용 제목 */}
-        <div style={{ textAlign:"center", padding:"6px 0 2px", fontWeight:900, fontSize:20, color:"#0f2744" }}>
-          {dateObj.getFullYear()}년 {dateObj.getMonth()+1}월 {dateObj.getDate()}일 현황판
+        {/* 인쇄/캡처 제목 */}
+        <div className="print-title" style={{ display:"none", textAlign:"center", padding:"8px 0 4px",
+          fontWeight:900, fontSize:22, color:"#0f2744", borderBottom:"2px solid #0f2744", marginBottom:8 }}>
+          {dateObj.getFullYear()}년 {dateObj.getMonth()+1}월 {dateObj.getDate()}일 ({dow}) 현황판
+        </div>
+        {/* 화면용 제목 (캡처 시에도 보임) */}
+        <div className="no-print" style={{ textAlign:"center", padding:"6px 0 2px", fontWeight:900, fontSize:20, color:"#0f2744" }}>
+          {dateObj.getFullYear()}년 {dateObj.getMonth()+1}월 {dateObj.getDate()}일 ({dow}) 현황판
         </div>
 
-        <div style={{ padding: isMobile ? "10px" : "14px 18px", display:"flex", flexDirection:"column", gap:14 }}>
+        <div style={{ padding: isMobile?"10px":"12px 16px", display:"flex", flexDirection:"column", gap:12 }}>
 
-          {/* 입원 */}
-          <Section title="입   원" titleBg="#fef08a" titleColor="#78350f">
-            <Table cols={[
-              { label:"호  실", width:100 },
-              { label:"이름 (주치의)", width:160 },
-              { label:"입/퇴원 시간", width:130 },
-              { label:"기   타", flex:1 },
-            ]}>
-              {dAdm.map(row => (
-                <EditRow key={row.id} onDelete={editMode ? () => deleteRow(setEditAdm, row.id) : null}
-                  highlight={filterName && row.name?.includes(filterName)}>
-                  <EditCell width={100} value={row.room} placeholder="예: 306-1"
-                    onChange={editMode ? v => updateRow(setEditAdm, row.id, "room", v) : null} />
-                  <td style={{ padding:"4px 6px", borderRight:"1px solid #e2e8f0", minWidth:160, verticalAlign:"middle" }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:4, flexWrap:"wrap" }}>
-                      {row.isNew && <span style={{ fontSize:13, background:"#fef08a", color:"#713f12",
-                        borderRadius:4, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>★신환</span>}
-                      <input value={row.name} readOnly={!editMode}
-                        onChange={editMode ? e => updateRow(setEditAdm, row.id, "name", e.target.value) : undefined}
-                        placeholder="이름" style={{ ...S.cell, flex:1, minWidth:60 }} />
-                      <span style={{ color:"#94a3b8", fontSize:14 }}>(</span>
-                      <input value={row.doctor} readOnly={!editMode}
-                        onChange={editMode ? e => updateRow(setEditAdm, row.id, "doctor", e.target.value) : undefined}
-                        placeholder="주치의" style={{ ...S.cell, width:44 }} />
-                      <span style={{ color:"#94a3b8", fontSize:14 }}>)</span>
+          {/* ── 입원 / 퇴원 2열 ── */}
+          <div style={{ display:"flex", gap:12, flexWrap: isMobile?"wrap":"nowrap" }}>
+            {/* 입원 */}
+            <div style={{ flex:1, minWidth: isMobile?"100%":0 }}>
+              <SectionHeader icon="↑" label="입원" count={dAdm.filter(r=>r.name).length} color="#059669" bg="#ecfdf5" borderColor="#a7f3d0" />
+              <div style={{ background:"#fff", border:"1px solid #d1fae5", borderTop:"none", borderRadius:"0 0 10px 10px" }}>
+                {dAdm.filter(r=>r.name).length===0 && !editMode && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
+                {dAdm.map(row => (
+                  <div key={row.id} style={{ display:"flex", gap:6, padding:"6px 10px",
+                    borderBottom:"1px solid #f0fdf4", alignItems:"center",
+                    background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
+                    {editMode ? (
+                      <Field w={75} value={row.room} onChange={v=>updateRow(setEditAdm,row.id,"room",v)} placeholder="호실" style={{fontWeight:800,color:"#059669",textAlign:"center"}} />
+                    ) : (
+                      <span style={{ fontWeight:800, color:"#059669", fontSize:14, width:75, textAlign:"center", flexShrink:0 }}>{row.room}</span>
+                    )}
+                    <div style={{ display:"flex", alignItems:"center", gap:3, minWidth:120 }}>
+                      {row.isNew && <span style={{ fontSize:11, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"0 4px", fontWeight:800, flexShrink:0 }}>★</span>}
+                      {editMode ? (
+                        <Field w={70} value={row.name} onChange={v=>updateRow(setEditAdm,row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
+                      ) : (
+                        <span style={{ fontWeight:700, fontSize:14 }}>{row.name}</span>
+                      )}
+                      <span style={{ color:"#d1d5db", fontSize:12 }}>/</span>
+                      {editMode ? (
+                        <Field w={40} value={row.doctor} onChange={v=>updateRow(setEditAdm,row.id,"doctor",v)} placeholder="Dr" style={{color:"#64748b",fontSize:13}} />
+                      ) : (
+                        <span style={{ fontSize:13, color:"#64748b" }}>{row.doctor}</span>
+                      )}
                       {editMode && (
-                        <button onClick={() => updateRow(setEditAdm, row.id, "isNew", !row.isNew)} title="신환 토글"
-                          style={{ fontSize:12, background: row.isNew?"#fef08a":"#f1f5f9",
-                            border:"1px solid", borderColor: row.isNew?"#fcd34d":"#e2e8f0",
-                            borderRadius:4, padding:"1px 6px", cursor:"pointer",
-                            color: row.isNew?"#713f12":"#94a3b8", flexShrink:0, fontWeight:700 }}>★</button>
+                        <button onClick={()=>updateRow(setEditAdm,row.id,"isNew",!row.isNew)}
+                          style={{ fontSize:11, background:row.isNew?"#fef08a":"#f8fafc", border:"1px solid",
+                            borderColor:row.isNew?"#fcd34d":"#e2e8f0", borderRadius:3, padding:"0 4px",
+                            cursor:"pointer", color:row.isNew?"#713f12":"#cbd5e1", flexShrink:0, fontWeight:800, lineHeight:"18px" }}>★</button>
                       )}
                     </div>
-                  </td>
-                  <EditCell width={130} value={row.time} placeholder="18:30/저녁식사"
-                    onChange={editMode ? v => updateRow(setEditAdm, row.id, "time", v) : null} />
-                  <EditCell flex={1} value={row.note} placeholder="나이·진단명·치료병원·치료단계"
-                    onChange={editMode ? v => updateRow(setEditAdm, row.id, "note", v) : null} />
-                </EditRow>
-              ))}
-            </Table>
-            {editMode && <AddRowBtn onClick={() => addRow(setEditAdm, EMPTY_ADM)} />}
-          </Section>
-
-          {/* 퇴원 */}
-          <Section title="퇴   원" titleBg="#bfdbfe" titleColor="#1e3a5f">
-            <Table cols={[
-              { label:"호  실", width:100 },
-              { label:"이   름", width:140 },
-              { label:"입/퇴원 시간", width:130 },
-              { label:"기   타 (재입원 일정 등)", flex:1 },
-            ]}>
-              {dDis.map(row => (
-                <EditRow key={row.id} onDelete={editMode ? () => deleteRow(setEditDis, row.id) : null}
-                  highlight={filterName && row.name?.includes(filterName)}>
-                  <EditCell width={100} value={row.room} placeholder="예: 505"
-                    onChange={editMode ? v => updateRow(setEditDis, row.id, "room", v) : null} />
-                  <EditCell width={140} value={row.name} placeholder="이름"
-                    onChange={editMode ? v => updateRow(setEditDis, row.id, "name", v) : null} />
-                  <EditCell width={130} value={row.time} placeholder="오전 / 점심 후"
-                    onChange={editMode ? v => updateRow(setEditDis, row.id, "time", v) : null} />
-                  <EditCell flex={1} value={row.note} placeholder="3/28 재입원 등"
-                    onChange={editMode ? v => updateRow(setEditDis, row.id, "note", v) : null} />
-                </EditRow>
-              ))}
-            </Table>
-            {editMode && <AddRowBtn onClick={() => addRow(setEditDis, EMPTY_DIS)} />}
-          </Section>
-
-          {/* 하단 2열 */}
-          <div style={{ display:"flex", gap:14, alignItems:"flex-start", flexWrap: isMobile?"wrap":"nowrap" }}>
-
-            {/* 좌: 전실 + 자리보존 */}
-            <div style={{ display:"flex", flexDirection:"column", gap:14,
-              flex:"0 0 auto", minWidth: isMobile?"100%":380 }}>
-
-              <Section title="<전  실>" titleBg="#d1fae5" titleColor="#065f46">
-                <Table cols={[
-                  { label:"이   름", width:100 },
-                  { label:"기존 병실", width:90 },
-                  { label:"이동 병실", width:90 },
-                  { label:"이동 시간", flex:1 },
-                ]}>
-                  {dTrn.map(row => (
-                    <EditRow key={row.id} onDelete={editMode ? () => deleteRow(setEditTrn, row.id) : null}
-                      highlight={filterName && row.name?.includes(filterName)}>
-                      <EditCell width={100} value={row.name} placeholder="이름"
-                        onChange={editMode ? v => updateRow(setEditTrn, row.id, "name", v) : null} />
-                      <EditCell width={90} value={row.fromRoom} placeholder="201-1"
-                        onChange={editMode ? v => updateRow(setEditTrn, row.id, "fromRoom", v) : null} />
-                      <EditCell width={90} value={row.toRoom} placeholder="501-4"
-                        onChange={editMode ? v => updateRow(setEditTrn, row.id, "toRoom", v) : null} />
-                      <EditCell flex={1} value={row.time} placeholder="아침식사후"
-                        onChange={editMode ? v => updateRow(setEditTrn, row.id, "time", v) : null} />
-                    </EditRow>
-                  ))}
-                </Table>
-                {editMode && <AddRowBtn onClick={() => addRow(setEditTrn, EMPTY_TRN)} />}
-              </Section>
-
-              <Section title="<자리 보존>" titleBg="#ede9fe" titleColor="#4c1d95">
-                <Table cols={[
-                  { label:"이   름", width:100 },
-                  { label:"병   실", width:80 },
-                  { label:"퇴원 날짜", width:95 },
-                  { label:"재입원", flex:1 },
-                ]}>
-                  {dRes.map(row => (
-                    <EditRow key={row.id} onDelete={editMode ? () => deleteRow(setEditRes, row.id) : null}
-                      highlight={filterName && row.name?.includes(filterName)}>
-                      <EditCell width={100} value={row.name} placeholder="이름"
-                        onChange={editMode ? v => updateRow(setEditRes, row.id, "name", v) : null} />
-                      <EditCell width={80} value={row.room} placeholder="306-1"
-                        onChange={editMode ? v => updateRow(setEditRes, row.id, "room", v) : null} />
-                      <EditCell width={95} value={row.dischargeDate} placeholder="3/21"
-                        onChange={editMode ? v => updateRow(setEditRes, row.id, "dischargeDate", v) : null} />
-                      <EditCell flex={1} value={row.readmitDate} placeholder="3/28 재입원"
-                        onChange={editMode ? v => updateRow(setEditRes, row.id, "readmitDate", v) : null} />
-                    </EditRow>
-                  ))}
-                </Table>
-                {editMode && <AddRowBtn onClick={() => addRow(setEditRes, EMPTY_RES)} />}
-              </Section>
+                    {editMode ? (
+                      <Field w={80} value={row.time} onChange={v=>updateRow(setEditAdm,row.id,"time",v)} placeholder="시간" style={{color:"#0891b2",textAlign:"center"}} />
+                    ) : row.time ? (
+                      <span style={{ fontSize:12, color:"#0891b2", fontWeight:600, flexShrink:0 }}>{row.time}</span>
+                    ) : null}
+                    {editMode ? (
+                      <Field flex={1} value={row.note} onChange={v=>updateRow(setEditAdm,row.id,"note",v)} placeholder="비고" style={{color:"#64748b",fontSize:13}} />
+                    ) : (
+                      <span style={{ fontSize:13, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{row.note}</span>
+                    )}
+                    {editMode && <DelBtn onClick={()=>deleteRow(setEditAdm,row.id)} />}
+                  </div>
+                ))}
+                {editMode && <AddBtn onClick={()=>addRow(setEditAdm,EMPTY_ADM)} />}
+              </div>
             </div>
 
-            {/* 우: 치료실 이용계획 */}
-            <Section title="<치료실 이용계획>" titleBg="#fef3c7" titleColor="#92400e" style={{ flex:1 }}>
-              <div className="no-print" style={{ padding:"4px 12px", fontSize:13, color:"#92400e",
-                background:"#fffbeb", borderBottom:"1px solid #fde68a" }}>
-                치료사: {therapists[0]} / {therapists[1]} &nbsp;
-                <span style={{ color:"#a16207", fontSize:12 }}>(치료실 스케줄 자동 연동)</span>
+            {/* 퇴원 */}
+            <div style={{ flex:1, minWidth: isMobile?"100%":0 }}>
+              <SectionHeader icon="↓" label="퇴원" count={dDis.filter(r=>r.name).length} color="#dc2626" bg="#fef2f2" borderColor="#fecaca" />
+              <div style={{ background:"#fff", border:"1px solid #fecaca", borderTop:"none", borderRadius:"0 0 10px 10px" }}>
+                {dDis.filter(r=>r.name).length===0 && !editMode && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
+                {dDis.map(row => (
+                  <div key={row.id} style={{ display:"flex", gap:6, padding:"6px 10px",
+                    borderBottom:"1px solid #fff5f5", alignItems:"center",
+                    background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
+                    {editMode ? (
+                      <Field w={75} value={row.room} onChange={v=>updateRow(setEditDis,row.id,"room",v)} placeholder="호실" style={{fontWeight:800,color:"#dc2626",textAlign:"center"}} />
+                    ) : (
+                      <span style={{ fontWeight:800, color:"#dc2626", fontSize:14, width:75, textAlign:"center", flexShrink:0 }}>{row.room}</span>
+                    )}
+                    {editMode ? (
+                      <Field w={90} value={row.name} onChange={v=>updateRow(setEditDis,row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
+                    ) : (
+                      <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>
+                    )}
+                    {editMode ? (
+                      <Field w={80} value={row.time} onChange={v=>updateRow(setEditDis,row.id,"time",v)} placeholder="시간" style={{color:"#0891b2",textAlign:"center"}} />
+                    ) : row.time ? (
+                      <span style={{ fontSize:12, color:"#0891b2", fontWeight:600, flexShrink:0, background:"#ecfeff", borderRadius:3, padding:"0 4px" }}>{row.time}</span>
+                    ) : null}
+                    {editMode ? (
+                      <Field flex={1} value={row.note} onChange={v=>updateRow(setEditDis,row.id,"note",v)} placeholder="재입원 일정 등" style={{color:"#64748b",fontSize:13}} />
+                    ) : (
+                      <span style={{ fontSize:13, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{row.note}</span>
+                    )}
+                    {editMode && <DelBtn onClick={()=>deleteRow(setEditDis,row.id)} />}
+                  </div>
+                ))}
+                {editMode && <AddBtn onClick={()=>addRow(setEditDis,EMPTY_DIS)} />}
               </div>
-              <div style={{ overflowX:"auto" }}>
-                <table style={{ borderCollapse:"collapse", width:"100%", minWidth:500 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ ...S.th, width:110, background:"#fef3c7", color:"#92400e" }}>시간</th>
-                      {therapyCols.map(c => (
-                        <th key={c.key} style={{ ...S.th, background:"#fef3c7", color:"#92400e", whiteSpace:"pre-line" }}>{c.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {THERAPY_SLOTS.map(slot => {
-                      const auto = autoTherapy[slot] || {};
-                      return (
-                        <tr key={slot} style={{ background: slot.startsWith("13") ? "#fffbeb":"#fff" }}>
-                          <td style={{ ...S.td, background:"#fef9c3", fontWeight:700, fontSize:15,
-                            textAlign:"center", color:"#78350f", whiteSpace:"nowrap" }}>{slot}</td>
-                          {therapyCols.map(c => {
-                            const manual = dTher[slot]?.[c.key];
-                            const autoVal = auto[c.key] || "";
-                            const display = manual || autoVal;
-                            return (
-                              <td key={c.key} style={{ ...S.td, verticalAlign:"top", padding:3, position:"relative" }}>
-                                {editMode ? (
-                                  <>
-                                    {autoVal && !manual && (
-                                      <div style={{ fontSize:14, color:"#4b5563", whiteSpace:"pre-wrap",
-                                        lineHeight:1.5, padding:"2px 4px", background:"#f0f9ff",
-                                        borderRadius:4, border:"1px solid #bae6fd" }}>{autoVal}</div>
-                                    )}
-                                    <textarea value={manual||""} onChange={e => updateTherapy(slot, c.key, e.target.value)}
-                                      rows={2} placeholder={autoVal ? "" : "이름(병실)"}
-                                      style={{ width:"100%", border: manual ? "1px solid #fcd34d" : "1px dashed #e2e8f0",
-                                        background: manual ? "#fffbeb" : "transparent",
-                                        resize:"vertical", fontSize:14, fontFamily:"inherit",
-                                        padding:3, minHeight:44, outline:"none", lineHeight:1.6,
-                                        borderRadius:4, marginTop: autoVal && !manual ? 3 : 0 }} />
-                                  </>
-                                ) : display ? (
-                                  <div style={{ fontSize:14, color:"#4b5563", whiteSpace:"pre-wrap",
-                                    lineHeight:1.5, padding:"2px 4px",
-                                    background: manual ? "#fffbeb" : autoVal ? "#f0f9ff" : "transparent",
-                                    borderRadius:4, border: autoVal && !manual ? "1px solid #bae6fd" : "none" }}>
-                                    {display}
-                                  </div>
-                                ) : null}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            </div>
+          </div>
+
+          {/* ── 전실 / 자리보존 2열 ── */}
+          <div style={{ display:"flex", gap:12, flexWrap: isMobile?"wrap":"nowrap" }}>
+            {/* 전실 */}
+            <div style={{ flex:1, minWidth: isMobile?"100%":0 }}>
+              <SectionHeader icon="⇄" label="전실" count={dTrn.filter(r=>r.name).length} color="#0369a1" bg="#f0f9ff" borderColor="#bae6fd" />
+              <div style={{ background:"#fff", border:"1px solid #bae6fd", borderTop:"none", borderRadius:"0 0 10px 10px" }}>
+                {dTrn.filter(r=>r.name).length===0 && !editMode && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
+                {dTrn.map(row => (
+                  <div key={row.id} style={{ display:"flex", gap:6, padding:"6px 10px",
+                    borderBottom:"1px solid #f0f9ff", alignItems:"center",
+                    background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
+                    {editMode ? (
+                      <Field w={80} value={row.name} onChange={v=>updateRow(setEditTrn,row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
+                    ) : (
+                      <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>
+                    )}
+                    {editMode ? (
+                      <Field w={65} value={row.fromRoom} onChange={v=>updateRow(setEditTrn,row.id,"fromRoom",v)} placeholder="기존" style={{textAlign:"center",color:"#64748b"}} />
+                    ) : (
+                      <span style={{ fontSize:13, color:"#64748b", flexShrink:0 }}>{row.fromRoom}</span>
+                    )}
+                    <span style={{ color:"#0369a1", fontWeight:800, fontSize:14, flexShrink:0 }}>→</span>
+                    {editMode ? (
+                      <Field w={65} value={row.toRoom} onChange={v=>updateRow(setEditTrn,row.id,"toRoom",v)} placeholder="이동" style={{textAlign:"center",color:"#0369a1",fontWeight:700}} />
+                    ) : (
+                      <span style={{ fontSize:13, color:"#0369a1", fontWeight:700, flexShrink:0 }}>{row.toRoom}</span>
+                    )}
+                    {editMode ? (
+                      <Field flex={1} value={row.time} onChange={v=>updateRow(setEditTrn,row.id,"time",v)} placeholder="시간" style={{color:"#64748b",fontSize:13}} />
+                    ) : row.time ? (
+                      <span style={{ fontSize:13, color:"#64748b" }}>{row.time}</span>
+                    ) : null}
+                    {editMode && <DelBtn onClick={()=>deleteRow(setEditTrn,row.id)} />}
+                  </div>
+                ))}
+                {editMode && <AddBtn onClick={()=>addRow(setEditTrn,EMPTY_TRN)} />}
               </div>
-            </Section>
+            </div>
+
+            {/* 자리보존 */}
+            <div style={{ flex:1, minWidth: isMobile?"100%":0 }}>
+              <SectionHeader icon="🔒" label="자리 보존" count={dRes.filter(r=>r.name).length} color="#7c3aed" bg="#faf5ff" borderColor="#ddd6fe" />
+              <div style={{ background:"#fff", border:"1px solid #ddd6fe", borderTop:"none", borderRadius:"0 0 10px 10px" }}>
+                {dRes.filter(r=>r.name).length===0 && !editMode && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
+                {dRes.map(row => (
+                  <div key={row.id} style={{ display:"flex", gap:6, padding:"6px 10px",
+                    borderBottom:"1px solid #faf5ff", alignItems:"center",
+                    background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
+                    {editMode ? (
+                      <Field w={80} value={row.name} onChange={v=>updateRow(setEditRes,row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
+                    ) : (
+                      <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>
+                    )}
+                    {editMode ? (
+                      <Field w={65} value={row.room} onChange={v=>updateRow(setEditRes,row.id,"room",v)} placeholder="병실" style={{textAlign:"center",color:"#7c3aed"}} />
+                    ) : (
+                      <span style={{ fontSize:13, color:"#7c3aed", flexShrink:0 }}>{row.room}</span>
+                    )}
+                    {editMode ? (
+                      <>
+                        <Field w={60} value={row.dischargeDate} onChange={v=>updateRow(setEditRes,row.id,"dischargeDate",v)} placeholder="퇴원일" style={{fontSize:13,color:"#64748b",textAlign:"center"}} />
+                        <Field flex={1} value={row.readmitDate} onChange={v=>updateRow(setEditRes,row.id,"readmitDate",v)} placeholder="재입원" style={{fontSize:13,color:"#7c3aed"}} />
+                      </>
+                    ) : (
+                      <>
+                        {row.dischargeDate && <span style={{ fontSize:12, color:"#64748b" }}>퇴원:{row.dischargeDate}</span>}
+                        {row.readmitDate && <span style={{ fontSize:12, color:"#7c3aed" }}>재입원:{row.readmitDate}</span>}
+                      </>
+                    )}
+                    {editMode && <DelBtn onClick={()=>deleteRow(setEditRes,row.id)} />}
+                  </div>
+                ))}
+                {editMode && <AddBtn onClick={()=>addRow(setEditRes,EMPTY_RES)} />}
+              </div>
+            </div>
+          </div>
+
+          {/* ── 치료실 이용계획 ── */}
+          <div>
+            <SectionHeader icon="💊" label="치료실 이용계획" color="#92400e" bg="#fffbeb" borderColor="#fde68a"
+              right={<span className="no-print" style={{ fontSize:11, color:"#a16207", fontWeight:500 }}>치료실 스케줄 자동 연동</span>} />
+            <div style={{ background:"#fff", border:"1px solid #fde68a", borderTop:"none",
+              borderRadius:"0 0 10px 10px", overflowX:"auto" }}>
+              <table style={{ borderCollapse:"collapse", width:"100%", minWidth:520 }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...S.thTh, width:100, background:"#fefce8" }}>시간</th>
+                    {therapyCols.map(c => (
+                      <th key={c.key} style={{ ...S.thTh, whiteSpace:"pre-line" }}>{c.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {THERAPY_SLOTS.map(slot => {
+                    const auto = autoTherapy[slot]||{};
+                    const isAft = slot.startsWith("13");
+                    return (
+                      <tr key={slot}>
+                        <td style={{ padding:"4px 6px", borderBottom:"1px solid #f5f5f4", borderRight:"1px solid #f5f5f4",
+                          fontWeight:800, fontSize:13, textAlign:"center", color:"#78350f",
+                          background:isAft?"#fefce8":"#fafaf9", whiteSpace:"nowrap" }}>{slot}</td>
+                        {therapyCols.map(c => {
+                          const manual = dTher[slot]?.[c.key];
+                          const autoVal = auto[c.key]||"";
+                          const display = manual || autoVal;
+                          return (
+                            <td key={c.key} style={{ padding:3, borderBottom:"1px solid #f5f5f4",
+                              borderRight:"1px solid #f5f5f4", verticalAlign:"top",
+                              background:isAft?"#fffef5":"#fff" }}>
+                              {editMode ? (
+                                <>
+                                  {autoVal && !manual && (
+                                    <div style={{ fontSize:13, color:"#374151", whiteSpace:"pre-wrap",
+                                      lineHeight:1.5, padding:"2px 5px", background:"#f0f9ff",
+                                      borderRadius:4, border:"1px solid #dbeafe" }}>{autoVal}</div>
+                                  )}
+                                  <textarea value={manual||""} onChange={e=>updateTherapy(slot,c.key,e.target.value)}
+                                    rows={2} placeholder={autoVal?"":"-"}
+                                    style={{ width:"100%", border:manual?"1px solid #fcd34d":"1px solid transparent",
+                                      background:manual?"#fffbeb":"transparent", resize:"vertical", fontSize:13,
+                                      fontFamily:"inherit", padding:"2px 5px", minHeight:40, outline:"none",
+                                      lineHeight:1.5, borderRadius:4, marginTop:autoVal&&!manual?2:0 }} />
+                                </>
+                              ) : display ? (
+                                <div style={{ fontSize:13, color:"#374151", whiteSpace:"pre-wrap", lineHeight:1.5, padding:"2px 5px",
+                                  background:manual?"#fffbeb":autoVal?"#f0f9ff":"transparent",
+                                  borderRadius:4, border:autoVal&&!manual?"1px solid #dbeafe":"none" }}>{display}</div>
+                              ) : null}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -554,93 +596,71 @@ export default function DailyBoard() {
 }
 
 /* ── 서브 컴포넌트 ── */
-function Section({ title, titleBg, titleColor, children, style }) {
+function SectionHeader({ icon, label, count, color, bg, borderColor, right }) {
   return (
-    <div className="section-card" style={{ background:"#fff", borderRadius:10,
-      border:"1px solid #e2e8f0", overflow:"hidden", ...style }}>
-      <div style={{ background:titleBg, color:titleColor, fontWeight:900,
-        fontSize:18, padding:"8px 16px", letterSpacing:2 }}>{title}</div>
-      {children}
+    <div style={{ background:bg, border:`1px solid ${borderColor}`, borderBottom:"none",
+      borderRadius:"10px 10px 0 0", padding:"7px 14px",
+      display:"flex", alignItems:"center", gap:8 }}>
+      <span style={{ fontSize:16 }}>{icon}</span>
+      <span style={{ fontWeight:900, fontSize:16, color, letterSpacing:1 }}>{label}</span>
+      {count > 0 && <span style={{ fontSize:13, fontWeight:800, color,
+        background:"rgba(255,255,255,0.7)", borderRadius:10, padding:"1px 8px" }}>{count}</span>}
+      {right && <div style={{ marginLeft:"auto" }}>{right}</div>}
     </div>
   );
 }
 
-function Table({ cols, children }) {
+function Field({ value, onChange, placeholder, w, flex, style: extraStyle }) {
   return (
-    <div style={{ overflowX:"auto" }}>
-      <table style={{ borderCollapse:"collapse", width:"100%" }}>
-        <thead>
-          <tr>
-            {cols.map((c,i) => <th key={i} style={{ ...S.th, width:c.width }}>{c.label}</th>)}
-            <th style={{ ...S.th, width:32 }} className="no-print" />
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
+    <input value={value||""} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+      style={{ border:"none", outline:"none", background:"transparent", fontSize:14,
+        padding:"3px 4px", fontFamily:"inherit", color:"#1e293b", width: w || "auto",
+        flex: flex || undefined, minWidth:0, ...extraStyle }} />
   );
 }
 
-function EditRow({ children, onDelete, highlight }) {
+function DelBtn({ onClick }) {
   return (
-    <tr style={{ borderBottom:"1px solid #e2e8f0", background: highlight ? "#fef3c7" : "transparent" }}>
-      {children}
-      <td className="no-print" style={{ padding:"2px 4px", textAlign:"center", width:32 }}>
-        {onDelete && (
-          <button onClick={onDelete} title="삭제"
-            style={{ background:"none", border:"none", cursor:"pointer", color:"#ef4444",
-              fontSize:18, lineHeight:1 }}>✕</button>
-        )}
-      </td>
-    </tr>
+    <button className="no-print" onClick={onClick} title="삭제"
+      style={{ background:"none", border:"none", cursor:"pointer", color:"#d1d5db",
+        fontSize:15, lineHeight:1, padding:"0 2px", flexShrink:0 }}
+      onMouseEnter={e => e.target.style.color="#ef4444"}
+      onMouseLeave={e => e.target.style.color="#d1d5db"}>✕</button>
   );
 }
 
-function EditCell({ value, onChange, placeholder, width, flex }) {
+function AddBtn({ onClick }) {
   return (
-    <td style={{ padding:"3px 4px", borderRight:"1px solid #e2e8f0", width, verticalAlign:"middle" }}>
-      <input value={value||""} readOnly={!onChange}
-        onChange={onChange ? e => onChange(e.target.value) : undefined}
-        placeholder={placeholder}
-        style={{ ...S.cell, width:"100%" }} />
-    </td>
-  );
-}
-
-function AddRowBtn({ onClick }) {
-  return (
-    <div className="no-print" style={{ padding:"5px 8px" }}>
+    <div className="no-print" style={{ padding:"4px 8px" }}>
       <button onClick={onClick}
-        style={{ background:"none", border:"1px dashed #cbd5e1", borderRadius:6, color:"#64748b",
-          cursor:"pointer", fontSize:15, padding:"4px 14px", width:"100%", fontWeight:600 }}>
-        + 행 추가
+        style={{ background:"none", border:"1px dashed #e2e8f0", borderRadius:6, color:"#94a3b8",
+          cursor:"pointer", fontSize:13, padding:"3px 14px", width:"100%", fontWeight:600 }}>
+        + 추가
       </button>
     </div>
   );
 }
 
+const PRINT_CSS = `@media print {
+  @page { size: A4 portrait; margin: 8mm; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 11px; }
+  .no-print { display: none !important; }
+  .print-title { display: block !important; }
+  .section-card { break-inside: avoid; margin-bottom: 4mm; }
+  input, textarea { border: none !important; background: transparent !important; padding: 0 !important; }
+}`;
+
 const S = {
-  navBtn: {
-    background:"rgba(255,255,255,0.1)", color:"#e2e8f0", border:"1px solid rgba(255,255,255,0.2)",
-    borderRadius:7, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:600,
+  navArrow: {
+    background:"rgba(255,255,255,0.1)", color:"#fff", border:"1px solid rgba(255,255,255,0.2)",
+    borderRadius:8, padding:"4px 12px", cursor:"pointer", fontSize:18, fontWeight:700, lineHeight:1,
   },
-  dayBtn: {
-    background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:6,
-    padding:"5px 12px", cursor:"pointer", fontSize:16, fontWeight:700,
+  headerBtn: {
+    color:"#e2e8f0", borderRadius:7, padding:"5px 12px", cursor:"pointer",
+    fontSize:12, fontWeight:700, fontFamily:"inherit",
   },
-  actionBtn: {
-    border:"none", borderRadius:6, padding:"7px 16px", cursor:"pointer", fontSize:15, fontWeight:700,
-  },
-  th: {
-    background:"#f8fafc", borderBottom:"2px solid #e2e8f0", borderRight:"1px solid #e2e8f0",
-    padding:"7px 8px", fontSize:15, fontWeight:700, color:"#374151",
-    textAlign:"center", whiteSpace:"nowrap",
-  },
-  td: {
-    border:"1px solid #e2e8f0", padding:"5px 7px", fontSize:15,
-  },
-  cell: {
-    border:"none", outline:"none", background:"transparent", fontSize:16,
-    padding:"2px 4px", fontFamily:"inherit", color:"#1e293b", width:"100%",
+  thTh: {
+    background:"#fafaf9", borderBottom:"2px solid #e7e5e4", borderRight:"1px solid #f5f5f4",
+    padding:"6px 8px", fontSize:13, fontWeight:700, color:"#44403c", textAlign:"center",
   },
 };
