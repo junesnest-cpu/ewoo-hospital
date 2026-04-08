@@ -626,6 +626,19 @@ export default function TreatmentPage() {
                     <tr style={{ background: ok?"#f0fdf4":"#fef2f2" }}>
                       <td colSpan={3} style={{ ...TS.td, fontWeight:800 }}>
                         💊 전체 정산 (최소 {Math.floor(totalTreatMin/10000)}만원)
+                        {admitDate && (() => {
+                          const admit = parseDateStr(admitDate);
+                          const end   = dischargeDate ? dateOnly(dischargeDate) : dateOnly(new Date());
+                          const days  = admit ? Math.floor((end - dateOnly(admit)) / 86400000) + 1 : null;
+                          const endLabel = dischargeDate
+                            ? `${dischargeDate.getMonth()+1}/${dischargeDate.getDate()}`
+                            : "오늘";
+                          return days ? (
+                            <span style={{ fontWeight:400, fontSize:11, color:"#64748b", marginLeft:10 }}>
+                              {`${parseDateStr(admitDate).getMonth()+1}/${parseDateStr(admitDate).getDate()} ~ ${endLabel} · ${days}일`}
+                            </span>
+                          ) : null;
+                        })()}
                       </td>
                       <td style={{ ...TS.td, textAlign:"right", fontWeight:800, fontSize:15, color: ok?"#16a34a":"#dc2626" }}>
                         {totalTreatActual.toLocaleString()}원&nbsp;{ok?"✓ 충족":"✗ 미충족"}
