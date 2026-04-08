@@ -678,6 +678,25 @@ export default function WardTimeline() {
     await set(ref(db, "slots"), ns);
   }, []);
 
+  // 상담일지 역방향 동기화: 타임라인에서 예약 삭제/이동 시 상담일지 업데이트
+  const syncConsultationOnSlotChange = useCallback(async (fromSlotKey, personName, consultationId, newSlotKey) => {
+    // 해당 병상+이름(또는 consultationId)으로 상담 찾기
+    const match = Object.entries(consultations).find(([id, c]) => {
+      if (c.reservedSlot !== fromSlotKey) return false;
+      if (consultationId && id === consultationId) return true;
+      return c.name === personName;
+    });
+    if (!match) return;
+    const [cId, c] = match;
+    if (newSlotKey) {
+      // 병상 이동: reservedSlot 업데이트
+      await set(ref(db, `consultations/${cId}`), { ...c, reservedSlot: newSlotKey });
+    } else {
+      // 예약 삭제: 병상 배정 해제 → 상담중으로 복귀
+      await set(ref(db, `consultations/${cId}`), { ...c, reservedSlot: null, status: "상담중" });
+    }
+  }, [consultations]);
+
   const saveMemo = useCallback(async (roomId, text) => {
     const next = { ...roomMemos, [roomId]: text };
     setRoomMemos(next);
@@ -721,9 +740,14 @@ export default function WardTimeline() {
     }
 
     await saveSlots(newSlots);
+
+    // 예약 이동 시 상담일지 연동
+    if (bar.type === "reservation") {
+      await syncConsultationOnSlotChange(fromKey, person.name, person.consultationId, targetSlotKey);
+    }
     setDragging(null);
     setDragOver(null);
-  }, [dragging, slots, saveSlots]);
+  }, [dragging, slots, saveSlots, syncConsultationOnSlotChange]);
 
 
   // 저장 처리
@@ -757,9 +781,13 @@ export default function WardTimeline() {
       if (mode === "current") ns[slotKey].current = null;
       else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
       await saveSlots(ns);
+      // 예약 삭제 시 상담일지 연동 (현재 입원 정보 삭제는 연동 제외)
+      if (mode === "reservation") {
+        await syncConsultationOnSlotChange(slotKey, data.name, data.consultationId, null);
+      }
       setEditModal(null); setPopover(null);
     } finally { setSaving(false); }
-  }, [editModal, slots, saveSlots]);
+  }, [editModal, slots, saveSlots, syncConsultationOnSlotChange]);
 
   const handleConvert = useCallback(async () => {
     if (!editModal || editModal.mode !== "reservation") return;
@@ -794,8 +822,12 @@ export default function WardTimeline() {
     if (bar.type==="current") ns[slotKey].current = null;
     else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==bar.resIndex);
     await saveSlots(ns);
+    // 예약 삭제 시 상담일지 연동
+    if (bar.type === "reservation") {
+      await syncConsultationOnSlotChange(slotKey, bar.person.name, bar.person.consultationId, null);
+    }
     setPopover(null);
-  }, [popover, slots, saveSlots]);
+  }, [popover, slots, saveSlots, syncConsultationOnSlotChange]);
 
   if (syncing && Object.keys(slots).length === 0) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", flexDirection:"column", gap:16, background:"#f0f4f8", fontFamily:"'Noto Sans KR',sans-serif" }}>

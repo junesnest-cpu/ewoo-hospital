@@ -157,7 +157,8 @@ export default function RoomPage() {
   const isMobile = useIsMobile();
   const { roomId: qRoomId, preview } = router.query;
 
-  const [slots,    setSlots]    = useState({});
+  const [slots,         setSlots]         = useState({});
+  const [consultations, setConsultations] = useState({});
   const [loading,  setLoading]  = useState(true);
   const [viewDateInput, setViewDateInput] = useState(toInputValue(todayDate()));
   const [previewDate,   setPreviewDate]   = useState(null);
@@ -189,6 +190,11 @@ export default function RoomPage() {
 
   useEffect(()=>{
     const unsub = onValue(ref(db,"slots"), snap=>{ setSlots(snap.val()||{}); setLoading(false); });
+    return ()=>unsub();
+  },[]);
+
+  useEffect(()=>{
+    const unsub = onValue(ref(db,"consultations"), snap=>{ setConsultations(snap.val()||{}); });
     return ()=>unsub();
   },[]);
 
@@ -254,6 +260,22 @@ export default function RoomPage() {
     await saveSlots(newSlots);
   },[slots, saveSlots]);
 
+  // 상담일지 역방향 동기화
+  const syncConsultationOnSlotChange = useCallback(async (fromSlotKey, personName, consultationId, newSlotKey) => {
+    const match = Object.entries(consultations).find(([id, c]) => {
+      if (c.reservedSlot !== fromSlotKey) return false;
+      if (consultationId && id === consultationId) return true;
+      return c.name === personName;
+    });
+    if (!match) return;
+    const [cId, c] = match;
+    if (newSlotKey) {
+      await set(ref(db, `consultations/${cId}`), { ...c, reservedSlot: newSlotKey });
+    } else {
+      await set(ref(db, `consultations/${cId}`), { ...c, reservedSlot: null, status: "상담중" });
+    }
+  }, [consultations]);
+
   // 입원 전환
   const convertReservation = useCallback(async (slotKey, resIndex) => {
     const slot = slots[slotKey];
@@ -299,7 +321,11 @@ export default function RoomPage() {
     setMovingPatient(null);
     await saveSlots(newSlots);
     await addLog({ action:"이동", from:fromKey, to:targetSlotKey, name:data.name });
-  },[movingPatient, slots, saveSlots, addLog]);
+    // 예약 이동 시 상담일지 연동
+    if (mode === "reservation") {
+      await syncConsultationOnSlotChange(fromKey, data.name, data.consultationId, targetSlotKey);
+    }
+  },[movingPatient, slots, saveSlots, addLog, syncConsultationOnSlotChange]);
 
   const allKnownPatients = useMemo(() => {
     const seen = new Set();
@@ -551,6 +577,10 @@ export default function RoomPage() {
             else newSlots[sk].reservations=newSlots[sk].reservations.filter((_,i)=>i!==editingSlot.resIndex);
             await saveSlots(newSlots);
             await addLog({action:"삭제",slotKey:sk,name:editingSlot.data.name});
+            // 예약 삭제 시 상담일지 연동
+            if (editingSlot.mode === "reservation") {
+              await syncConsultationOnSlotChange(sk, editingSlot.data.name, editingSlot.data.consultationId, null);
+            }
             setEditingSlot(null);
           }:undefined}
         />
