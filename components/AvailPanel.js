@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 
@@ -19,7 +20,14 @@ function parseDateStr(str) {
 }
 function dateOnly(d) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 
+function isoToMD(isoStr) {
+  if (!isoStr) return "";
+  const d = new Date(isoStr + "T00:00:00");
+  return `${d.getMonth()+1}/${d.getDate()}`;
+}
+
 export default function AvailPanel({ onClose }) {
+  const router = useRouter();
   const [slots,          setSlots]          = useState({});
   const [availAdmit,     setAvailAdmit]     = useState("");
   const [availDischarge, setAvailDischarge] = useState("");
@@ -202,7 +210,13 @@ export default function AvailPanel({ onClose }) {
                   </div>
                   <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                     {availResults.map((r, i) => (
-                      <button key={i} onClick={() => gotoRoom(r.roomId)}
+                      <button key={i}
+                        onClick={() => {
+                          const admitMD    = isoToMD(availAdmit);
+                          const dischargeMD = availDischarge ? isoToMD(availDischarge) : "미정";
+                          router.push(`/ward-timeline?openRes=${encodeURIComponent(r.slotKey)}&admitDate=${encodeURIComponent(admitMD)}&discharge=${encodeURIComponent(dischargeMD)}`);
+                          onClose();
+                        }}
                         style={{ background:TYPE_BG[r.roomType], border:`1.5px solid ${TYPE_COLOR[r.roomType]}`,
                           borderRadius:7, padding:"6px 14px", cursor:"pointer", fontSize:13, fontWeight:700,
                           color:TYPE_COLOR[r.roomType], display:"flex", alignItems:"center", gap:5 }}>
@@ -210,6 +224,7 @@ export default function AvailPanel({ onClose }) {
                         {r.roomId}호 {r.bedNum}번
                         <span style={{ fontSize:10, background:TYPE_COLOR[r.roomType], color:"#fff",
                           borderRadius:3, padding:"1px 5px" }}>{r.roomType}</span>
+                        <span style={{ fontSize:10, color:"#059669" }}>+ 예약</span>
                       </button>
                     ))}
                   </div>

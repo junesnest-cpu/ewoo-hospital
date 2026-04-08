@@ -502,6 +502,23 @@ export default function WardTimeline() {
     setTlSearchResults(results);
   };
 
+  // 가용병상조회에서 넘어온 예약 모달 자동 오픈
+  useEffect(() => {
+    const { openRes, admitDate: qAdmit, discharge: qDischarge } = router.query;
+    if (!openRes) return;
+    setEditModal({
+      slotKey: openRes,
+      mode: "reservation",
+      resIndex: -1,
+      data: { name:"", admitDate: qAdmit || "", discharge: qDischarge || "미정", note:"", scheduleAlert:false },
+    });
+    // 해당 병상 행으로 스크롤
+    setTimeout(() => scrollToRow(openRes), 300);
+    // 쿼리 파라미터 제거 (뒤로 가기 시 재오픈 방지)
+    router.replace("/ward-timeline", undefined, { shallow: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.query.openRes]);
+
   // 사이드바 검색 이벤트 처리 (stale closure 방지)
   useEffect(() => { doTlSearchFnRef.current = doTlSearch; });
   useEffect(() => {
