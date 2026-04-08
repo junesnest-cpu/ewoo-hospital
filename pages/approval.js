@@ -190,7 +190,7 @@ function ApprovalStampArea({ doc }) {
   return (
     <div style={{ display:"flex", gap:20, justifyContent:"flex-end", alignItems:"flex-end",
       padding:"16px 8px 4px", borderTop:"1px dashed #e2e8f0", marginTop:8 }}>
-      {deptStep && doc.type !== "weekly" && (
+      {deptStep && (
         <ApprovalStamp label="부서장" name={deptStep.byName}
           date={fmtTs(deptStep.at).slice(0,10)} color="#7c3aed"
           action={deptStep.action==="final"?"전결":"결재"} />
@@ -234,7 +234,7 @@ function buildSteps(doc, users) {
   const deptStep  = hist.find(h => ["approved","final","rejected"].includes(h.action) && h.byRole === "dept_head");
   const dirStep   = hist.find(h => ["approved","rejected"].includes(h.action) && h.byRole === "director");
   const steps = [{ label:"작성", name: doc.authorName, done:true, at: submitted?.at }];
-  if (doc.type !== "weekly") {
+  {
     const deptHeadName = Object.values(users||{}).find(u=>u.role==="dept_head"&&u.department===doc.authorDept)?.name || "부서장";
     steps.push({
       label:"부서장",
@@ -1512,7 +1512,11 @@ export default function ApprovalPage() {
   }, []);
 
   // 내가 결재해야 할 문서 (currentApproverUid === user.uid)
-  const pendingDocs = Object.entries(docs).filter(([,d]) => d.currentApproverUid === user?.uid && !["approved","final","rejected"].includes(d.status));
+  const pendingApprovalDocs = Object.entries(docs).filter(([,d]) => d.currentApproverUid === user?.uid && !["approved","final","rejected"].includes(d.status));
+  // 내가 참조(CC)로 받은 미확인 문서
+  const pendingCcDocs = Object.entries(docs).filter(([,d]) => d.cc?.some(c => c.uid === user?.uid && !c.checkedAt));
+  // 결재 대기 (결재 + CC 합산)
+  const pendingDocs = [...pendingApprovalDocs, ...pendingCcDocs.filter(([id]) => !pendingApprovalDocs.some(([pid]) => pid === id))];
   // 내가 작성한 문서
   const myDocs = Object.entries(docs).filter(([,d]) => d.authorUid === user?.uid);
   // 병원장용: 전체 결재 대기
@@ -1522,17 +1526,12 @@ export default function ApprovalPage() {
 
   // 결재 라우팅: 제출 시 다음 결재자 uid 찾기
   const findNextApprover = (type, authorRole, authorDept) => {
-    if (type === "weekly") {
-      // 직접 보고 → 병원장
-      const dir = Object.values(allUsers).find(u=>u.role==="director");
-      return dir ? { uid: dir.uid, status: "pending_dir" } : null;
-    }
     if (authorRole === "staff") {
-      // 같은 부서 부서장 찾기
+      // 같은 부서 부서장 찾기 (기타/부서 없으면 부서장 없으므로 병원장으로 직행)
       const dh = Object.values(allUsers).find(u=>u.role==="dept_head"&&u.department===authorDept);
       if (dh) return { uid: dh.uid, status: "pending_dept" };
     }
-    // 부서장/병원장이 제출하면 바로 병원장 결재
+    // 부서장/병원장이 제출하거나 부서장 없으면 바로 병원장 결재
     const dir = Object.values(allUsers).find(u=>u.role==="director");
     return dir ? { uid: dir.uid, status: "pending_dir" } : null;
   };
@@ -1684,6 +1683,14 @@ export default function ApprovalPage() {
       status: newStatus, currentApproverUid: nextApproverUid, updatedAt: Date.now(),
       history: [...(doc.history||[]), { action: isFinal?"final":"approved", byUid:user.uid, byName:profile.name, byRole:profile.role, at:Date.now(), memo:"" }],
     });
+    // 물품청구서/휴가신청서 최종 승인 시 이인호·손정아에게 참조(CC) 전달
+    if (["vacation","supply"].includes(doc.type) && ["approved","final"].includes(newStatus)) {
+      const ccUsers = Object.values(allUsers).filter(u => u.name === "이인호" || u.name === "손정아");
+      const cc = ccUsers.map(u => ({ uid: u.uid, name: u.name, checkedAt: null }));
+      if (cc.length > 0) {
+        await update(ref(db, `approvals/${docId}`), { cc });
+      }
+    }
     // 물품청구서가 최종 승인(approved/final)된 경우 세금계산서에 자동 반영
     if (doc.type === "supply" && (newStatus === "approved" || newStatus === "final")) {
       await addSupplyToTax(doc);
@@ -1704,6 +1711,14 @@ export default function ApprovalPage() {
     }
     setActionLoading(false);
     alert(isFinal ? "전결 처리 완료" : "승인 완료");
+  };
+
+  const handleCcCheck = async (docId) => {
+    const doc = docs[docId];
+    const cc = (doc.cc || []).map(c =>
+      c.uid === user.uid ? { ...c, checkedAt: Date.now() } : c
+    );
+    await update(ref(db, `approvals/${docId}`), { cc, updatedAt: Date.now() });
   };
 
   const handleReject = async () => {
@@ -1916,6 +1931,30 @@ export default function ApprovalPage() {
             ))}
           </div>
 
+          {/* 참조(CC) */}
+          {doc.cc && doc.cc.length > 0 && (
+            <div style={S.card}>
+              <div style={S.sectionTit}>참조</div>
+              {doc.cc.map((c, i) => {
+                const isMe = c.uid === user.uid;
+                const checked = !!c.checkedAt;
+                return (
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 0", borderBottom:"1px solid #f1f5f9" }}>
+                    <div style={{ width:8, height:8, borderRadius:"50%", background: checked ? "#059669" : "#94a3b8", flexShrink:0 }} />
+                    <div style={{ flex:1, fontSize:13, fontWeight:600 }}>{c.name}</div>
+                    {checked ? (
+                      <span style={{ fontSize:12, color:"#059669", fontWeight:700 }}>✓ 확인 {fmtTs(c.checkedAt).slice(0,10)}</span>
+                    ) : isMe ? (
+                      <button style={{ ...S.btnGreen, padding:"6px 14px", fontSize:12 }} onClick={() => handleCcCheck(selectedId)}>확인</button>
+                    ) : (
+                      <span style={{ fontSize:12, color:"#94a3b8" }}>미확인</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* 결재 액션 버튼 */}
           {isPendingMe && (
             <div style={{ ...S.card, display:"flex", gap:12, justifyContent:"center", flexWrap:"wrap" }}>
@@ -2003,19 +2042,39 @@ export default function ApprovalPage() {
 
   // ── 탭별 열람 권한 ────────────────────────────────────────────────────────────
   const isDirector   = profile.role === "director";
-  const isWonmuHead  = profile.role === "dept_head" && profile.department === "원무과";
-  const isNutrition  = profile.department === "영양팀";
+  const isDeptHead   = profile.role === "dept_head";
 
-  // vacation: 원무과장·병원장·손정아 → 전체, 나머지 → 본인만
-  const canSeeAllVacation = isDirector || isWonmuHead || profile.name === "손정아";
-  // refund: 병원장·원무과장·문경미만 탭 접근
-  const canAccessRefund   = isDirector || isWonmuHead || profile.name === "문경미";
-  // weekly: 영양팀·병원장만 탭 접근
-  const canAccessWeekly   = isDirector || isNutrition;
-  // tax: 병원장·원무과장·손정아만 탭 접근
-  const canAccessTax          = isDirector || isWonmuHead || profile.name === "손정아";
-  // supply_summary: 병원장·원무과장·손정아만 탭 접근
-  const canSeeSupplySummary   = isDirector || isWonmuHead || profile.name === "손정아";
+  // vacation: 병원장 → 전체, 이인호/손정아 → 승인완료 전체(참조), 부서장 → 자기부서, 직원 → 본인만
+  const canSeeVacationDoc = (d) => {
+    if (isDirector) return true;
+    if (profile.name === "이인호" || profile.name === "손정아") return ["approved","final"].includes(d.status) || d.authorUid === user.uid;
+    if (isDeptHead) return d.authorDept === profile.department || d.authorUid === user.uid;
+    return d.authorUid === user.uid;
+  };
+  // supply: 작성자·승인자만 열람, 이인호·손정아·원무과장은 승인완료 참조
+  const canSeeSupplyDoc = (d) => {
+    // 작성자
+    if (d.authorUid === user.uid) return true;
+    // 현재 결재 차례인 승인자
+    if (d.currentApproverUid === user.uid) return true;
+    // 이미 결재·반려한 승인자 (history 기준)
+    if ((d.history||[]).some(h => h.byUid === user.uid && ["approved","final","rejected"].includes(h.action))) return true;
+    // 참조인: 이인호·손정아·원무과장 → 승인완료 문서만
+    const isCC = profile.name === "이인호" || profile.name === "손정아"
+              || (isDeptHead && profile.department === "원무과");
+    if (isCC) return ["approved","final"].includes(d.status);
+    return false;
+  };
+  // 연차 현황 전체 보기 권한 (이인호·손정아·병원장)
+  const canSeeAllVacation = isDirector || profile.name === "이인호" || profile.name === "손정아";
+  // refund: 문경미·이인호·병원장만 탭 접근
+  const canAccessRefund   = isDirector || profile.name === "이인호" || profile.name === "문경미";
+  // weekly: 박기순·안지영·병원장만 탭 접근
+  const canAccessWeekly   = isDirector || profile.name === "박기순" || profile.name === "안지영";
+  // tax: 이인호·손정아·병원장만 탭 접근
+  const canAccessTax      = isDirector || profile.name === "이인호" || profile.name === "손정아";
+  // supply_summary: 이인호·손정아·병원장만
+  const canSeeSupplySummary = isDirector || profile.name === "이인호" || profile.name === "손정아";
 
   // 타입별 문서 목록
   const allDocEntries  = Object.entries(docs);
@@ -2025,13 +2084,11 @@ export default function ApprovalPage() {
   const weeklyDocs     = allDocEntries.filter(([,d]) => d.type === "weekly");
   const taxDocs        = allDocEntries.filter(([,d]) => d.type === "tax");
 
-  // 휴가신청서: 권한 없으면 본인 것만
-  const vacationDisplay = canSeeAllVacation
-    ? vacationDocs
-    : vacationDocs.filter(([,d]) => d.authorUid === user.uid);
+  // 휴가신청서: 권한별 필터링
+  const vacationDisplay = vacationDocs.filter(([,d]) => canSeeVacationDoc(d));
 
-  // 물품청구서: draft(임시저장)는 본인 것만, 결재 중/승인은 전체
-  const supplyDisplay = supplyDocs.filter(([,d]) => d.status !== "draft" || d.authorUid === user.uid);
+  // 물품청구서: 권한별 필터링
+  const supplyDisplay = supplyDocs.filter(([,d]) => canSeeSupplyDoc(d));
 
   // 위탁진료: 권한자만 전체, 나머지는 본인것 (탭 자체는 권한자만 표시)
   const refundDisplay = refundDocs;
@@ -2078,7 +2135,7 @@ export default function ApprovalPage() {
     .sort(([,a],[,b]) => (a.formData?.requestDate||"").localeCompare(b.formData?.requestDate||""));
 
   const displayDocs = activeTab === "mine"     ? sortedDocs(myDocs)
-    : activeTab === "pending"   ? sortedDocs(pendingDocs)
+    : activeTab === "pending"   ? sortedDocs([...pendingApprovalDocs, ...pendingCcDocs.filter(([id]) => !pendingApprovalDocs.some(([pid]) => pid === id))])
     : activeTab === "vacation"  ? sortedDocs(vacationDisplay)
     : activeTab === "supply"    ? sortedDocs(supplyDisplay)
     : activeTab === "refund"    ? sortedDocs(refundDisplay)
@@ -2193,10 +2250,14 @@ export default function ApprovalPage() {
 
         {/* ── 우측 컨텐츠 영역 ── */}
         <main style={{ ...S.content, padding: isMobile ? "14px 12px" : "24px 20px" }}>
-        {view === "list" && pendingDocs.length > 0 && (
+        {view === "list" && (pendingApprovalDocs.length > 0 || pendingCcDocs.length > 0) && (
           <div style={{ background:"#fef3c7", border:"1.5px solid #f59e0b", borderRadius:10, padding:"10px 16px", marginBottom:16, display:"flex", alignItems:"center", gap:10 }}>
             <span style={{ fontSize:16 }}>🔔</span>
-            <span style={{ fontWeight:700, color:"#92400e", fontSize:13 }}>결재 대기 문서 {pendingDocs.length}건이 있습니다.</span>
+            <span style={{ fontWeight:700, color:"#92400e", fontSize:13 }}>
+              {pendingApprovalDocs.length > 0 && `결재 대기 ${pendingApprovalDocs.length}건`}
+              {pendingApprovalDocs.length > 0 && pendingCcDocs.length > 0 && " · "}
+              {pendingCcDocs.length > 0 && `참조 미확인 ${pendingCcDocs.length}건`}
+            </span>
             <button onClick={()=>setActiveTab("pending")} style={{ marginLeft:"auto", border:"none", background:"#f59e0b", color:"#fff", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontWeight:700, fontSize:12 }}>확인하기</button>
           </div>
         )}
@@ -2591,6 +2652,7 @@ export default function ApprovalPage() {
                 <span style={S.badge(t.color, t.bg)}>{t.label}</span>
                 {doc.formData?.cancelled && <span style={{ fontSize:10, fontWeight:700, color:"#dc2626", background:"#fee2e2", border:"1px solid #fca5a5", borderRadius:5, padding:"1px 6px", flexShrink:0 }}>취소신청</span>}
                 {doc.originalDocId && !doc.formData?.cancelled && <span style={{ fontSize:10, fontWeight:700, color:"#92400e", background:"#fff7ed", border:"1px solid #fed7aa", borderRadius:5, padding:"1px 6px", flexShrink:0 }}>수정본</span>}
+                {doc.cc?.some(c => c.uid === user.uid && !c.checkedAt) && <span style={{ fontSize:10, fontWeight:700, color:"#0369a1", background:"#e0f2fe", border:"1px solid #7dd3fc", borderRadius:5, padding:"1px 6px", flexShrink:0 }}>참조 미확인</span>}
                 <span style={{ fontWeight:600, fontSize:14, flex:1 }}>
                   {doc.authorName}
                   {doc.formData?.title && <span style={{ fontSize:12, color:"#475569", fontWeight:400, marginLeft:6 }}>— {doc.formData.title}</span>}
