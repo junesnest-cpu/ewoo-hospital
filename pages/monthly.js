@@ -53,8 +53,11 @@ function parseDateStr(str, contextYear) {
   return null;
 }
 
-const EMPTY_ADM = () => ({ id:uid(), name:"", room:"", isNew:false, isReserved:false, note:"" });
-const EMPTY_DIS = () => ({ id:uid(), name:"", room:"", note:"" });
+const EMPTY_ADM = () => ({ id:uid(), name:"", room:"", isNew:false, isReserved:false, note:"", time:"" });
+const EMPTY_DIS = () => ({ id:uid(), name:"", room:"", note:"", time:"" });
+
+const DISCHARGE_TIMES = ["아침 후","점심 후","저녁 후","오전","오후"];
+const ADMISSION_TIMES = ["오전","점심","저녁","오후"];
 
 export default function MonthlySchedule() {
   const router = useRouter();
@@ -809,7 +812,7 @@ export default function MonthlySchedule() {
 
 /* ── 인라인 추가 팝오버 ── */
 function CellPopover({ popover, onClose, onSave, allPatients }) {
-  const [form, setForm] = useState({ name:"", room:"", note:"", isNew:false });
+  const [form, setForm] = useState({ name:"", room:"", note:"", isNew:false, time:"" });
   const [saving, setSaving] = useState(false);
   const wrapRef = useRef(null);
   const isAdm = popover.type === "admission";
@@ -842,6 +845,7 @@ function CellPopover({ popover, onClose, onSave, allPatients }) {
       note: form.note.trim(),
       isNew: form.isNew,
       isReserved: false,
+      time: form.time,
     });
     setSaving(false);
     onClose();
@@ -866,8 +870,15 @@ function CellPopover({ popover, onClose, onSave, allPatients }) {
           placeholder="이름 검색 또는 직접 입력"
           inputStyle={inputSt}
         />
-        <input value={form.room} onChange={e => setForm(f => ({...f, room:e.target.value}))}
-          placeholder="호실 (예: 501-1)" style={inputSt} />
+        <div style={{ display:"flex", gap:6 }}>
+          <input value={form.room} onChange={e => setForm(f => ({...f, room:e.target.value}))}
+            placeholder="호실 (예: 501-1)" style={{ ...inputSt, flex:1 }} />
+          <select value={form.time} onChange={e => setForm(f => ({...f, time:e.target.value}))}
+            style={{ ...inputSt, width:95, color: form.time ? (isAdm?"#166534":"#991b1b") : "#94a3b8" }}>
+            <option value="">시간</option>
+            {(isAdm ? ADMISSION_TIMES : DISCHARGE_TIMES).map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
         <input value={form.note} onChange={e => setForm(f => ({...f, note:e.target.value}))}
           placeholder="비고" style={inputSt} />
         {isAdm && (
@@ -968,6 +979,11 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
                     />
                     <input value={row.room} onChange={e => updateAdm(row.id,"room",e.target.value)}
                       placeholder="호실" style={{ ...MS.input, width:90 }} />
+                    <select value={row.time||""} onChange={e => updateAdm(row.id,"time",e.target.value)}
+                      style={{ ...MS.input, width:80, color: row.time?"#166534":"#94a3b8", padding:"6px 4px" }}>
+                      <option value="">시간</option>
+                      {ADMISSION_TIMES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
                   </div>
                   {/* 비고 + 뱃지 */}
                   <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
@@ -1014,6 +1030,11 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
                     />
                     <input value={row.room} onChange={e => updateDis(row.id,"room",e.target.value)}
                       placeholder="호실" style={{ ...MS.input, width:90 }} />
+                    <select value={row.time||""} onChange={e => updateDis(row.id,"time",e.target.value)}
+                      style={{ ...MS.input, width:90, color: row.time?"#991b1b":"#94a3b8", padding:"6px 4px" }}>
+                      <option value="">시간</option>
+                      {DISCHARGE_TIMES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
                   </div>
                   <input value={row.note} onChange={e => updateDis(row.id,"note",e.target.value)}
                     placeholder="비고 (재입원: 3/28 재입원 등)" style={{ ...MS.input, width:"100%" }} />
@@ -1051,6 +1072,9 @@ function PatientChip({ p, type, onDelete, highlight }) {
       {p.isNew && <span style={{ fontSize:12, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>★신</span>}
       <span style={{ fontSize:16, fontWeight:700, color: type==="admission" ? "#065f46" : "#991b1b", flexShrink:0 }}>{p.name}</span>
       {p.room && <span style={{ fontSize:13, color:"#64748b", flexShrink:0 }}>({p.room})</span>}
+      {p.time && <span style={{ fontSize:11, background: type==="admission"?"#dcfce7":"#fee2e2",
+        color: type==="admission"?"#166534":"#991b1b", borderRadius:3, padding:"0 4px",
+        fontWeight:700, flexShrink:0 }}>{p.time}</span>}
       {onDelete && (
         <button className="no-print" onClick={onDelete}
           style={{ background:"none", border:"none", cursor:"pointer", color:"#ef4444",

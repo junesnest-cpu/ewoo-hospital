@@ -53,7 +53,9 @@ async function parseMessageWithClaude(text) {
     "slotKey": "305-2 형식 또는 null",
     "name": "환자명 또는 null (※ '님' 제외한 이름만, 예: '천유영님' → '천유영')",
     "dischargeDate": "M/D 형식 퇴원예정일 또는 null",
+    "dischargeTime": "퇴원시간 또는 null — 아침 후 | 점심 후 | 저녁 후 | 오전 | 오후 중 하나",
     "admitDate": "M/D 형식 입원예정일 또는 null",
+    "admitTime": "입원시간 또는 null — 오전 | 점심 | 저녁 | 오후 중 하나",
     "transferToRoom": "전실할 병실번호 또는 null (예: \"301\" 또는 병상 지정 시 \"301-2\")",
     "treatments": [],
     "weeklySchedule": "반복 요일 치료: 요일은 쉼표 없이 붙여쓰기 (예: 고주파 주3회, 자닥신 월목, 이스카도 목토월)",
@@ -79,6 +81,13 @@ specificDates 형식:
 - "오늘 퇴원" → dischargeDate: "${month}/${day}"
 - "내일 퇴원" → dischargeDate: 오늘 기준 다음날 M/D 형식
 - "다음주 입원" → admitDate: 오늘(${month}/${day})로부터 7일 후 M/D 형식 계산
+- "아침후 퇴원" / "아침 후 퇴원" → dischargeTime: "아침 후"
+- "점심후 퇴원" / "점심 후 퇴원" → dischargeTime: "점심 후"
+- "저녁후 퇴원" / "저녁 후 퇴원" → dischargeTime: "저녁 후"
+- "오전 퇴원" → dischargeTime: "오전"
+- "점심 재입원" / "점심식사 재입원" → admitTime: "점심"
+- "저녁 재입원" / "저녁식사 재입원" / "저녁먹으러 재입원" → admitTime: "저녁"
+- "오전입원" / "오전 입원" → admitTime: "오전"
 - "퇴원 후 재입원" → 퇴원(discharge_update) + 재입원(admit_plan) 2개 항목
 - "전실/이동/자리이동/병실이동" → action: "transfer"
 - "305-2 류미경 301호로 전실" → action:"transfer", slotKey:"305-2", name:"류미경", transferToRoom:"301", admitDate: null (오늘)
@@ -180,6 +189,58 @@ function findPatientInRoom(slots, roomId, patientName) {
   }
 
   return null;
+}
+
+// M/D 형식을 YYYY-MM-DD 형식 dateKey로 변환
+function parseMDtoDateKey(mdStr, year) {
+  if (!mdStr) return null;
+  const m = mdStr.match(/(\d{1,2})\/(\d{1,2})/);
+  if (!m) return null;
+  const month = parseInt(m[1]), day = parseInt(m[2]);
+  return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+}
+
+// 이름 정규화 (월간 보드 중복 검사용)
+function normalizeNameForBoard(name) {
+  return (name || '').replace(/^신\)/, '').replace(/\d+$/, '').trim().toLowerCase();
+}
+
+// 월간 보드에 입퇴원 항목 추가/업데이트 (기존 동일 이름이면 시간만 업데이트)
+async function upsertMonthlyEntry(db, ym, dKey, type, entry) {
+  const snap = await db.ref(`monthlyBoards/${ym}/${dKey}`).once('value');
+  const bd = snap.val() || {};
+  const entryNorm = normalizeNameForBoard(entry.name);
+  const isFrozen = !!bd.frozen;
+  const list = [...(bd[type] || [])];
+
+  // 기존 동일 이름 항목 검색
+  const existIdx = list.findIndex(e => normalizeNameForBoard(e.name) === entryNorm);
+  if (existIdx >= 0) {
+    // 시간 정보 업데이트 (기존 항목이 시간이 없고 새 항목에 시간이 있을 때)
+    if (entry.time && !list[existIdx].time) {
+      list[existIdx] = { ...list[existIdx], time: entry.time };
+    } else if (entry.time) {
+      list[existIdx] = { ...list[existIdx], time: entry.time };
+    }
+  } else {
+    // 새 항목 추가
+    const uid = Math.random().toString(36).slice(2, 9);
+    list.push({ ...entry, id: uid });
+  }
+
+  if (isFrozen) {
+    await db.ref(`monthlyBoards/${ym}/${dKey}`).update({ [type]: list });
+  } else {
+    // non-frozen: 수동 추가분으로 저장
+    const otherType = type === 'admissions' ? 'discharges' : 'admissions';
+    await db.ref(`monthlyBoards/${ym}/${dKey}`).set({
+      ...bd,
+      [type]: list,
+      [otherType]: bd[otherType] || [],
+      hiddenAdmissions: bd.hiddenAdmissions || [],
+      hiddenDischarges: bd.hiddenDischarges || [],
+    });
+  }
 }
 
 // 이름 정규화: "천유영님" → "천유영"
@@ -364,6 +425,38 @@ export default async function handler(req, res) {
         parseError:       item ? null : (parseError || '파싱 결과 없음'),
       });
       savedIds.push(itemId);
+
+      // ── 월간 입퇴원 예정표 자동 기록 ──────────────────────────────────
+      if (item?.name) {
+        const roomLabel = suggestedSlotKey || item.room || "";
+        try {
+          // 퇴원 기록
+          if (item.action === 'discharge_update' && item.dischargeDate) {
+            const dKey = parseMDtoDateKey(item.dischargeDate, year);
+            if (dKey) {
+              const ym = dKey.slice(0, 7); // "YYYY-MM"
+              await upsertMonthlyEntry(db, ym, dKey, 'discharges', {
+                name: item.name, room: roomLabel, note: item.note || "",
+                time: item.dischargeTime || "",
+              });
+            }
+          }
+          // 입원 기록
+          if (item.action === 'admit_plan' && item.admitDate) {
+            const aKey = parseMDtoDateKey(item.admitDate, year);
+            if (aKey) {
+              const ym = aKey.slice(0, 7);
+              await upsertMonthlyEntry(db, ym, aKey, 'admissions', {
+                name: item.name, room: roomLabel, note: item.note || "",
+                isNew: false, isReserved: false,
+                time: item.admitTime || "",
+              });
+            }
+          }
+        } catch (mbErr) {
+          console.error('[webhook] monthlyBoards 기록 실패:', mbErr.message);
+        }
+      }
     }
 
     await db.ref(`webhookLogs/${changeId}`).update({
