@@ -245,7 +245,33 @@ export default function ConsultationPage() {
     if (!form.name.trim()) { alert("이름을 입력해 주세요."); return; }
     const data = { ...form, updatedAt: today() };
     if (editId) {
-      await set(ref(db,`consultations/${editId}`), {...consultations[editId], ...data});
+      const prev = consultations[editId] || {};
+      const reservedSlot = prev.reservedSlot;
+      // 입원일 삭제 시 병상 배정 제거
+      if (reservedSlot && !data.admitDate) {
+        const slotData = slots[reservedSlot] || { current: null, reservations: [] };
+        const newReservations = (slotData.reservations||[]).filter(r =>
+          r.consultationId ? r.consultationId !== editId : r.name !== prev.name
+        );
+        await set(ref(db,`slots/${reservedSlot}`), {...slotData, reservations: newReservations});
+        data.reservedSlot = null;
+        data.status = "상담중";
+      }
+      // 입원일·퇴원일 변경 시 병상 예약 데이터 동기화
+      else if (reservedSlot && (data.admitDate !== prev.admitDate || data.dischargeDate !== prev.dischargeDate)) {
+        const slotData = slots[reservedSlot] || { current: null, reservations: [] };
+        const newReservations = (slotData.reservations||[]).map(r => {
+          const match = r.consultationId ? r.consultationId === editId : r.name === prev.name;
+          if (!match) return r;
+          return {
+            ...r,
+            admitDate: data.admitDate ? fmtDate(data.admitDate) : "",
+            discharge: data.dischargeDate ? fmtDate(data.dischargeDate) : "미정",
+          };
+        });
+        await set(ref(db,`slots/${reservedSlot}`), {...slotData, reservations: newReservations});
+      }
+      await set(ref(db,`consultations/${editId}`), {...prev, ...data});
     } else {
       data.createdAt = today();
       data.status = data.status || "상담중";
@@ -256,6 +282,15 @@ export default function ConsultationPage() {
 
   const deleteConsultation = async (id) => {
     if (!confirm("이 상담 기록을 삭제하시겠습니까?")) return;
+    const target = consultations[id] || {};
+    const reservedSlot = target.reservedSlot;
+    if (reservedSlot) {
+      const slotData = slots[reservedSlot] || { current: null, reservations: [] };
+      const newReservations = (slotData.reservations||[]).filter(r =>
+        r.consultationId ? r.consultationId !== id : r.name !== target.name
+      );
+      await set(ref(db,`slots/${reservedSlot}`), {...slotData, reservations: newReservations});
+    }
     await remove(ref(db,`consultations/${id}`));
     setView("list"); setEditId(null);
   };
