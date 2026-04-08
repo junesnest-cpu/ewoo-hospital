@@ -35,9 +35,13 @@ function parseMD(str, year) {
 }
 function buildCellText(cell, useTreatNames) {
   if (!cell) return "";
-  const name = cell.isPending ? (cell.patientName||"") : (cell.name||"");
+  const name = cell.patientName || cell.name || "";
   if (!name) return "";
-  const room = cell.roomId||"";
+  // slotKey에서 병실 추출 (roomId 필드가 없을 경우)
+  let room = "";
+  if (cell.slotKey && !cell.slotKey.startsWith("pending_") && !cell.slotKey.startsWith("db_") && !cell.slotKey.startsWith("__")) {
+    room = cell.slotKey;
+  }
   const treatName = useTreatNames ? (TREAT_NAMES[cell.treatmentId]||"") : "";
   const line1 = room ? `${name}(${room})` : name;
   return treatName ? `${line1}\n${treatName}` : line1;
@@ -186,21 +190,33 @@ export default function DailyBoard() {
     return list;
   }, [monthlyBoard, slots, date, dateYear, patientInfo]);
 
-  // 자리보존 (퇴원 후 재입원 예정 환자)
+  // 자리보존: 같은 병상에서 퇴원 후 7일 이내 재입원 예약이 있는 경우
   const syncedReserved = useMemo(() => {
     const list = [];
+    const seen = new Set();
     Object.entries(slots).forEach(([sk, slot]) => {
-      (slot?.reservations||[]).forEach(r => {
+      const roomId = sk.split("-")[0];
+      if (!VALID_ROOMS.has(roomId)) return;
+      const cur = slot?.current;
+      const reservations = slot?.reservations || [];
+      if (!cur?.name || !reservations.length) return;
+      const curDis = parseMD(cur.discharge, dateYear);
+      if (!curDis) return;
+      reservations.forEach(r => {
         if (!r?.name) return;
-        const roomId = sk.split("-")[0];
-        if (!VALID_ROOMS.has(roomId)) return;
-        // 현재 비어있거나 퇴원 임박한 병상의 예약
-        const cur = slot?.current;
-        const curDis = cur ? parseMD(cur.discharge, dateYear) : null;
-        const isNearDischarge = curDis && curDis <= date;
-        const isEmpty = !cur?.name;
-        if (!isEmpty && !isNearDischarge) return;
-        list.push({ id:uid(), name:r.name, room:sk, dischargeDate:r.admitDate||"", readmitDate:r.admitDate||"" });
+        const readmit = parseMD(r.admitDate, dateYear);
+        if (!readmit) return;
+        // 퇴원일과 재입원일 사이가 7일 이내인지 확인
+        const disDate = new Date(curDis);
+        const readmitDate = new Date(readmit);
+        const diffDays = (readmitDate - disDate) / (1000*60*60*24);
+        if (diffDays < 0 || diffDays > 7) return;
+        // 현재 날짜가 퇴원일~재입원일 범위에 포함되는지 확인
+        const today = new Date(date);
+        if (today < disDate || today > readmitDate) return;
+        const n = normName(r.name);
+        if (seen.has(n)) return; seen.add(n);
+        list.push({ id:uid(), name:r.name, room:sk, dischargeDate:cur.discharge||"", readmitDate:r.admitDate||"" });
       });
     });
     return list;
@@ -209,13 +225,14 @@ export default function DailyBoard() {
   // 치료실
   const autoTherapy = useMemo(() => {
     const t = {};
+    const di = String(dayIdx); // Firebase 키는 문자열
     THERAPY_SLOTS.forEach(slot => {
       const st = slot.split("~")[0];
       t[slot] = {
-        highFreq: buildCellText(hyperSched?.["hyperthermia"]?.[dayIdx]?.[st], false),
-        physio1: buildCellText(physSched?.["th1"]?.[dayIdx]?.[st], true),
-        physio2: buildCellText(physSched?.["th2"]?.[dayIdx]?.[st], true),
-        hyperbaric: buildCellText(hyperSched?.["hyperbaric"]?.[dayIdx]?.[st], false),
+        highFreq: buildCellText(hyperSched?.["hyperthermia"]?.[di]?.[st], false),
+        physio1: buildCellText(physSched?.["th1"]?.[di]?.[st], true),
+        physio2: buildCellText(physSched?.["th2"]?.[di]?.[st], true),
+        hyperbaric: buildCellText(hyperSched?.["hyperbaric"]?.[di]?.[st], false),
       };
     });
     return t;
