@@ -640,8 +640,13 @@ export default function TreatmentPage() {
                           ) : null;
                         })()}
                       </td>
-                      <td style={{ ...TS.td, textAlign:"right", fontWeight:800, fontSize:15, color: ok?"#16a34a":"#dc2626" }}>
-                        {totalTreatActual.toLocaleString()}원&nbsp;{ok?"✓ 충족":"✗ 미충족"}
+                      <td style={{ ...TS.td, textAlign:"right" }}>
+                        <div style={{ fontWeight:800, fontSize:15, color: ok?"#16a34a":"#dc2626" }}>
+                          {totalTreatActual.toLocaleString()}원&nbsp;{ok?"✓ 충족":"✗ 미충족"}
+                        </div>
+                        <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>
+                          최소 {totalTreatMin.toLocaleString()}원
+                        </div>
                       </td>
                     </tr>
                   </>);
