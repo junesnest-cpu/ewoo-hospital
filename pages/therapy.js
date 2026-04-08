@@ -284,7 +284,7 @@ export default function TherapyPage() {
   const doMoveOrCopy=useCallback(async(targetRoomId,targetDayIdx,targetTime)=>{
     if(!moveMode) return;
     const {type,roomId,dayIdx,time,hbSlot,data}=moveMode;
-    setMoveMode(null);
+    if(type==="move") setMoveMode(null);
     setModal(null);
 
     const isPhys=roomId==="th1"||roomId==="th2";
@@ -532,7 +532,7 @@ export default function TherapyPage() {
             {moveMode.type==="move"?"✂️ 이동":"📋 복사"} 모드 —
             <span style={{color:"#fbbf24",marginLeft:6}}>{moveMode.data?.patientName}님</span>
             <span style={{fontSize:11,opacity:0.8,marginLeft:6}}>
-              ({DAYS[moveMode.dayIdx]} {moveMode.time} → 목적지 칸을 클릭하세요)
+              ({DAYS[moveMode.dayIdx]} {moveMode.time} → {moveMode.type==="copy"?"여러 칸에 붙여넣기 가능, 완료 시 취소 클릭":"목적지 칸을 클릭하세요"})
             </span>
           </div>
           <button onClick={()=>setMoveMode(null)}
