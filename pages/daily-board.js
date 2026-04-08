@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
@@ -8,10 +8,8 @@ const DOW = ["일","월","화","수","목","금","토"];
 const THERAPY_SLOTS = ["09:00~10:00","10:00~11:00","11:00~12:00","13:00~14:00","14:00~15:00","15:00~16:00","16:00~17:00","17:00~18:00"];
 const TREAT_NAMES = { pain:"페인", manip2:"도수2", manip1:"도수1" };
 const VALID_ROOMS = new Set([
-  "201","202","203","204","205","206",
-  "301","302","303","304","305","306",
-  "501","502","503","504","505","506",
-  "601","602","603",
+  "201","202","203","204","205","206","301","302","303","304","305","306",
+  "501","502","503","504","505","506","601","602","603",
 ]);
 
 function todayStr() {
@@ -23,7 +21,7 @@ function toYM(dateStr) { return dateStr.slice(0,7); }
 function normName(n) { return (n||"").replace(/^신\)/,"").replace(/\d+$/,"").trim().toLowerCase(); }
 function getWeekKey(dateStr) {
   const d = new Date(dateStr), dow = d.getDay();
-  const monday = new Date(d); monday.setDate(d.getDate() + (dow===0?-6:1-dow)); monday.setHours(0,0,0,0);
+  const monday = new Date(d); monday.setDate(d.getDate()+(dow===0?-6:1-dow)); monday.setHours(0,0,0,0);
   return monday.toISOString().slice(0,10);
 }
 function getDayIdx(dateStr) { const dow = new Date(dateStr).getDay(); return dow===0?6:dow-1; }
@@ -37,15 +35,23 @@ function buildCellText(cell, useTreatNames) {
   if (!cell) return "";
   const name = cell.patientName || cell.name || "";
   if (!name) return "";
-  // slotKey에서 병실 추출 (roomId 필드가 없을 경우)
   let room = "";
-  if (cell.slotKey && !cell.slotKey.startsWith("pending_") && !cell.slotKey.startsWith("db_") && !cell.slotKey.startsWith("__")) {
+  if (cell.slotKey && !cell.slotKey.startsWith("pending_") && !cell.slotKey.startsWith("db_") && !cell.slotKey.startsWith("__"))
     room = cell.slotKey;
-  }
   const treatName = useTreatNames ? (TREAT_NAMES[cell.treatmentId]||"") : "";
   const line1 = room ? `${name}(${room})` : name;
   return treatName ? `${line1}\n${treatName}` : line1;
 }
+
+const EMPTY_ADM = () => ({ id:uid(), room:"", name:"", doctor:"", time:"", note:"", isNew:false });
+const EMPTY_DIS = () => ({ id:uid(), room:"", name:"", time:"", note:"" });
+const EMPTY_TRN = () => ({ id:uid(), name:"", fromRoom:"", toRoom:"", time:"" });
+const EMPTY_RES = () => ({ id:uid(), name:"", room:"", dischargeDate:"", readmitDate:"" });
+const EMPTY_THERAPY = () => {
+  const t = {};
+  THERAPY_SLOTS.forEach(s => { t[s] = { highFreq:"", physio1:"", physio2:"", hyperbaric:"" }; });
+  return t;
+};
 
 export default function DailyBoard() {
   const router = useRouter();
@@ -53,9 +59,11 @@ export default function DailyBoard() {
   const boardRef = useRef(null);
   const [date, setDate] = useState(todayStr());
   const [editMode, setEditMode] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [filterName, setFilterName] = useState("");
 
-  // 데이터 소스
+  // 연동 데이터 소스
   const [slots, setSlots] = useState({});
   const [consultations, setConsultations] = useState({});
   const [monthlyBoard, setMonthlyBoard] = useState({});
@@ -63,9 +71,15 @@ export default function DailyBoard() {
   const [hyperSched, setHyperSched] = useState({});
   const [therapists, setTherapists] = useState(["치료사1","치료사2"]);
 
-  // 수동 편집 (오버라이드)
-  const [overrides, setOverrides] = useState(null);
-  const [filterName, setFilterName] = useState("");
+  // 수정 모드 편집 데이터
+  const [editAdm, setEditAdm] = useState([]);
+  const [editDis, setEditDis] = useState([]);
+  const [editTrn, setEditTrn] = useState([]);
+  const [editRes, setEditRes] = useState([]);
+  const [editTherapy, setEditTherapy] = useState(EMPTY_THERAPY());
+
+  // 저장된 오버라이드
+  const [savedOverride, setSavedOverride] = useState(null);
 
   const wk = useMemo(() => getWeekKey(date), [date]);
   const dayIdx = useMemo(() => getDayIdx(date), [date]);
@@ -95,7 +109,7 @@ export default function DailyBoard() {
   }, [wk]);
 
   useEffect(() => {
-    const u = onValue(ref(db, `dailyBoards/${date}`), s => setOverrides(s.val()||null));
+    const u = onValue(ref(db, `dailyBoards/${date}`), s => setSavedOverride(s.val()||null));
     return () => u();
   }, [date]);
 
@@ -105,127 +119,89 @@ export default function DailyBoard() {
     return () => window.removeEventListener("sidebar-search", handler);
   }, []);
 
-  // ── 연동 데이터 계산 ──
-
-  // 이름→슬롯 매핑 (환자 정보 보강용)
+  // ── 이름→환자정보 매핑 ──
   const patientInfo = useMemo(() => {
     const map = {};
     Object.entries(slots).forEach(([sk, slot]) => {
       if (!slot?.current?.name) return;
       const n = normName(slot.current.name);
-      if (n) map[n] = { slotKey:sk, doctor:slot.current.doctor||"", note:slot.current.note||"", room:sk };
+      if (n) map[n] = { room:sk, doctor:slot.current.doctor||"", note:slot.current.note||"" };
     });
     return map;
   }, [slots]);
 
-  // 입원 (월간보드 + slots + consultations 병합)
+  // ── 연동 데이터 계산 ──
   const syncedAdmissions = useMemo(() => {
-    const list = [];
-    const seen = new Set();
-
-    // 1. 월간보드에서
+    const list = [], seen = new Set();
     (monthlyBoard.admissions||[]).forEach(a => {
       if (!a?.name) return;
-      const n = normName(a.name);
-      if (seen.has(n)) return; seen.add(n);
+      const n = normName(a.name); if (seen.has(n)) return; seen.add(n);
       const info = patientInfo[n];
       list.push({ id:a.id||uid(), name:a.name, room:info?.room||a.room||"",
-        doctor:info?.doctor||"", time:a.time||"", note:info?.note||a.note||"",
-        isNew:!!a.isNew });
+        doctor:info?.doctor||"", time:a.time||"", note:info?.note||a.note||"", isNew:!!a.isNew });
     });
-
-    // 2. slots에서 당일 입원자 추가
     Object.entries(slots).forEach(([sk, slot]) => {
-      const cur = slot?.current;
-      if (!cur?.name) return;
-      const admitKey = parseMD(cur.admitDate, dateYear);
-      if (admitKey !== date) return;
-      const n = normName(cur.name);
-      if (seen.has(n)) return; seen.add(n);
+      const cur = slot?.current; if (!cur?.name) return;
+      if (parseMD(cur.admitDate, dateYear) !== date) return;
+      const n = normName(cur.name); if (seen.has(n)) return; seen.add(n);
       list.push({ id:uid(), name:cur.name, room:sk, doctor:cur.doctor||"", time:"", note:cur.note||"", isNew:false });
     });
-
-    // 3. 상담일지에서 신환 추가
     Object.values(consultations).forEach(c => {
-      if (!c?.name || !c.admitDate) return;
+      if (!c?.name||!c.admitDate) return;
       if (c.status==="취소"||c.status==="입원완료") return;
-      if (c.admitDate !== date) return;
-      const n = normName(c.name);
-      if (seen.has(n)) return; seen.add(n);
+      if (c.admitDate!==date) return;
+      const n = normName(c.name); if (seen.has(n)) return; seen.add(n);
       const info = patientInfo[n];
-      const noteFields = [];
-      if (c.birthYear) noteFields.push(`${new Date().getFullYear()-parseInt(c.birthYear)}세`);
-      if (c.diagnosis) noteFields.push(c.diagnosis);
-      if (c.hospital) noteFields.push(c.hospital);
+      const notes = [c.birthYear?`${new Date().getFullYear()-parseInt(c.birthYear)}세`:null,c.diagnosis,c.hospital].filter(Boolean);
       list.push({ id:uid(), name:c.name, room:info?.room||c.roomTypes?.join("/")||"",
-        doctor:info?.doctor||"", time:"", note:noteFields.join(" · "), isNew:true });
+        doctor:info?.doctor||"", time:"", note:notes.join(" · "), isNew:true });
     });
-
     return list;
   }, [monthlyBoard, slots, consultations, date, dateYear, patientInfo]);
 
-  // 퇴원
   const syncedDischarges = useMemo(() => {
-    const list = [];
-    const seen = new Set();
-
+    const list = [], seen = new Set();
     (monthlyBoard.discharges||[]).forEach(d => {
       if (!d?.name) return;
-      const n = normName(d.name);
-      if (seen.has(n)) return; seen.add(n);
+      const n = normName(d.name); if (seen.has(n)) return; seen.add(n);
       const info = patientInfo[n];
       list.push({ id:d.id||uid(), name:d.name, room:info?.room||d.room||"", time:d.time||"", note:d.note||"" });
     });
-
     Object.entries(slots).forEach(([sk, slot]) => {
-      const cur = slot?.current;
-      if (!cur?.name) return;
-      const disKey = parseMD(cur.discharge, dateYear);
-      if (disKey !== date) return;
-      const n = normName(cur.name);
-      if (seen.has(n)) return; seen.add(n);
+      const cur = slot?.current; if (!cur?.name) return;
+      if (parseMD(cur.discharge, dateYear) !== date) return;
+      const n = normName(cur.name); if (seen.has(n)) return; seen.add(n);
       list.push({ id:uid(), name:cur.name, room:sk, time:"", note:"" });
     });
-
     return list;
   }, [monthlyBoard, slots, date, dateYear, patientInfo]);
 
-  // 자리보존: 같은 병상에서 퇴원 후 7일 이내 재입원 예약이 있는 경우
   const syncedReserved = useMemo(() => {
-    const list = [];
-    const seen = new Set();
+    const list = [], seen = new Set();
     Object.entries(slots).forEach(([sk, slot]) => {
       const roomId = sk.split("-")[0];
       if (!VALID_ROOMS.has(roomId)) return;
       const cur = slot?.current;
-      const reservations = slot?.reservations || [];
-      if (!cur?.name || !reservations.length) return;
+      if (!cur?.name) return;
       const curDis = parseMD(cur.discharge, dateYear);
       if (!curDis) return;
-      reservations.forEach(r => {
+      (slot?.reservations||[]).forEach(r => {
         if (!r?.name) return;
         const readmit = parseMD(r.admitDate, dateYear);
         if (!readmit) return;
-        // 퇴원일과 재입원일 사이가 7일 이내인지 확인
-        const disDate = new Date(curDis);
-        const readmitDate = new Date(readmit);
-        const diffDays = (readmitDate - disDate) / (1000*60*60*24);
-        if (diffDays < 0 || diffDays > 7) return;
-        // 현재 날짜가 퇴원일~재입원일 범위에 포함되는지 확인
+        const diffDays = (new Date(readmit)-new Date(curDis))/(1000*60*60*24);
+        if (diffDays<0||diffDays>7) return;
         const today = new Date(date);
-        if (today < disDate || today > readmitDate) return;
-        const n = normName(r.name);
-        if (seen.has(n)) return; seen.add(n);
+        if (today<new Date(curDis)||today>new Date(readmit)) return;
+        const n = normName(r.name); if (seen.has(n)) return; seen.add(n);
         list.push({ id:uid(), name:r.name, room:sk, dischargeDate:cur.discharge||"", readmitDate:r.admitDate||"" });
       });
     });
     return list;
   }, [slots, date, dateYear]);
 
-  // 치료실
   const autoTherapy = useMemo(() => {
-    const t = {};
-    const di = String(dayIdx); // Firebase 키는 문자열
+    const t = {}, di = String(dayIdx);
     THERAPY_SLOTS.forEach(slot => {
       const st = slot.split("~")[0];
       t[slot] = {
@@ -239,57 +215,45 @@ export default function DailyBoard() {
   }, [physSched, hyperSched, dayIdx]);
 
   const therapyCols = useMemo(() => [
-    { key:"highFreq", label:"고주파", color:"#dc2626" },
-    { key:"physio1", label:therapists[0], color:"#059669" },
-    { key:"physio2", label:therapists[1], color:"#1d4ed8" },
-    { key:"hyperbaric", label:"고압산소", color:"#0284c7" },
+    { key:"highFreq",   label:"고주파 치료" },
+    { key:"physio1",    label:`물리치료실\n(${therapists[0]})` },
+    { key:"physio2",    label:`물리치료실\n(${therapists[1]})` },
+    { key:"hyperbaric", label:"고압산소" },
   ], [therapists]);
 
-  // ── 표시 데이터 (연동 + 오버라이드 병합) ──
-  const admissions = overrides?.admissions || syncedAdmissions;
-  const discharges = overrides?.discharges || syncedDischarges;
-  const transfers = overrides?.transfers || [];
-  const reservedBeds = overrides?.reservedBeds || syncedReserved;
-  const therapy = overrides?.therapy || {};
+  // ── 표시 데이터: 오버라이드가 있으면 오버라이드, 없으면 연동 ──
+  const admissions   = savedOverride?.admissions   || syncedAdmissions;
+  const discharges   = savedOverride?.discharges   || syncedDischarges;
+  const transfers    = savedOverride?.transfers    || [EMPTY_TRN()];
+  const reservedBeds = savedOverride?.reservedBeds || (syncedReserved.length ? syncedReserved : [EMPTY_RES()]);
+  const therapy      = savedOverride?.therapy      || {};
 
-  // ── 수정 모드 함수 ──
+  // ── 수정 모드 ──
   function startEdit() {
-    // 현재 표시 데이터를 오버라이드로 복사
-    const ov = {
-      admissions: [...(overrides?.admissions || syncedAdmissions)],
-      discharges: [...(overrides?.discharges || syncedDischarges)],
-      transfers: [...(overrides?.transfers || [{ id:uid(), name:"", fromRoom:"", toRoom:"", time:"" }])],
-      reservedBeds: [...(overrides?.reservedBeds || syncedReserved)],
-      therapy: { ...therapy },
-    };
-    setOverrides(ov);
+    setEditAdm([...admissions]);
+    setEditDis([...discharges]);
+    setEditTrn([...(savedOverride?.transfers || [EMPTY_TRN()])]);
+    setEditRes([...(savedOverride?.reservedBeds || (syncedReserved.length ? syncedReserved : [EMPTY_RES()]))]);
+    setEditTherapy({ ...EMPTY_THERAPY(), ...therapy });
     setEditMode(true);
   }
 
   async function saveEdit() {
-    await set(ref(db, `dailyBoards/${date}`), overrides);
+    setSaving(true);
+    await set(ref(db, `dailyBoards/${date}`), {
+      admissions: editAdm, discharges: editDis, transfers: editTrn, reservedBeds: editRes, therapy: editTherapy,
+    });
+    setSaving(false);
     setEditMode(false);
   }
 
-  function cancelEdit() {
-    // Firebase에서 다시 로드됨
-    setEditMode(false);
-  }
+  function cancelEdit() { setEditMode(false); }
 
-  function updateRow(section, id, field, val) {
-    setOverrides(ov => ({
-      ...ov,
-      [section]: (ov[section]||[]).map(r => r.id===id ? {...r,[field]:val} : r),
-    }));
-  }
-  function addRow(section, empty) {
-    setOverrides(ov => ({ ...ov, [section]: [...(ov[section]||[]), empty()] }));
-  }
-  function deleteRow(section, id) {
-    setOverrides(ov => ({ ...ov, [section]: (ov[section]||[]).filter(r => r.id!==id) }));
-  }
+  function updateRow(setter, id, field, val) { setter(rows => rows.map(r => r.id===id ? {...r,[field]:val} : r)); }
+  function addRow(setter, empty) { setter(rows => [...rows, empty()]); }
+  function deleteRow(setter, id) { setter(rows => rows.filter(r => r.id!==id)); }
   function updateTherapy(slot, col, val) {
-    setOverrides(ov => ({ ...ov, therapy: { ...(ov?.therapy||{}), [slot]: { ...(ov?.therapy||{})[slot], [col]:val } } }));
+    setEditTherapy(t => ({ ...t, [slot]: { ...t[slot], [col]:val } }));
   }
 
   // ── 공지 (스크린샷 → 클립보드) ──
@@ -298,11 +262,7 @@ export default function DailyBoard() {
     setCapturing(true);
     try {
       const html2canvas = (await import("html2canvas")).default;
-      const canvas = await html2canvas(boardRef.current, {
-        scale: 2, useCORS: true, backgroundColor: "#ffffff",
-        width: 794, // A4 width at 96dpi
-        windowWidth: 794,
-      });
+      const canvas = await html2canvas(boardRef.current, { scale:2, useCORS:true, backgroundColor:"#ffffff" });
       canvas.toBlob(async (blob) => {
         try {
           await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
@@ -310,14 +270,9 @@ export default function DailyBoard() {
         } catch { alert("클립보드 복사 실패. 브라우저 권한을 확인하세요."); }
         setCapturing(false);
       }, "image/png");
-    } catch (err) {
-      console.error(err);
-      alert("스크린샷 생성 실패");
-      setCapturing(false);
-    }
+    } catch (err) { console.error(err); alert("스크린샷 생성 실패"); setCapturing(false); }
   }, []);
 
-  // ── 날짜 ──
   function changeDate(delta) {
     const d = new Date(date); d.setDate(d.getDate()+delta);
     setDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
@@ -325,246 +280,272 @@ export default function DailyBoard() {
   }
 
   const dateObj = new Date(date);
-  const dow = DOW[dateObj.getDay()];
-  const isWeekend = dateObj.getDay()===0||dateObj.getDay()===6;
+  const dateLabel = `${dateObj.getFullYear()}년 ${dateObj.getMonth()+1}월 ${dateObj.getDate()}일 (${DOW[dateObj.getDay()]})`;
+
+  // 수정 모드일 때 사용할 데이터
+  const dAdm = editMode ? editAdm : admissions;
+  const dDis = editMode ? editDis : discharges;
+  const dTrn = editMode ? editTrn : transfers;
+  const dRes = editMode ? editRes : reservedBeds;
+  const dTher = editMode ? editTherapy : therapy;
+
+  const printStyle = `@media print {
+    @page { size: A4 portrait; margin: 8mm; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 12px; }
+    .no-print { display: none !important; }
+    .section-card { break-inside: avoid; margin-bottom: 6mm; }
+    input, textarea { border: none !important; background: transparent !important; padding: 0 !important; }
+  }`;
 
   return (
-    <div style={{ minHeight:"100vh", background:"#f0f2f5", fontFamily:"'Pretendard','Noto Sans KR',sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:"#f1f5f9", fontFamily:"'Pretendard','Noto Sans KR',sans-serif" }}>
+      <style>{printStyle}</style>
 
-      {/* ── 헤더 ── */}
-      <header className="no-print" style={{ background:"linear-gradient(135deg,#0f2744 0%,#1e3a5f 100%)",
-        color:"#fff", padding:"10px 20px", display:"flex", alignItems:"center", gap:12,
-        position:"sticky", top:0, zIndex:40, boxShadow:"0 2px 12px rgba(0,0,0,0.2)", flexWrap:"wrap" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <button onClick={() => changeDate(-1)} style={S.navArrow}>‹</button>
-          <input type="date" value={date} onChange={e => { setDate(e.target.value); setEditMode(false); }}
-            style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)",
-              borderRadius:8, padding:"5px 12px", fontSize:15, fontWeight:700, color:"#fff",
-              outline:"none", colorScheme:"dark" }} />
-          <button onClick={() => changeDate(1)} style={S.navArrow}>›</button>
-        </div>
-        <div style={{ display:"flex", flexDirection:"column", lineHeight:1.3 }}>
-          <span style={{ fontSize:18, fontWeight:900, letterSpacing:1 }}>
-            {dateObj.getMonth()+1}월 {dateObj.getDate()}일
-            <span style={{ fontSize:16, fontWeight:700, marginLeft:6,
-              color: isWeekend ? "#fbbf24" : "#94a3b8" }}>({dow})</span>
-          </span>
-          <span style={{ fontSize:11, color:"#94a3b8" }}>일일 현황판{editMode?" · 수정 중":""}</span>
-        </div>
-        <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+      {/* 헤더 */}
+      <header className="no-print" style={{ background:"#0f2744", color:"#fff", padding:"12px 20px",
+        display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:40, boxShadow:"0 2px 8px rgba(0,0,0,0.18)", flexWrap:"wrap" }}>
+        <span style={{ fontWeight:800, fontSize:16 }}>일일 현황판</span>
+        <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center" }}>
           {filterName && (
             <span style={{ display:"inline-flex", alignItems:"center", gap:4,
               background:"#fef3c7", color:"#92400e", borderRadius:6, padding:"3px 10px", fontSize:12, fontWeight:700 }}>
-              "{filterName}"
+              "{filterName}" 하이라이트
               <button onClick={() => setFilterName("")} style={{ background:"none", border:"none", cursor:"pointer",
                 color:"#92400e", fontSize:13, padding:0, lineHeight:1, fontWeight:800 }}>✕</button>
             </span>
           )}
           {editMode ? (
             <>
-              <button onClick={saveEdit} style={{ ...S.headerBtn, background:"rgba(5,150,105,0.3)", border:"1px solid rgba(5,150,105,0.5)" }}>💾 저장</button>
-              <button onClick={cancelEdit} style={{ ...S.headerBtn, background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.15)" }}>취소</button>
+              <button onClick={saveEdit} disabled={saving}
+                style={{ ...S.actionBtn, background:"#059669", color:"#fff" }}>
+                {saving ? "저장 중..." : "💾 저장"}
+              </button>
+              <button onClick={cancelEdit}
+                style={{ ...S.actionBtn, background:"#64748b", color:"#fff" }}>취소</button>
             </>
           ) : (
             <>
-              <button onClick={startEdit} style={{ ...S.headerBtn, background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.2)" }}>✏️ 수정</button>
+              <button onClick={startEdit} style={{ ...S.navBtn, background:"#1e3a5f" }}>✏️ 수정</button>
               <button onClick={captureToClipboard} disabled={capturing}
-                style={{ ...S.headerBtn, background:"rgba(14,165,233,0.25)", border:"1px solid rgba(14,165,233,0.4)" }}>
+                style={{ ...S.navBtn, background:"#0ea5e9" }}>
                 {capturing ? "캡처 중..." : "📋 공지"}
               </button>
+              <button onClick={() => window.print()} style={{ ...S.navBtn, background:"#1e3a5f" }}>🖨 인쇄</button>
             </>
           )}
         </div>
       </header>
 
-      {/* ── 본문 (캡처 대상) ── */}
-      <div ref={boardRef} style={{ padding: isMobile?"10px":"12px 16px", display:"flex", flexDirection:"column", gap:12,
-        background:"#f0f2f5", maxWidth:794 }}>
+      {/* 날짜 바 */}
+      <div className="no-print" style={{ background:"#fff", borderBottom:"1px solid #e2e8f0",
+        padding:"8px 16px", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+        <button onClick={() => changeDate(-1)} style={S.dayBtn}>◀</button>
+        <input type="date" value={date} onChange={e => { setDate(e.target.value); setEditMode(false); }}
+          style={{ border:"1px solid #e2e8f0", borderRadius:6, padding:"5px 12px",
+            fontSize:16, fontWeight:700, color:"#0f2744" }} />
+        <button onClick={() => changeDate(1)} style={S.dayBtn}>▶</button>
+        <span style={{ fontSize:18, fontWeight:800, color:"#0f2744" }}>{dateLabel}</span>
+        {editMode && <span style={{ fontSize:13, color:"#0ea5e9", fontWeight:700 }}>— 수정 모드</span>}
+        {!editMode && savedOverride && <span style={{ fontSize:12, color:"#64748b" }}>✓ 수정됨</span>}
+      </div>
 
-        {/* 캡처용 제목 */}
-        <div style={{ textAlign:"center", padding:"6px 0 2px", fontWeight:900, fontSize:20, color:"#0f2744",
-          borderBottom:"2px solid #0f2744", marginBottom:2 }}>
-          {dateObj.getFullYear()}년 {dateObj.getMonth()+1}월 {dateObj.getDate()}일 ({dow}) 현황판
+      {/* 본문 (캡처 대상) */}
+      <div ref={boardRef}>
+        {/* 인쇄용 제목 */}
+        <div style={{ textAlign:"center", padding:"6px 0 2px", fontWeight:900, fontSize:20, color:"#0f2744" }}>
+          {dateObj.getFullYear()}년 {dateObj.getMonth()+1}월 {dateObj.getDate()}일 현황판
         </div>
 
-        {/* ── 입원 / 퇴원 ── */}
-        <div style={{ display:"flex", gap:10, flexWrap: isMobile?"wrap":"nowrap" }}>
+        <div style={{ padding: isMobile ? "10px" : "14px 18px", display:"flex", flexDirection:"column", gap:14 }}>
+
           {/* 입원 */}
-          <div style={{ flex:1, minWidth: isMobile?"100%":0 }}>
-            <SectionHeader icon="↑" label="입원" count={admissions.filter(r=>r.name).length} color="#059669" bg="#ecfdf5" border="#a7f3d0" />
-            <div style={{ background:"#fff", border:"1px solid #d1fae5", borderTop:"none", borderRadius:"0 0 8px 8px" }}>
-              {admissions.length===0 && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
-              {admissions.map(row => (
-                <div key={row.id} style={{ display:"flex", gap:4, padding:"5px 8px", borderBottom:"1px solid #f0fdf4",
-                  alignItems:"center", background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
-                  <span style={{ fontWeight:800, color:"#059669", fontSize:14, width:65, textAlign:"center", flexShrink:0 }}>
-                    {editMode ? <Field w={60} value={row.room} onChange={v=>updateRow("admissions",row.id,"room",v)} placeholder="호실" style={{textAlign:"center",fontWeight:800,color:"#059669"}} />
-                      : row.room||"-"}
-                  </span>
-                  <div style={{ display:"flex", alignItems:"center", gap:3, minWidth:100, flex:"0 0 auto" }}>
-                    {row.isNew && <span style={{ fontSize:10, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"0 3px", fontWeight:800 }}>★</span>}
-                    {editMode ? <Field w={65} value={row.name} onChange={v=>updateRow("admissions",row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
-                      : <span style={{ fontWeight:700, fontSize:14 }}>{row.name}</span>}
-                    {row.doctor && <span style={{ fontSize:12, color:"#64748b" }}>/{row.doctor}</span>}
-                    {editMode && <>
-                      <Field w={35} value={row.doctor} onChange={v=>updateRow("admissions",row.id,"doctor",v)} placeholder="Dr" style={{color:"#64748b",fontSize:12}} />
-                      <button onClick={()=>updateRow("admissions",row.id,"isNew",!row.isNew)}
-                        style={{ fontSize:10, background:row.isNew?"#fef08a":"#f8fafc", border:"1px solid", borderColor:row.isNew?"#fcd34d":"#e2e8f0",
-                          borderRadius:3, padding:"0 3px", cursor:"pointer", color:row.isNew?"#713f12":"#cbd5e1", fontWeight:800 }}>★</button>
-                    </>}
-                  </div>
-                  {row.time && <span style={{ fontSize:12, color:"#0891b2", fontWeight:600, flexShrink:0 }}>{row.time}</span>}
-                  {editMode && <Field w={55} value={row.time} onChange={v=>updateRow("admissions",row.id,"time",v)} placeholder="시간" style={{color:"#0891b2",fontSize:12,textAlign:"center"}} />}
-                  <span style={{ fontSize:12, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>
-                    {editMode ? <Field flex={1} value={row.note} onChange={v=>updateRow("admissions",row.id,"note",v)} placeholder="비고" style={{color:"#64748b",fontSize:12}} />
-                      : row.note}
-                  </span>
-                  {editMode && <DelBtn onClick={()=>deleteRow("admissions",row.id)} />}
-                </div>
+          <Section title="입   원" titleBg="#fef08a" titleColor="#78350f">
+            <Table cols={[
+              { label:"호  실", width:100 },
+              { label:"이름 (주치의)", width:160 },
+              { label:"입/퇴원 시간", width:130 },
+              { label:"기   타", flex:1 },
+            ]}>
+              {dAdm.map(row => (
+                <EditRow key={row.id} onDelete={editMode ? () => deleteRow(setEditAdm, row.id) : null}
+                  highlight={filterName && row.name?.includes(filterName)}>
+                  <EditCell width={100} value={row.room} placeholder="예: 306-1"
+                    onChange={editMode ? v => updateRow(setEditAdm, row.id, "room", v) : null} />
+                  <td style={{ padding:"4px 6px", borderRight:"1px solid #e2e8f0", minWidth:160, verticalAlign:"middle" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:4, flexWrap:"wrap" }}>
+                      {row.isNew && <span style={{ fontSize:13, background:"#fef08a", color:"#713f12",
+                        borderRadius:4, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>★신환</span>}
+                      <input value={row.name} readOnly={!editMode}
+                        onChange={editMode ? e => updateRow(setEditAdm, row.id, "name", e.target.value) : undefined}
+                        placeholder="이름" style={{ ...S.cell, flex:1, minWidth:60 }} />
+                      <span style={{ color:"#94a3b8", fontSize:14 }}>(</span>
+                      <input value={row.doctor} readOnly={!editMode}
+                        onChange={editMode ? e => updateRow(setEditAdm, row.id, "doctor", e.target.value) : undefined}
+                        placeholder="주치의" style={{ ...S.cell, width:44 }} />
+                      <span style={{ color:"#94a3b8", fontSize:14 }}>)</span>
+                      {editMode && (
+                        <button onClick={() => updateRow(setEditAdm, row.id, "isNew", !row.isNew)} title="신환 토글"
+                          style={{ fontSize:12, background: row.isNew?"#fef08a":"#f1f5f9",
+                            border:"1px solid", borderColor: row.isNew?"#fcd34d":"#e2e8f0",
+                            borderRadius:4, padding:"1px 6px", cursor:"pointer",
+                            color: row.isNew?"#713f12":"#94a3b8", flexShrink:0, fontWeight:700 }}>★</button>
+                      )}
+                    </div>
+                  </td>
+                  <EditCell width={130} value={row.time} placeholder="18:30/저녁식사"
+                    onChange={editMode ? v => updateRow(setEditAdm, row.id, "time", v) : null} />
+                  <EditCell flex={1} value={row.note} placeholder="나이·진단명·치료병원·치료단계"
+                    onChange={editMode ? v => updateRow(setEditAdm, row.id, "note", v) : null} />
+                </EditRow>
               ))}
-              {editMode && <AddBtn onClick={()=>addRow("admissions",()=>({id:uid(),room:"",name:"",doctor:"",time:"",note:"",isNew:false}))} />}
-            </div>
-          </div>
+            </Table>
+            {editMode && <AddRowBtn onClick={() => addRow(setEditAdm, EMPTY_ADM)} />}
+          </Section>
 
           {/* 퇴원 */}
-          <div style={{ flex:1, minWidth: isMobile?"100%":0 }}>
-            <SectionHeader icon="↓" label="퇴원" count={discharges.filter(r=>r.name).length} color="#dc2626" bg="#fef2f2" border="#fecaca" />
-            <div style={{ background:"#fff", border:"1px solid #fecaca", borderTop:"none", borderRadius:"0 0 8px 8px" }}>
-              {discharges.length===0 && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
-              {discharges.map(row => (
-                <div key={row.id} style={{ display:"flex", gap:4, padding:"5px 8px", borderBottom:"1px solid #fff5f5",
-                  alignItems:"center", background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
-                  <span style={{ fontWeight:800, color:"#dc2626", fontSize:14, width:65, textAlign:"center", flexShrink:0 }}>
-                    {editMode ? <Field w={60} value={row.room} onChange={v=>updateRow("discharges",row.id,"room",v)} placeholder="호실" style={{textAlign:"center",fontWeight:800,color:"#dc2626"}} />
-                      : row.room||"-"}
-                  </span>
-                  {editMode ? <Field w={65} value={row.name} onChange={v=>updateRow("discharges",row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
-                    : <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>}
-                  {row.time && <span style={{ fontSize:12, color:"#0891b2", fontWeight:600, flexShrink:0,
-                    background:"#ecfeff", borderRadius:3, padding:"0 4px" }}>{row.time}</span>}
-                  {editMode && <Field w={60} value={row.time} onChange={v=>updateRow("discharges",row.id,"time",v)} placeholder="시간" style={{color:"#0891b2",fontSize:12,textAlign:"center"}} />}
-                  <span style={{ fontSize:12, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>
-                    {editMode ? <Field flex={1} value={row.note} onChange={v=>updateRow("discharges",row.id,"note",v)} placeholder="재입원 등" style={{color:"#64748b",fontSize:12}} />
-                      : row.note}
-                  </span>
-                  {editMode && <DelBtn onClick={()=>deleteRow("discharges",row.id)} />}
-                </div>
+          <Section title="퇴   원" titleBg="#bfdbfe" titleColor="#1e3a5f">
+            <Table cols={[
+              { label:"호  실", width:100 },
+              { label:"이   름", width:140 },
+              { label:"입/퇴원 시간", width:130 },
+              { label:"기   타 (재입원 일정 등)", flex:1 },
+            ]}>
+              {dDis.map(row => (
+                <EditRow key={row.id} onDelete={editMode ? () => deleteRow(setEditDis, row.id) : null}
+                  highlight={filterName && row.name?.includes(filterName)}>
+                  <EditCell width={100} value={row.room} placeholder="예: 505"
+                    onChange={editMode ? v => updateRow(setEditDis, row.id, "room", v) : null} />
+                  <EditCell width={140} value={row.name} placeholder="이름"
+                    onChange={editMode ? v => updateRow(setEditDis, row.id, "name", v) : null} />
+                  <EditCell width={130} value={row.time} placeholder="오전 / 점심 후"
+                    onChange={editMode ? v => updateRow(setEditDis, row.id, "time", v) : null} />
+                  <EditCell flex={1} value={row.note} placeholder="3/28 재입원 등"
+                    onChange={editMode ? v => updateRow(setEditDis, row.id, "note", v) : null} />
+                </EditRow>
               ))}
-              {editMode && <AddBtn onClick={()=>addRow("discharges",()=>({id:uid(),room:"",name:"",time:"",note:""}))} />}
-            </div>
-          </div>
-        </div>
+            </Table>
+            {editMode && <AddRowBtn onClick={() => addRow(setEditDis, EMPTY_DIS)} />}
+          </Section>
 
-        {/* ── 전실 / 자리보존 ── */}
-        <div style={{ display:"flex", gap:10, flexWrap: isMobile?"wrap":"nowrap" }}>
-          {/* 전실 */}
-          <div style={{ flex:1, minWidth: isMobile?"100%":0 }}>
-            <SectionHeader icon="⇄" label="전실" count={transfers.filter(r=>r.name).length} color="#0369a1" bg="#f0f9ff" border="#bae6fd" />
-            <div style={{ background:"#fff", border:"1px solid #bae6fd", borderTop:"none", borderRadius:"0 0 8px 8px" }}>
-              {transfers.length===0 && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
-              {transfers.map(row => (
-                <div key={row.id} style={{ display:"flex", gap:4, padding:"5px 8px", borderBottom:"1px solid #f0f9ff", alignItems:"center",
-                  background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
-                  {editMode ? <Field w={65} value={row.name} onChange={v=>updateRow("transfers",row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
-                    : <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>}
-                  <span style={{ fontSize:13, color:"#64748b", flexShrink:0 }}>
-                    {editMode ? <Field w={50} value={row.fromRoom} onChange={v=>updateRow("transfers",row.id,"fromRoom",v)} placeholder="기존" style={{textAlign:"center",color:"#64748b"}} />
-                      : row.fromRoom}
-                  </span>
-                  <span style={{ color:"#0369a1", fontWeight:800, fontSize:14, flexShrink:0 }}>→</span>
-                  <span style={{ fontSize:13, color:"#0369a1", fontWeight:700, flexShrink:0 }}>
-                    {editMode ? <Field w={50} value={row.toRoom} onChange={v=>updateRow("transfers",row.id,"toRoom",v)} placeholder="이동" style={{textAlign:"center",color:"#0369a1",fontWeight:700}} />
-                      : row.toRoom}
-                  </span>
-                  {row.time && <span style={{ fontSize:12, color:"#64748b" }}>{row.time}</span>}
-                  {editMode && <Field flex={1} value={row.time} onChange={v=>updateRow("transfers",row.id,"time",v)} placeholder="시간" style={{color:"#64748b",fontSize:12}} />}
-                  {editMode && <DelBtn onClick={()=>deleteRow("transfers",row.id)} />}
-                </div>
-              ))}
-              {editMode && <AddBtn onClick={()=>addRow("transfers",()=>({id:uid(),name:"",fromRoom:"",toRoom:"",time:""}))} />}
-            </div>
-          </div>
+          {/* 하단 2열 */}
+          <div style={{ display:"flex", gap:14, alignItems:"flex-start", flexWrap: isMobile?"wrap":"nowrap" }}>
 
-          {/* 자리보존 */}
-          <div style={{ flex:1, minWidth: isMobile?"100%":0 }}>
-            <SectionHeader icon="🔒" label="자리 보존" count={reservedBeds.filter(r=>r.name).length} color="#7c3aed" bg="#faf5ff" border="#ddd6fe" />
-            <div style={{ background:"#fff", border:"1px solid #ddd6fe", borderTop:"none", borderRadius:"0 0 8px 8px" }}>
-              {reservedBeds.length===0 && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
-              {reservedBeds.map(row => (
-                <div key={row.id} style={{ display:"flex", gap:4, padding:"5px 8px", borderBottom:"1px solid #faf5ff", alignItems:"center",
-                  background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
-                  {editMode ? <Field w={65} value={row.name} onChange={v=>updateRow("reservedBeds",row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
-                    : <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>}
-                  <span style={{ fontSize:13, color:"#7c3aed", flexShrink:0 }}>
-                    {editMode ? <Field w={50} value={row.room} onChange={v=>updateRow("reservedBeds",row.id,"room",v)} placeholder="병실" style={{textAlign:"center",color:"#7c3aed"}} />
-                      : row.room}
-                  </span>
-                  {row.dischargeDate && <span style={{ fontSize:12, color:"#64748b" }}>퇴원:{row.dischargeDate}</span>}
-                  {row.readmitDate && <span style={{ fontSize:12, color:"#7c3aed" }}>재입원:{row.readmitDate}</span>}
-                  {editMode && <>
-                    <Field w={50} value={row.dischargeDate} onChange={v=>updateRow("reservedBeds",row.id,"dischargeDate",v)} placeholder="퇴원일" style={{fontSize:12,color:"#64748b",textAlign:"center"}} />
-                    <Field w={55} value={row.readmitDate} onChange={v=>updateRow("reservedBeds",row.id,"readmitDate",v)} placeholder="재입원" style={{fontSize:12,color:"#7c3aed",textAlign:"center"}} />
-                  </>}
-                  {editMode && <DelBtn onClick={()=>deleteRow("reservedBeds",row.id)} />}
-                </div>
-              ))}
-              {editMode && <AddBtn onClick={()=>addRow("reservedBeds",()=>({id:uid(),name:"",room:"",dischargeDate:"",readmitDate:""}))} />}
-            </div>
-          </div>
-        </div>
+            {/* 좌: 전실 + 자리보존 */}
+            <div style={{ display:"flex", flexDirection:"column", gap:14,
+              flex:"0 0 auto", minWidth: isMobile?"100%":380 }}>
 
-        {/* ── 치료실 이용계획 ── */}
-        <div>
-          <SectionHeader icon="💊" label="치료실 이용계획" color="#92400e" bg="#fffbeb" border="#fde68a" />
-          <div style={{ background:"#fff", border:"1px solid #fde68a", borderTop:"none", borderRadius:"0 0 8px 8px", overflowX:"auto" }}>
-            <table style={{ borderCollapse:"collapse", width:"100%", minWidth:500 }}>
-              <thead>
-                <tr>
-                  <th style={{ ...S.thTh, width:90, background:"#fefce8" }}>시간</th>
-                  {therapyCols.map(c => (
-                    <th key={c.key} style={S.thTh}>
-                      <span style={{ display:"inline-block", width:7, height:7, borderRadius:"50%", background:c.color, marginRight:4, verticalAlign:"middle" }}/>
-                      {c.label}
-                    </th>
+              <Section title="<전  실>" titleBg="#d1fae5" titleColor="#065f46">
+                <Table cols={[
+                  { label:"이   름", width:100 },
+                  { label:"기존 병실", width:90 },
+                  { label:"이동 병실", width:90 },
+                  { label:"이동 시간", flex:1 },
+                ]}>
+                  {dTrn.map(row => (
+                    <EditRow key={row.id} onDelete={editMode ? () => deleteRow(setEditTrn, row.id) : null}
+                      highlight={filterName && row.name?.includes(filterName)}>
+                      <EditCell width={100} value={row.name} placeholder="이름"
+                        onChange={editMode ? v => updateRow(setEditTrn, row.id, "name", v) : null} />
+                      <EditCell width={90} value={row.fromRoom} placeholder="201-1"
+                        onChange={editMode ? v => updateRow(setEditTrn, row.id, "fromRoom", v) : null} />
+                      <EditCell width={90} value={row.toRoom} placeholder="501-4"
+                        onChange={editMode ? v => updateRow(setEditTrn, row.id, "toRoom", v) : null} />
+                      <EditCell flex={1} value={row.time} placeholder="아침식사후"
+                        onChange={editMode ? v => updateRow(setEditTrn, row.id, "time", v) : null} />
+                    </EditRow>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {THERAPY_SLOTS.map(slot => {
-                  const auto = autoTherapy[slot]||{};
-                  const isAft = slot.startsWith("13");
-                  return (
-                    <tr key={slot}>
-                      <td style={{ padding:"3px 4px", borderBottom:"1px solid #f5f5f4", borderRight:"1px solid #f5f5f4",
-                        fontWeight:800, fontSize:12, textAlign:"center", color:"#78350f",
-                        background:isAft?"#fefce8":"#fafaf9", whiteSpace:"nowrap" }}>{slot}</td>
-                      {therapyCols.map(c => {
-                        const manual = therapy[slot]?.[c.key];
-                        const autoVal = auto[c.key]||"";
-                        const display = manual || autoVal;
-                        return (
-                          <td key={c.key} style={{ padding:2, borderBottom:"1px solid #f5f5f4", borderRight:"1px solid #f5f5f4",
-                            verticalAlign:"top", background:isAft?"#fffef5":"#fff" }}>
-                            {editMode ? (
-                              <textarea value={manual||""} onChange={e=>updateTherapy(slot,c.key,e.target.value)}
-                                rows={2} placeholder={autoVal||"-"}
-                                style={{ width:"100%", border:manual?"1px solid #fcd34d":"1px solid transparent",
-                                  background:manual?"#fffbeb":"transparent", resize:"vertical", fontSize:12,
-                                  fontFamily:"inherit", padding:"2px 4px", minHeight:36, outline:"none",
-                                  lineHeight:1.4, borderRadius:3 }} />
-                            ) : display ? (
-                              <div style={{ fontSize:12, color:"#374151", whiteSpace:"pre-wrap", lineHeight:1.4, padding:"2px 4px",
-                                background: manual ? "#fffbeb" : autoVal ? "#f0f9ff" : "transparent",
-                                borderRadius:3 }}>{display}</div>
-                            ) : null}
-                          </td>
-                        );
-                      })}
+                </Table>
+                {editMode && <AddRowBtn onClick={() => addRow(setEditTrn, EMPTY_TRN)} />}
+              </Section>
+
+              <Section title="<자리 보존>" titleBg="#ede9fe" titleColor="#4c1d95">
+                <Table cols={[
+                  { label:"이   름", width:100 },
+                  { label:"병   실", width:80 },
+                  { label:"퇴원 날짜", width:95 },
+                  { label:"재입원", flex:1 },
+                ]}>
+                  {dRes.map(row => (
+                    <EditRow key={row.id} onDelete={editMode ? () => deleteRow(setEditRes, row.id) : null}
+                      highlight={filterName && row.name?.includes(filterName)}>
+                      <EditCell width={100} value={row.name} placeholder="이름"
+                        onChange={editMode ? v => updateRow(setEditRes, row.id, "name", v) : null} />
+                      <EditCell width={80} value={row.room} placeholder="306-1"
+                        onChange={editMode ? v => updateRow(setEditRes, row.id, "room", v) : null} />
+                      <EditCell width={95} value={row.dischargeDate} placeholder="3/21"
+                        onChange={editMode ? v => updateRow(setEditRes, row.id, "dischargeDate", v) : null} />
+                      <EditCell flex={1} value={row.readmitDate} placeholder="3/28 재입원"
+                        onChange={editMode ? v => updateRow(setEditRes, row.id, "readmitDate", v) : null} />
+                    </EditRow>
+                  ))}
+                </Table>
+                {editMode && <AddRowBtn onClick={() => addRow(setEditRes, EMPTY_RES)} />}
+              </Section>
+            </div>
+
+            {/* 우: 치료실 이용계획 */}
+            <Section title="<치료실 이용계획>" titleBg="#fef3c7" titleColor="#92400e" style={{ flex:1 }}>
+              <div className="no-print" style={{ padding:"4px 12px", fontSize:13, color:"#92400e",
+                background:"#fffbeb", borderBottom:"1px solid #fde68a" }}>
+                치료사: {therapists[0]} / {therapists[1]} &nbsp;
+                <span style={{ color:"#a16207", fontSize:12 }}>(치료실 스케줄 자동 연동)</span>
+              </div>
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ borderCollapse:"collapse", width:"100%", minWidth:500 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ ...S.th, width:110, background:"#fef3c7", color:"#92400e" }}>시간</th>
+                      {therapyCols.map(c => (
+                        <th key={c.key} style={{ ...S.th, background:"#fef3c7", color:"#92400e", whiteSpace:"pre-line" }}>{c.label}</th>
+                      ))}
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {THERAPY_SLOTS.map(slot => {
+                      const auto = autoTherapy[slot] || {};
+                      return (
+                        <tr key={slot} style={{ background: slot.startsWith("13") ? "#fffbeb":"#fff" }}>
+                          <td style={{ ...S.td, background:"#fef9c3", fontWeight:700, fontSize:15,
+                            textAlign:"center", color:"#78350f", whiteSpace:"nowrap" }}>{slot}</td>
+                          {therapyCols.map(c => {
+                            const manual = dTher[slot]?.[c.key];
+                            const autoVal = auto[c.key] || "";
+                            const display = manual || autoVal;
+                            return (
+                              <td key={c.key} style={{ ...S.td, verticalAlign:"top", padding:3, position:"relative" }}>
+                                {editMode ? (
+                                  <>
+                                    {autoVal && !manual && (
+                                      <div style={{ fontSize:14, color:"#4b5563", whiteSpace:"pre-wrap",
+                                        lineHeight:1.5, padding:"2px 4px", background:"#f0f9ff",
+                                        borderRadius:4, border:"1px solid #bae6fd" }}>{autoVal}</div>
+                                    )}
+                                    <textarea value={manual||""} onChange={e => updateTherapy(slot, c.key, e.target.value)}
+                                      rows={2} placeholder={autoVal ? "" : "이름(병실)"}
+                                      style={{ width:"100%", border: manual ? "1px solid #fcd34d" : "1px dashed #e2e8f0",
+                                        background: manual ? "#fffbeb" : "transparent",
+                                        resize:"vertical", fontSize:14, fontFamily:"inherit",
+                                        padding:3, minHeight:44, outline:"none", lineHeight:1.6,
+                                        borderRadius:4, marginTop: autoVal && !manual ? 3 : 0 }} />
+                                  </>
+                                ) : display ? (
+                                  <div style={{ fontSize:14, color:"#4b5563", whiteSpace:"pre-wrap",
+                                    lineHeight:1.5, padding:"2px 4px",
+                                    background: manual ? "#fffbeb" : autoVal ? "#f0f9ff" : "transparent",
+                                    borderRadius:4, border: autoVal && !manual ? "1px solid #bae6fd" : "none" }}>
+                                    {display}
+                                  </div>
+                                ) : null}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
           </div>
         </div>
       </div>
@@ -573,41 +554,93 @@ export default function DailyBoard() {
 }
 
 /* ── 서브 컴포넌트 ── */
-function SectionHeader({ icon, label, count, color, bg, border }) {
+function Section({ title, titleBg, titleColor, children, style }) {
   return (
-    <div style={{ background:bg, border:`1px solid ${border}`, borderBottom:"none",
-      borderRadius:"8px 8px 0 0", padding:"5px 12px", display:"flex", alignItems:"center", gap:6 }}>
-      <span style={{ fontSize:14 }}>{icon}</span>
-      <span style={{ fontWeight:900, fontSize:15, color, letterSpacing:1 }}>{label}</span>
-      {count > 0 && <span style={{ fontSize:12, fontWeight:800, color, background:"rgba(255,255,255,0.7)",
-        borderRadius:10, padding:"0 7px" }}>{count}</span>}
+    <div className="section-card" style={{ background:"#fff", borderRadius:10,
+      border:"1px solid #e2e8f0", overflow:"hidden", ...style }}>
+      <div style={{ background:titleBg, color:titleColor, fontWeight:900,
+        fontSize:18, padding:"8px 16px", letterSpacing:2 }}>{title}</div>
+      {children}
     </div>
   );
 }
 
-function Field({ value, onChange, placeholder, w, flex, style: ext }) {
-  return <input value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
-    style={{ border:"none", outline:"none", background:"transparent", fontSize:14, padding:"2px 3px",
-      fontFamily:"inherit", color:"#1e293b", width:w||"auto", flex:flex||undefined, minWidth:0, ...ext }} />;
+function Table({ cols, children }) {
+  return (
+    <div style={{ overflowX:"auto" }}>
+      <table style={{ borderCollapse:"collapse", width:"100%" }}>
+        <thead>
+          <tr>
+            {cols.map((c,i) => <th key={i} style={{ ...S.th, width:c.width }}>{c.label}</th>)}
+            <th style={{ ...S.th, width:32 }} className="no-print" />
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  );
 }
 
-function DelBtn({ onClick }) {
-  return <button className="no-print" onClick={onClick} style={{ background:"none", border:"none",
-    cursor:"pointer", color:"#d1d5db", fontSize:14, lineHeight:1, padding:"0 2px", flexShrink:0 }}
-    onMouseEnter={e=>e.target.style.color="#ef4444"} onMouseLeave={e=>e.target.style.color="#d1d5db"}>✕</button>;
+function EditRow({ children, onDelete, highlight }) {
+  return (
+    <tr style={{ borderBottom:"1px solid #e2e8f0", background: highlight ? "#fef3c7" : "transparent" }}>
+      {children}
+      <td className="no-print" style={{ padding:"2px 4px", textAlign:"center", width:32 }}>
+        {onDelete && (
+          <button onClick={onDelete} title="삭제"
+            style={{ background:"none", border:"none", cursor:"pointer", color:"#ef4444",
+              fontSize:18, lineHeight:1 }}>✕</button>
+        )}
+      </td>
+    </tr>
+  );
 }
 
-function AddBtn({ onClick }) {
-  return <div className="no-print" style={{ padding:"3px 8px" }}>
-    <button onClick={onClick} style={{ background:"none", border:"1px dashed #e2e8f0", borderRadius:5,
-      color:"#94a3b8", cursor:"pointer", fontSize:12, padding:"2px 12px", width:"100%", fontWeight:600 }}>+ 추가</button>
-  </div>;
+function EditCell({ value, onChange, placeholder, width, flex }) {
+  return (
+    <td style={{ padding:"3px 4px", borderRight:"1px solid #e2e8f0", width, verticalAlign:"middle" }}>
+      <input value={value||""} readOnly={!onChange}
+        onChange={onChange ? e => onChange(e.target.value) : undefined}
+        placeholder={placeholder}
+        style={{ ...S.cell, width:"100%" }} />
+    </td>
+  );
+}
+
+function AddRowBtn({ onClick }) {
+  return (
+    <div className="no-print" style={{ padding:"5px 8px" }}>
+      <button onClick={onClick}
+        style={{ background:"none", border:"1px dashed #cbd5e1", borderRadius:6, color:"#64748b",
+          cursor:"pointer", fontSize:15, padding:"4px 14px", width:"100%", fontWeight:600 }}>
+        + 행 추가
+      </button>
+    </div>
+  );
 }
 
 const S = {
-  navArrow: { background:"rgba(255,255,255,0.1)", color:"#fff", border:"1px solid rgba(255,255,255,0.2)",
-    borderRadius:8, padding:"4px 12px", cursor:"pointer", fontSize:18, fontWeight:700, lineHeight:1 },
-  headerBtn: { color:"#e2e8f0", borderRadius:7, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:700, fontFamily:"inherit" },
-  thTh: { background:"#fafaf9", borderBottom:"2px solid #e7e5e4", borderRight:"1px solid #f5f5f4",
-    padding:"5px 6px", fontSize:12, fontWeight:700, color:"#44403c", textAlign:"center" },
+  navBtn: {
+    background:"rgba(255,255,255,0.1)", color:"#e2e8f0", border:"1px solid rgba(255,255,255,0.2)",
+    borderRadius:7, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:600,
+  },
+  dayBtn: {
+    background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:6,
+    padding:"5px 12px", cursor:"pointer", fontSize:16, fontWeight:700,
+  },
+  actionBtn: {
+    border:"none", borderRadius:6, padding:"7px 16px", cursor:"pointer", fontSize:15, fontWeight:700,
+  },
+  th: {
+    background:"#f8fafc", borderBottom:"2px solid #e2e8f0", borderRight:"1px solid #e2e8f0",
+    padding:"7px 8px", fontSize:15, fontWeight:700, color:"#374151",
+    textAlign:"center", whiteSpace:"nowrap",
+  },
+  td: {
+    border:"1px solid #e2e8f0", padding:"5px 7px", fontSize:15,
+  },
+  cell: {
+    border:"none", outline:"none", background:"transparent", fontSize:16,
+    padding:"2px 4px", fontFamily:"inherit", color:"#1e293b", width:"100%",
+  },
 };
