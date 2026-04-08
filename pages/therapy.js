@@ -413,11 +413,11 @@ export default function TherapyPage() {
   return (
     <div style={S.page}>
       <header style={S.header}>
-        <div style={S.hcenter}>
-          <div style={S.htitle}>치료실 통합 일정표</div>
-          <div style={S.hsub}>{fmtDate(weekDates[0])} ~ {fmtDate(weekDates[6])}</div>
-        </div>
-        <div style={S.hright}>
+        <span style={{fontSize:17,fontWeight:800}}>치료실 통합 일정표</span>
+        <span style={{fontSize:13,color:"#94a3b8",fontWeight:600}}>
+          {fmtDate(weekDates[0])} ~ {fmtDate(weekDates[6])}
+        </span>
+        <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           <button style={S.btnW} onClick={()=>setWeekStart(w=>addDays(w,-7))}>‹ 전주</button>
           {!isThisWeek&&<button style={{...S.btnW,background:"#065f46",color:"#6ee7b7"}} onClick={()=>setWeekStart(getWeekStart(todayD))}>이번 주</button>}
           <button style={S.btnW} onClick={()=>setWeekStart(w=>addDays(w,7))}>다음 주 ›</button>
@@ -597,9 +597,9 @@ export default function TherapyPage() {
                     borderLeft:"2px solid #94a3b8",padding:"5px 6px 6px",verticalAlign:"top",
                     position:"sticky",top:0,zIndex:20}}>
                     {/* 요일 + 월일 한 줄 */}
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:5}}>
-                      <span style={{fontSize:14,fontWeight:900}}>{DAYS[di]}</span>
-                      <span style={{fontSize:12,fontWeight:700,color:isToday?"#b45309":isWe?"#3b82f6":"#64748b"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:6}}>
+                      <span style={{fontSize:15,fontWeight:900}}>{DAYS[di]}</span>
+                      <span style={{fontSize:14,fontWeight:700,color:isToday?"#92400e":isWe?"#2563eb":"#334155"}}>
                         {date?fmtDate(date):""}
                       </span>
                     </div>
