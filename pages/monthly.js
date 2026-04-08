@@ -439,16 +439,29 @@ export default function MonthlySchedule() {
     });
   }
 
+  // 상담일지 신환 이름 집합 (frozen 데이터에도 신환 플래그 반영용)
+  const newPatientNorms = useMemo(() => {
+    const s = new Set();
+    Object.values(consultations).forEach(c => {
+      if (!c?.name) return;
+      if (c.patientId) return;
+      if (c.status === "취소" || c.status === "입원완료") return;
+      s.add(normName(c.name));
+    });
+    return s;
+  }, [consultations]);
+
   // 표시 데이터: calendarData 기반 + boardData 수동 추가/숨김 병합
   function getDisplayData(key) {
     const bd = boardData[key];
     // frozen(스냅샷) 데이터: 과거 날짜는 저장된 데이터를 그대로 사용
     if (bd?.frozen) {
-      return {
-        admissions: dedupList(bd.admissions || []),
-        discharges: dedupList(bd.discharges || []),
-        isManual: true,
-      };
+      // frozen이어도 상담일지의 신환 플래그는 반영
+      const admissions = dedupList(bd.admissions || []).map(a => {
+        if (!a.isNew && newPatientNorms.has(normName(a.name))) return { ...a, isNew: true };
+        return a;
+      });
+      return { admissions, discharges: dedupList(bd.discharges || []), isManual: true };
     }
     const cd = calendarData[key] || { admissions:[], discharges:[] };
     if (!bd) return { admissions: dedupList(cd.admissions), discharges: dedupList(cd.discharges), isManual: false };

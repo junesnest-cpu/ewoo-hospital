@@ -31,13 +31,25 @@ function parseMD(str, year) {
   if (!m) return null;
   return `${year}-${String(parseInt(m[1])).padStart(2,"0")}-${String(parseInt(m[2])).padStart(2,"0")}`;
 }
-function buildCellText(cell, useTreatNames) {
+function buildCellText(cell, useTreatNames, slotsRef) {
   if (!cell) return "";
   const name = cell.patientName || cell.name || "";
   if (!name) return "";
+  // 병실 정보: roomId/bedNum 직접 사용 → slotKey에서 추출 → db_ 환자는 slots에서 조회
   let room = "";
-  if (cell.slotKey && !cell.slotKey.startsWith("pending_") && !cell.slotKey.startsWith("db_") && !cell.slotKey.startsWith("__"))
-    room = cell.slotKey;
+  if (cell.roomId && cell.bedNum) {
+    room = `${cell.roomId}-${cell.bedNum}`;
+  } else if (cell.slotKey) {
+    if (cell.slotKey.startsWith("db_") && slotsRef) {
+      // db_ 환자: slots에서 현재 병실 조회
+      const internalId = cell.slotKey.slice(3);
+      for (const [sk, sl] of Object.entries(slotsRef)) {
+        if (sl?.current?.patientId === internalId) { room = sk; break; }
+      }
+    } else if (!cell.slotKey.startsWith("pending_") && !cell.slotKey.startsWith("__")) {
+      room = cell.slotKey;
+    }
+  }
   const treatName = useTreatNames ? (TREAT_NAMES[cell.treatmentId]||"") : "";
   const line1 = room ? `${name}(${room})` : name;
   return treatName ? `${line1}\n${treatName}` : line1;
@@ -130,51 +142,100 @@ export default function DailyBoard() {
     return map;
   }, [slots]);
 
-  // ── 연동 데이터 계산 ──
-  const syncedAdmissions = useMemo(() => {
-    const list = [], seen = new Set();
-    (monthlyBoard.admissions||[]).forEach(a => {
-      if (!a?.name) return;
-      const n = normName(a.name); if (seen.has(n)) return; seen.add(n);
-      const info = patientInfo[n];
-      list.push({ id:a.id||uid(), name:a.name, room:info?.room||a.room||"",
-        doctor:info?.doctor||"", time:a.time||"", note:info?.note||a.note||"", isNew:!!a.isNew });
-    });
+  // ── slots 기반 calendarData (월간보드와 동일 로직) ──
+  const calendarData = useMemo(() => {
+    const adm = [], dis = [];
+    const year = dateYear, month = parseInt(date.slice(5,7));
+
+    // 이름→실제 병실 매핑
+    const nameToRoom = {};
     Object.entries(slots).forEach(([sk, slot]) => {
-      const cur = slot?.current; if (!cur?.name) return;
-      if (parseMD(cur.admitDate, dateYear) !== date) return;
-      const n = normName(cur.name); if (seen.has(n)) return; seen.add(n);
-      list.push({ id:uid(), name:cur.name, room:sk, doctor:cur.doctor||"", time:"", note:cur.note||"", isNew:false });
+      if (slot?.current?.name) nameToRoom[normName(slot.current.name)] = sk;
     });
+
+    Object.entries(slots).forEach(([sk, slot]) => {
+      const cur = slot?.current;
+      if (cur?.name) {
+        const aKey = parseMD(cur.admitDate, year);
+        const dKey = parseMD(cur.discharge, year);
+        if (aKey === date) adm.push({ id:uid(), name:cur.name, room:sk, note:cur.note||"", isNew:false, isReserved:false });
+        if (dKey === date) dis.push({ id:uid(), name:cur.name, room:sk, note:cur.discharge||"" });
+      }
+      (slot?.reservations||[]).forEach(r => {
+        if (!r?.name) return;
+        const aKey = parseMD(r.admitDate, year);
+        const dKey = parseMD(r.discharge, year);
+        if (aKey === date) adm.push({ id:uid(), name:r.name, room:sk, note:r.note||"", isNew:false, isReserved:true });
+        if (dKey === date) dis.push({ id:uid(), name:r.name, room:sk, note:r.discharge||"" });
+      });
+    });
+
+    // consultations → 신환 병합
     Object.values(consultations).forEach(c => {
-      if (!c?.name||!c.admitDate) return;
-      if (c.status==="취소"||c.status==="입원완료") return;
-      if (c.admitDate!==date) return;
-      const n = normName(c.name); if (seen.has(n)) return; seen.add(n);
-      const info = patientInfo[n];
-      const notes = [c.birthYear?`${new Date().getFullYear()-parseInt(c.birthYear)}세`:null,c.diagnosis,c.hospital].filter(Boolean);
-      list.push({ id:uid(), name:c.name, room:info?.room||c.roomTypes?.join("/")||"",
-        doctor:info?.doctor||"", time:"", note:notes.join(" · "), isNew:true });
+      if (!c?.name || !c.admitDate) return;
+      if (c.patientId) return;
+      if (c.status === "취소" || c.status === "입원완료") return;
+      if (c.admitDate !== date) return;
+      const nc = normName(c.name);
+      const actualRoom = nameToRoom[nc] || c.roomTypes?.join("/") || "";
+      const noteFields = [c.diagnosis, c.hospital].filter(Boolean);
+      if (c.surgery) noteFields.push(c.surgeryDate ? `수술후(${c.surgeryDate})` : "수술후");
+      if (c.chemo) noteFields.push(c.chemoDate ? `항암(${c.chemoDate})` : "항암중");
+      if (c.radiation) noteFields.push("방사선");
+      const cNote = noteFields.join(" · ");
+
+      const existIdx = adm.findIndex(a => normName(a.name) === nc);
+      if (existIdx >= 0) {
+        adm[existIdx] = { ...adm[existIdx], isNew: true, note: cNote || adm[existIdx].note };
+      } else {
+        adm.push({ id:uid(), name:c.name, room:actualRoom, note:cNote, isNew:true, isReserved:false });
+      }
     });
-    return list;
-  }, [monthlyBoard, slots, consultations, date, dateYear, patientInfo]);
+
+    return { admissions: adm, discharges: dis };
+  }, [slots, consultations, date, dateYear]);
+
+  // ── 월간보드 표시 데이터 (getDisplayData와 동일 로직) ──
+  const displayData = useMemo(() => {
+    const bd = monthlyBoard;
+    const dedupList = (list) => {
+      const seen = new Set();
+      return (list||[]).filter(a => { const n = normName(a.name); if (!n||seen.has(n)) return false; seen.add(n); return true; });
+    };
+
+    if (bd?.frozen) {
+      return { admissions: dedupList(bd.admissions||[]), discharges: dedupList(bd.discharges||[]) };
+    }
+    const cd = calendarData;
+    if (!bd || (!bd.admissions?.length && !bd.discharges?.length && !bd.hiddenAdmissions?.length && !bd.hiddenDischarges?.length)) {
+      return { admissions: dedupList(cd.admissions), discharges: dedupList(cd.discharges) };
+    }
+    const hiddenAdm = new Set(bd.hiddenAdmissions||[]);
+    const hiddenDis = new Set(bd.hiddenDischarges||[]);
+    const baseAdm = (cd.admissions||[]).filter(a => !hiddenAdm.has(normName(a.name)));
+    const baseDis = (cd.discharges||[]).filter(d => !hiddenDis.has(normName(d.name)));
+    const cdAdmNorms = new Set((cd.admissions||[]).map(a => normName(a.name)));
+    const cdDisNorms = new Set((cd.discharges||[]).map(d => normName(d.name)));
+    const manualAdm = (bd.admissions||[]).filter(a => !cdAdmNorms.has(normName(a.name)));
+    const manualDis = (bd.discharges||[]).filter(d => !cdDisNorms.has(normName(d.name)));
+    return { admissions: dedupList([...baseAdm,...manualAdm]), discharges: dedupList([...baseDis,...manualDis]) };
+  }, [monthlyBoard, calendarData]);
+
+  // ── 입원/퇴원 연동 (displayData + patientInfo 보강) ──
+  const syncedAdmissions = useMemo(() => {
+    return (displayData.admissions||[]).map(a => {
+      const info = patientInfo[normName(a.name)];
+      return { ...a, id:a.id||uid(), room:info?.room||a.room||"",
+        doctor:info?.doctor||"", time:a.time||"", note:info?.note||a.note||"", isNew:!!a.isNew };
+    });
+  }, [displayData, patientInfo]);
 
   const syncedDischarges = useMemo(() => {
-    const list = [], seen = new Set();
-    (monthlyBoard.discharges||[]).forEach(d => {
-      if (!d?.name) return;
-      const n = normName(d.name); if (seen.has(n)) return; seen.add(n);
-      const info = patientInfo[n];
-      list.push({ id:d.id||uid(), name:d.name, room:info?.room||d.room||"", time:d.time||"", note:d.note||"" });
+    return (displayData.discharges||[]).map(d => {
+      const info = patientInfo[normName(d.name)];
+      return { ...d, id:d.id||uid(), room:info?.room||d.room||"", time:d.time||"", note:d.note||"" };
     });
-    Object.entries(slots).forEach(([sk, slot]) => {
-      const cur = slot?.current; if (!cur?.name) return;
-      if (parseMD(cur.discharge, dateYear) !== date) return;
-      const n = normName(cur.name); if (seen.has(n)) return; seen.add(n);
-      list.push({ id:uid(), name:cur.name, room:sk, time:"", note:"" });
-    });
-    return list;
-  }, [monthlyBoard, slots, date, dateYear, patientInfo]);
+  }, [displayData, patientInfo]);
 
   const syncedReserved = useMemo(() => {
     const list = [], seen = new Set();
@@ -205,14 +266,14 @@ export default function DailyBoard() {
     THERAPY_SLOTS.forEach(slot => {
       const st = slot.split("~")[0];
       t[slot] = {
-        highFreq: buildCellText(hyperSched?.["hyperthermia"]?.[di]?.[st], false),
-        physio1: buildCellText(physSched?.["th1"]?.[di]?.[st], true),
-        physio2: buildCellText(physSched?.["th2"]?.[di]?.[st], true),
-        hyperbaric: buildCellText(hyperSched?.["hyperbaric"]?.[di]?.[st], false),
+        highFreq: buildCellText(hyperSched?.["hyperthermia"]?.[di]?.[st], false, slots),
+        physio1: buildCellText(physSched?.["th1"]?.[di]?.[st], true, slots),
+        physio2: buildCellText(physSched?.["th2"]?.[di]?.[st], true, slots),
+        hyperbaric: buildCellText(hyperSched?.["hyperbaric"]?.[di]?.[st], false, slots),
       };
     });
     return t;
-  }, [physSched, hyperSched, dayIdx]);
+  }, [physSched, hyperSched, dayIdx, slots]);
 
   const therapyCols = useMemo(() => [
     { key:"highFreq",   label:"고주파 치료" },
