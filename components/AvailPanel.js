@@ -47,6 +47,18 @@ export default function AvailPanel({ onClose }) {
     if (slot.current?.name) {
       const d = parseDateStr(slot.current.discharge);
       if (!d || dateOnly(d) >= fromD) return false;
+      // 자리보존 기간 체크: 현재 환자 퇴원 다음날 ~ 예약 입원 전날
+      const curDisOnly = dateOnly(d);
+      for (const r of (slot.reservations || [])) {
+        if (!r?.name || !r?.preserveSeat || !r?.admitDate) continue;
+        const rA = parseDateStr(r.admitDate);
+        if (!rA) continue;
+        const presStart = new Date(curDisOnly.getTime() + 86400000);
+        const presEnd   = new Date(dateOnly(rA).getTime() - 86400000);
+        if (presStart > presEnd) continue;
+        if (toD) { if (presStart <= toD && presEnd >= fromD) return false; }
+        else      { if (presEnd >= fromD) return false; }
+      }
     }
     for (const r of (slot.reservations || [])) {
       if (!r?.name) continue;

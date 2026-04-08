@@ -58,6 +58,35 @@ function getBars(slot, days) {
 
   if (slot?.current?.name) push(slot.current, "current", -1);
   (slot?.reservations || []).forEach((r, ri) => { if (r?.name) push(r, "reservation", ri); });
+
+  // 자리보존 바: 현재 환자 퇴원일 다음날 ~ 예약 환자 입원일 전날
+  if (slot?.current?.name) {
+    const curDisD = parseDateStr(slot.current.discharge);
+    if (curDisD) {
+      (slot?.reservations || []).forEach((r, ri) => {
+        if (r?.name && r?.preserveSeat && r?.admitDate) {
+          const resAdmitD = parseDateStr(r.admitDate);
+          if (resAdmitD) {
+            const siRaw = Math.round((dateOnly(curDisD).getTime() - ws) / MS) + 1;
+            const eiRaw = Math.round((dateOnly(resAdmitD).getTime() - ws) / MS) - 1;
+            if (siRaw <= eiRaw && eiRaw >= 0 && siRaw < len) {
+              bars.push({
+                type: "preserved",
+                person: { name: slot.current.name, admitDate: null, discharge: null },
+                resIndex: ri,
+                startDay: Math.max(0, siRaw),
+                endDay:   Math.min(len-1, eiRaw),
+                overflowLeft:  siRaw < 0,
+                overflowRight: eiRaw >= len,
+                rawStart: siRaw, rawEnd: eiRaw,
+              });
+            }
+          }
+        }
+      });
+    }
+  }
+
   return bars;
 }
 
@@ -78,7 +107,7 @@ function getOverlaps(bars) {
 }
 
 // ── 편집 모달 ─────────────────────────────────────────────────────────────────
-function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving }) {
+function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving, currentPatient }) {
   const [form, setForm] = useState({
     name:          modal.data.name          || "",
     admitDate:     modal.data.admitDate     || "",
@@ -86,6 +115,7 @@ function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving }) {
     note:          modal.data.note          || "",
     scheduleAlert: modal.data.scheduleAlert || false,
     patientId:     modal.data.patientId     || "",
+    preserveSeat:  modal.data.preserveSeat  || false,
   });
   const [suggestions,     setSuggestions]     = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -95,6 +125,14 @@ function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving }) {
   const isNew         = modal.resIndex === -1;
   const isReservation = modal.mode === "reservation";
   const slotLabel     = modal.slotKey.replace(/(\d+)-(\d+)/, "$1호 $2번");
+
+  // 자리보존 조건: 현재 입원 환자 + 퇴원 후 7일 이내 재입원 예약
+  const curDisD   = currentPatient?.discharge ? parseDateStr(currentPatient.discharge) : null;
+  const frmAdmitD = form.admitDate ? parseDateStr(form.admitDate) : null;
+  const diffDays  = (curDisD && frmAdmitD)
+    ? Math.round((dateOnly(frmAdmitD).getTime() - dateOnly(curDisD).getTime()) / 86400000)
+    : -1;
+  const showPreserveSeat = isReservation && !!currentPatient?.name && diffDays >= 1 && diffDays <= 7;
   const inpStyle = { width:"100%", border:"1.5px solid #e2e8f0", borderRadius:8, padding:"9px 11px", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
 
   const onNameChange = (val) => {
@@ -191,13 +229,20 @@ function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving }) {
           <textarea style={{...inpStyle, resize:"vertical", minHeight:72, lineHeight:1.6}} value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="치료 내용, 특이사항 등" />
         </div>
 
-        <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20, cursor:"pointer", fontSize:13, color:"#64748b" }}>
+        <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:showPreserveSeat?8:20, cursor:"pointer", fontSize:13, color:"#64748b" }}>
           <input type="checkbox" checked={form.scheduleAlert} onChange={e=>setForm(p=>({...p,scheduleAlert:e.target.checked}))} />
           ⚠ 스케줄 확인 필요
         </label>
 
+        {showPreserveSeat && (
+          <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20, cursor:"pointer", fontSize:13, color:"#92400e", background:"#fef3c7", borderRadius:8, padding:"10px 12px" }}>
+            <input type="checkbox" checked={form.preserveSeat} onChange={e=>setForm(p=>({...p,preserveSeat:e.target.checked}))} />
+            🛋 자리보존 서비스 — {currentPatient.name}님 퇴원 후 짐을 두고 재입원까지 병상 유지
+          </label>
+        )}
+
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          <button onClick={() => onSave(form)} disabled={saving || !form.name.trim()}
+          <button onClick={() => onSave({ ...form, preserveSeat: showPreserveSeat ? form.preserveSeat : false })} disabled={saving || !form.name.trim()}
             style={{ flex:1, background:form.name.trim()?"#0f2744":"#e2e8f0", color:form.name.trim()?"#fff":"#94a3b8", border:"none", borderRadius:9, padding:"11px", fontSize:14, fontWeight:700, cursor:form.name.trim()?"pointer":"default" }}>
             {saving ? "저장 중..." : "저장"}
           </button>
@@ -511,6 +556,7 @@ export default function WardTimeline() {
       mode: "reservation",
       resIndex: -1,
       data: { name:"", admitDate: qAdmit || "", discharge: qDischarge || "미정", note:"", scheduleAlert:false },
+      currentPatient: slots[openRes]?.current?.name ? slots[openRes].current : null,
     });
     // 해당 병상 행으로 스크롤
     setTimeout(() => scrollToRow(openRes), 300);
@@ -793,12 +839,15 @@ export default function WardTimeline() {
           { color:"#f59e0b", label:"당일 퇴원" },
           { color:"#8b5cf6", label:"예약" },
           { color:"#ef4444", label:"일정 겹침", hatching:true },
+          { label:"자리보존", preserved:true },
         ].map(l => (
           <div key={l.label} style={{ display:"flex", alignItems:"center", gap:5 }}>
             <div style={{ width:14, height:14, borderRadius:3,
-              background: l.hatching ? "transparent" : l.color,
-              backgroundImage: l.hatching ? "repeating-linear-gradient(45deg, rgba(239,68,68,0.55) 0px, rgba(239,68,68,0.55) 3px, transparent 3px, transparent 10px)" : "none",
-              border: l.hatching ? "2px solid #ef4444" : "none" }}/>
+              background: l.preserved
+                ? "repeating-linear-gradient(45deg, #fde68a 0px, #fde68a 4px, #fffbeb 4px, #fffbeb 8px)"
+                : l.hatching ? "transparent" : l.color,
+              backgroundImage: (!l.preserved && l.hatching) ? "repeating-linear-gradient(45deg, rgba(239,68,68,0.55) 0px, rgba(239,68,68,0.55) 3px, transparent 3px, transparent 10px)" : "none",
+              border: l.preserved ? "1.5px dashed #f59e0b" : l.hatching ? "2px solid #ef4444" : "none" }}/>
             <span style={{ fontSize:12, color:"#64748b" }}>{l.label}</span>
           </div>
         ))}
@@ -1026,7 +1075,8 @@ export default function WardTimeline() {
                                     borderRight:"1px solid #d1d5db", cursor:"pointer" }}
                                   title={`${toDateStr(day)} 예약 추가`}
                                   onClick={() => setEditModal({ slotKey, mode:"reservation", resIndex:-1,
-                                    data:{ name:"", admitDate:toDateStr(day), discharge:"미정", note:"", scheduleAlert:false } })}
+                                    data:{ name:"", admitDate:toDateStr(day), discharge:"미정", note:"", scheduleAlert:false },
+                                    currentPatient: slot?.current?.name ? slot.current : null })}
                                 />
                               ))}
 
@@ -1051,6 +1101,26 @@ export default function WardTimeline() {
 
                               {/* ── 환자 바 ── */}
                               {bars.map((bar, bi2) => {
+                                // 자리보존 바 별도 렌더링
+                                if (bar.type === "preserved") {
+                                  const barLeft  = bar.startDay * DAY_W + (bar.overflowLeft  ? 0 : 3);
+                                  const barWidth = Math.max(20, (bar.endDay - bar.startDay + 1) * DAY_W - (bar.overflowLeft?0:3) - (bar.overflowRight?0:3));
+                                  const BAR_H    = ROW_H - 16;
+                                  return (
+                                    <div key={bi2}
+                                      style={{ position:"absolute", left:barLeft, top:8, height:BAR_H, width:barWidth,
+                                        background:"repeating-linear-gradient(45deg, #fde68a 0px, #fde68a 6px, #fffbeb 6px, #fffbeb 12px)",
+                                        zIndex:4, borderRadius:4, border:"1.5px dashed #f59e0b",
+                                        display:"flex", alignItems:"center", justifyContent:"center",
+                                        overflow:"hidden", pointerEvents:"none",
+                                      }}>
+                                      <span style={{ fontSize:10, fontWeight:800, color:"#92400e", whiteSpace:"nowrap", padding:"0 4px" }}>
+                                        {bar.overflowLeft && "‹ "}🛋 자리보존{bar.overflowRight && " ›"}
+                                      </span>
+                                    </div>
+                                  );
+                                }
+
                                 const p = bar.person;
                                 const disD   = parseDateStr(p.discharge);
                                 const admitD = parseDateStr(p.admitDate);
@@ -1121,6 +1191,7 @@ export default function WardTimeline() {
 
                               {/* ── 텍스트 오버레이 (빗금 위, z-index 7) ── */}
                               {bars.map((bar, bi2) => {
+                                if (bar.type === "preserved") return null; // 자리보존 바는 위에서 처리
                                 const p = bar.person;
                                 const barLeft  = bar.startDay * DAY_W + (bar.overflowLeft  ? 0 : 3);
                                 const barWidth = Math.max(20, (bar.endDay - bar.startDay + 1) * DAY_W - (bar.overflowLeft?0:3) - (bar.overflowRight?0:3));
@@ -1264,7 +1335,8 @@ export default function WardTimeline() {
           onClose={() => setPopover(null)}
           onEdit={() => {
             const { bar, slotKey } = popover;
-            setEditModal({ slotKey, mode:bar.type==="current"?"current":"reservation", data:{...bar.person}, resIndex:bar.resIndex });
+            const currentPat = bar.type !== "current" ? (slots[slotKey]?.current?.name ? slots[slotKey].current : null) : null;
+            setEditModal({ slotKey, mode:bar.type==="current"?"current":"reservation", data:{...bar.person}, resIndex:bar.resIndex, currentPatient: currentPat });
             setPopover(null);
           }}
           onDelete={handlePopoverDelete}
@@ -1281,6 +1353,7 @@ export default function WardTimeline() {
           onDelete={handleDelete}
           onConvert={handleConvert}
           saving={saving}
+          currentPatient={editModal.currentPatient || null}
         />
       )}
     </div>
