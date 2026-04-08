@@ -288,9 +288,13 @@ export default function WardTimeline() {
   const [tlSearchResults,  setTlSearchResults]  = useState([]);
   const [tlSearchFocused,  setTlSearchFocused]  = useState(false);
   const [highlightKey,     setHighlightKey]     = useState(null); // { slotKey }
+  const [resHighlight,     setResHighlight]     = useState(null); // { slotKey, resIndex } 예약 바 하이라이트
+  const resHighlightCursor = useRef({});  // { [slotKey]: number } 순환 커서
+  const resHighlightTimer  = useRef(null);
   const tlSearchRef    = useRef(null);
   const hlTimer        = useRef(null);
   const rowRefs        = useRef({});
+  const doTlSearchFnRef = useRef(null);
   const isResizing     = useRef(false);
   const timelineScrollRef = useRef(null);
   const memoScrollRef     = useRef(null);
@@ -498,6 +502,14 @@ export default function WardTimeline() {
     setTlSearchResults(results);
   };
 
+  // 사이드바 검색 이벤트 처리 (stale closure 방지)
+  useEffect(() => { doTlSearchFnRef.current = doTlSearch; });
+  useEffect(() => {
+    const handler = (e) => { const q = e.detail?.q; if (q) doTlSearchFnRef.current?.(q); };
+    window.addEventListener("sidebar-search", handler);
+    return () => window.removeEventListener("sidebar-search", handler);
+  }, []);
+
   const scrollToRow = (slotKey) => {
     if (hlTimer.current) clearTimeout(hlTimer.current);
     const el = rowRefs.current[slotKey];
@@ -521,6 +533,52 @@ export default function WardTimeline() {
     };
     hlTimer.current = setTimeout(doBlink, BLINK_MS);
   };
+
+  // + 예약 버튼: 예약을 입원일 순으로 순환하며 해당 바 하이라이트 + 스크롤
+  const cycleReservationHighlight = useCallback((slotKey, slot) => {
+    const reservations = (slot?.reservations || [])
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => r?.name)
+      .sort((a, b) => {
+        const da = parseDateStr(a.r.admitDate);
+        const db2 = parseDateStr(b.r.admitDate);
+        if (!da && !db2) return 0;
+        if (!da) return 1;
+        if (!db2) return -1;
+        return da - db2;
+      });
+    if (reservations.length === 0) return;
+
+    const cursor = resHighlightCursor.current[slotKey] || 0;
+    const next   = cursor % reservations.length;
+    resHighlightCursor.current[slotKey] = next + 1;
+
+    const { r, i: resIndex } = reservations[next];
+    setResHighlight({ slotKey, resIndex });
+
+    // 세로 스크롤: 해당 행으로
+    const el = rowRefs.current[slotKey];
+    const container = timelineScrollRef.current;
+    if (el && container) {
+      const containerRect = container.getBoundingClientRect();
+      const elRect        = el.getBoundingClientRect();
+      const relTop        = elRect.top - containerRect.top + container.scrollTop;
+      container.scrollTo({ top: relTop - containerRect.height / 2 + ROW_H / 2, behavior: "smooth" });
+    }
+
+    // 가로 스크롤: 바의 시작 날짜 위치로
+    const admitD = parseDateStr(r.admitDate);
+    if (admitD && container) {
+      const ws = days[0].getTime();
+      const di = Math.round((dateOnly(admitD).getTime() - ws) / 86400000);
+      const targetLeft = Math.max(0, di * DAY_W - LEFT_W - DAY_W * 2);
+      container.scrollTo({ left: targetLeft, behavior: "smooth" });
+    }
+
+    // 3초 후 하이라이트 해제
+    if (resHighlightTimer.current) clearTimeout(resHighlightTimer.current);
+    resHighlightTimer.current = setTimeout(() => setResHighlight(null), 3000);
+  }, [days]);
 
   // 신환 이름 집합 (consultations 기준, patientId 없음=신규, 취소/입원완료 제외)
   const newPatientNames = useMemo(() => {
@@ -911,7 +969,10 @@ export default function WardTimeline() {
                                   : <span style={{ fontSize:11, color:"#cbd5e1" }}>빈 병상</span>
                               )}
                               {!isDragTarget && (slot?.reservations||[]).filter(r=>r?.name).length > 0 && (
-                                <span style={{ fontSize:10, background:"#ede9fe", color:"#7c3aed", borderRadius:4, padding:"1px 5px", fontWeight:700, flexShrink:0 }}>
+                                <span
+                                  onClick={e => { e.stopPropagation(); cycleReservationHighlight(slotKey, slot); }}
+                                  style={{ fontSize:10, background:"#ede9fe", color:"#7c3aed", borderRadius:4, padding:"1px 5px", fontWeight:700, flexShrink:0, cursor:"pointer", userSelect:"none" }}
+                                  title="클릭 시 예약 날짜 순으로 이동">
                                   +{(slot.reservations||[]).filter(r=>r?.name).length}예약
                                 </span>
                               )}
@@ -963,7 +1024,8 @@ export default function WardTimeline() {
                                 let bg = bar.type==="current" ? "#10b981" : "#8b5cf6";
                                 if (bar.type==="current" && disToday)   bg = "#f59e0b";
                                 if (bar.type==="current" && admitToday) bg = "#3b82f6";
-                                const isBarHighlit = isRowHighlit;
+                                const isResHighlit = resHighlight?.slotKey === slotKey && resHighlight?.resIndex === bar.resIndex;
+                                const isBarHighlit = isRowHighlit || isResHighlit;
 
                                 const barLeft  = bar.startDay * DAY_W + (bar.overflowLeft  ? 0 : 3);
                                 const barWidth = Math.max(20, (bar.endDay - bar.startDay + 1) * DAY_W - (bar.overflowLeft?0:3) - (bar.overflowRight?0:3));
@@ -983,9 +1045,9 @@ export default function WardTimeline() {
                                       borderRadius:`${bar.overflowLeft?0:7}px ${bar.overflowRight?0:7}px ${bar.overflowRight?0:7}px ${bar.overflowLeft?0:7}px`,
                                       cursor:"grab", overflow:"hidden",
                                       display:"flex", flexDirection:"column", justifyContent:"center", padding:"0 8px",
-                                      boxShadow: isDraggingThis ? "none" : isBarHighlit ? "0 0 0 3px #ef4444, 0 4px 12px rgba(0,0,0,0.3)" : "0 2px 6px rgba(0,0,0,0.18)",
+                                      boxShadow: isDraggingThis ? "none" : isResHighlit ? "0 0 0 3px #f59e0b, 0 4px 16px rgba(245,158,11,0.5)" : isRowHighlit ? "0 0 0 3px #ef4444, 0 4px 12px rgba(0,0,0,0.3)" : "0 2px 6px rgba(0,0,0,0.18)",
                                       opacity: isDraggingThis ? 0.4 : 1,
-                                      outline: isBarHighlit ? "2px solid #ef4444" : "none",
+                                      outline: isResHighlit ? "2px solid #f59e0b" : isRowHighlit ? "2px solid #ef4444" : "none",
                                       transition:"opacity 0.15s, box-shadow 0.3s, outline 0.3s",
                                       userSelect:"none",
                                     }}
