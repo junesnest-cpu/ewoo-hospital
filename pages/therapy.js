@@ -733,7 +733,10 @@ export default function TherapyPage() {
                                         <div style={{marginBottom:1}}><span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800}}>★신</span></div>
                                       )}
                                       <div style={{display:"flex",alignItems:"center",gap:3,overflow:"hidden",lineHeight:1.4}}>
-                                        <span style={{fontSize:isMobile?14:13,fontWeight:800,color:"#1e293b",flexShrink:1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip"}}>
+                                        <span style={{fontSize:isMobile?14:13,fontWeight:800,flexShrink:1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip",
+                                          color:cell.isOuter?"#92400e":"#1e293b",
+                                          background:cell.isOuter?"#fef3c7":"transparent",
+                                          borderRadius:cell.isOuter?3:0,padding:cell.isOuter?"0 2px":0}}>
                                           {cell.patientName}
                                         </span>
                                         {tr2&&<span style={{fontSize:isMobile?11:9,fontWeight:800,background:tr2.color,color:"#fff",borderRadius:3,padding:"0 3px",flexShrink:0}}>{tr2.short}</span>}
