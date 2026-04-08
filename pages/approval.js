@@ -2118,7 +2118,7 @@ export default function ApprovalPage() {
   const refundAllMonths    = [...new Set(refundDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
   const taxDocForMonth     = findActiveDocForMonth(taxDocs, taxNavMonth);
   const taxAllMonths       = [...new Set(taxDocs.map(([,d]) => d.formData?.reportMonth).filter(Boolean))].sort();
-  const supplyAllMonths    = [...new Set(supplyDocs.filter(([,d]) => ["approved","final"].includes(d.status)).map(([,d]) => d.formData?.requestDate?.slice(0,7)).filter(Boolean))].sort();
+  const supplyAllMonths    = [...new Set(supplyDisplay.filter(([,d]) => ["approved","final"].includes(d.status)).map(([,d]) => d.formData?.requestDate?.slice(0,7)).filter(Boolean))].sort();
   const supplyDocGroups = supplyDocs
     .filter(([,d]) => ["approved","final"].includes(d.status) && (d.formData?.requestDate||"").slice(0,7) === supplyNavMonth)
     .sort(([,a],[,b]) => (a.formData?.requestDate||"").localeCompare(b.formData?.requestDate||""))
@@ -2130,7 +2130,7 @@ export default function ApprovalPage() {
   const supplyGrandTotal = supplyDocGroups.reduce((s,g) => s + g.total, 0);
   const supplyDeptTotals = supplyDocGroups.reduce((acc,g) => { acc[g.department] = (acc[g.department]||0) + g.total; return acc; }, {});
   const supplyActiveDocs = sortedDocs(supplyDisplay.filter(([,d]) => !["approved","final","rejected","superseded"].includes(d.status)));
-  const supplyApprovedForMonth = supplyDocs
+  const supplyApprovedForMonth = supplyDisplay
     .filter(([,d]) => ["approved","final"].includes(d.status) && (d.formData?.requestDate||"").slice(0,7) === supplyNavMonth)
     .sort(([,a],[,b]) => (a.formData?.requestDate||"").localeCompare(b.formData?.requestDate||""));
 
