@@ -974,7 +974,7 @@ export default function WardTimeline() {
                             <div style={{ width:LEFT_W, minWidth:LEFT_W, flexShrink:0, position:"sticky", left:0, zIndex:9,
                               background: isDragTarget?"#f0fdf4": isDragSource?"#faf5ff":"#fff",
                               borderRight:"2px solid #e2e8f0", display:"flex", alignItems:"center", padding:"0 14px", gap:8, cursor:"pointer", transition:"background 0.15s" }}
-                              onClick={() => router.push(`/room?id=${room.id}`)}
+                              onClick={e=>{ if(e.target.closest("[data-res-badge]")) return; router.push(`/room?roomId=${room.id}`); }}
                               onMouseEnter={e=>{ if(!isDragTarget) e.currentTarget.style.background="#f8fafc"; }}
                               onMouseLeave={e=>{ if(!isDragTarget) e.currentTarget.style.background=isDragSource?"#faf5ff":"#fff"; }}>
                               <span style={{ background:"#1e3a5f", color:"#fff", borderRadius:5, padding:"2px 8px", fontSize:13, fontWeight:800, flexShrink:0 }}>{bi+1}번</span>
@@ -986,7 +986,8 @@ export default function WardTimeline() {
                               )}
                               {!isDragTarget && (slot?.reservations||[]).filter(r=>r?.name).length > 0 && (
                                 <span
-                                  onClick={e => { e.stopPropagation(); cycleReservationHighlight(slotKey, slot); }}
+                                  data-res-badge="1"
+                                  onClick={() => cycleReservationHighlight(slotKey, slot)}
                                   style={{ fontSize:10, background:"#ede9fe", color:"#7c3aed", borderRadius:4, padding:"1px 5px", fontWeight:700, flexShrink:0, cursor:"pointer", userSelect:"none" }}
                                   title="클릭 시 예약 날짜 순으로 이동">
                                   +{(slot.reservations||[]).filter(r=>r?.name).length}예약
