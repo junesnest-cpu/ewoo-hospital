@@ -973,20 +973,23 @@ export default function WardTimeline() {
                             {/* 병상 레이블 */}
                             <div style={{ width:LEFT_W, minWidth:LEFT_W, flexShrink:0, position:"sticky", left:0, zIndex:9,
                               background: isDragTarget?"#f0fdf4": isDragSource?"#faf5ff":"#fff",
-                              borderRight:"2px solid #e2e8f0", display:"flex", alignItems:"center", padding:"0 14px", gap:8, cursor:"pointer", transition:"background 0.15s" }}
-                              onClick={e=>{ if(e.target.closest("[data-res-badge]")) return; router.push(`/room?roomId=${room.id}`); }}
+                              borderRight:"2px solid #e2e8f0", display:"flex", alignItems:"center", padding:"0 6px 0 14px", gap:6, transition:"background 0.15s" }}
                               onMouseEnter={e=>{ if(!isDragTarget) e.currentTarget.style.background="#f8fafc"; }}
                               onMouseLeave={e=>{ if(!isDragTarget) e.currentTarget.style.background=isDragSource?"#faf5ff":"#fff"; }}>
-                              <span style={{ background:"#1e3a5f", color:"#fff", borderRadius:5, padding:"2px 8px", fontSize:13, fontWeight:800, flexShrink:0 }}>{bi+1}번</span>
-                              {isDragTarget && <span style={{ fontSize:11, color:"#059669", fontWeight:700 }}>← 여기에 놓기</span>}
-                              {!isDragTarget && (
-                                slot?.current?.name
-                                  ? <span style={{ fontSize:12, color:"#334155", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:90 }}>{slot.current.name}</span>
-                                  : <span style={{ fontSize:11, color:"#cbd5e1" }}>빈 병상</span>
-                              )}
+                              {/* 병실 이동 영역 (병상번호 + 환자명) */}
+                              <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, minWidth:0, cursor:"pointer", overflow:"hidden" }}
+                                onClick={() => router.push(`/room?roomId=${room.id}`)}>
+                                <span style={{ background:"#1e3a5f", color:"#fff", borderRadius:5, padding:"2px 8px", fontSize:13, fontWeight:800, flexShrink:0 }}>{bi+1}번</span>
+                                {isDragTarget && <span style={{ fontSize:11, color:"#059669", fontWeight:700 }}>← 여기에 놓기</span>}
+                                {!isDragTarget && (
+                                  slot?.current?.name
+                                    ? <span style={{ fontSize:12, color:"#334155", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{slot.current.name}</span>
+                                    : <span style={{ fontSize:11, color:"#cbd5e1" }}>빈 병상</span>
+                                )}
+                              </div>
+                              {/* +예약 배지: 병실 이동 영역 밖에 독립 배치 */}
                               {!isDragTarget && (slot?.reservations||[]).filter(r=>r?.name).length > 0 && (
                                 <span
-                                  data-res-badge="1"
                                   onClick={() => cycleReservationHighlight(slotKey, slot)}
                                   style={{ fontSize:10, background:"#ede9fe", color:"#7c3aed", borderRadius:4, padding:"1px 5px", fontWeight:700, flexShrink:0, cursor:"pointer", userSelect:"none" }}
                                   title="클릭 시 예약 날짜 순으로 이동">
