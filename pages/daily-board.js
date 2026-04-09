@@ -535,9 +535,9 @@ export default function DailyBoard() {
                       <span style={{ fontSize:12, color:"#0891b2", fontWeight:600, flexShrink:0 }}>{row.time}</span>
                     ) : null}
                     {editMode ? (
-                      <Field flex={1} value={row.note} onChange={v=>updateRow(setEditAdm,row.id,"note",v)} placeholder="비고" style={{color:"#64748b",fontSize:13}} />
+                      <Field flex={1} value={row.note} onChange={v=>updateRow(setEditAdm,row.id,"note",v)} placeholder="비고" style={{color:"#64748b",fontSize:13,textAlign:"center"}} />
                     ) : (
-                      <span style={{ fontSize:13, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{row.note}</span>
+                      <span style={{ fontSize:13, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", textAlign:"center" }}>{row.note}</span>
                     )}
                     {editMode && <DelBtn onClick={()=>deleteRow(setEditAdm,row.id)} />}
                   </div>
@@ -580,9 +580,9 @@ export default function DailyBoard() {
                       <span style={{ fontSize:12, color:"#0891b2", fontWeight:600, flexShrink:0, background:"#ecfeff", borderRadius:3, padding:"0 4px" }}>{row.time}</span>
                     ) : null}
                     {editMode ? (
-                      <Field flex={1} value={row.note} onChange={v=>updateRow(setEditDis,row.id,"note",v)} placeholder="재입원 일정 등" style={{color:"#64748b",fontSize:13}} />
+                      <Field flex={1} value={row.note} onChange={v=>updateRow(setEditDis,row.id,"note",v)} placeholder="재입원 일정 등" style={{color:"#64748b",fontSize:13,textAlign:"center"}} />
                     ) : (
-                      <span style={{ fontSize:13, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{row.note}</span>
+                      <span style={{ fontSize:13, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", textAlign:"center" }}>{row.note}</span>
                     )}
                     {editMode && <DelBtn onClick={()=>deleteRow(setEditDis,row.id)} />}
                   </div>
@@ -638,27 +638,27 @@ export default function DailyBoard() {
                 {dRes.filter(r=>r.name).length===0 && !editMode && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
                 {dRes.map(row => (
                   <div key={row.id} style={{ display:"flex", gap:6, padding:"6px 10px",
-                    borderBottom:"1px solid #faf5ff", alignItems:"center",
+                    borderBottom:"1px solid #faf5ff", alignItems:"center", justifyContent:"center",
                     background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
                     {editMode ? (
-                      <Field w={80} value={row.name} onChange={v=>updateRow(setEditRes,row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
+                      <Field w={80} value={row.name} onChange={v=>updateRow(setEditRes,row.id,"name",v)} placeholder="이름" style={{fontWeight:700,fontSize:14}} />
                     ) : (
                       <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>
                     )}
                     {editMode ? (
-                      <Field w={65} value={row.room} onChange={v=>updateRow(setEditRes,row.id,"room",v)} placeholder="병실" style={{textAlign:"center",color:"#7c3aed"}} />
+                      <Field w={65} value={row.room} onChange={v=>updateRow(setEditRes,row.id,"room",v)} placeholder="병실" style={{textAlign:"center",color:"#7c3aed",fontWeight:800}} />
                     ) : (
-                      <span style={{ fontSize:13, color:"#7c3aed", flexShrink:0 }}>{row.room}</span>
+                      <span style={{ fontSize:14, color:"#7c3aed", fontWeight:800, flexShrink:0 }}>{row.room}</span>
                     )}
                     {editMode ? (
                       <>
                         <Field w={60} value={row.dischargeDate} onChange={v=>updateRow(setEditRes,row.id,"dischargeDate",v)} placeholder="퇴원일" style={{fontSize:13,color:"#64748b",textAlign:"center"}} />
-                        <Field flex={1} value={row.readmitDate} onChange={v=>updateRow(setEditRes,row.id,"readmitDate",v)} placeholder="재입원" style={{fontSize:13,color:"#7c3aed"}} />
+                        <Field flex={1} value={row.readmitDate} onChange={v=>updateRow(setEditRes,row.id,"readmitDate",v)} placeholder="재입원" style={{fontSize:13,color:"#7c3aed",textAlign:"center"}} />
                       </>
                     ) : (
                       <>
-                        {row.dischargeDate && <span style={{ fontSize:12, color:"#64748b" }}>퇴원:{row.dischargeDate}</span>}
-                        {row.readmitDate && <span style={{ fontSize:12, color:"#7c3aed" }}>재입원:{row.readmitDate}</span>}
+                        {row.dischargeDate && <span style={{ fontSize:13, color:"#64748b" }}>퇴원:{row.dischargeDate}</span>}
+                        {row.readmitDate && <span style={{ fontSize:13, color:"#7c3aed" }}>재입원:{row.readmitDate}</span>}
                       </>
                     )}
                     {editMode && <DelBtn onClick={()=>deleteRow(setEditRes,row.id)} />}
@@ -716,7 +716,8 @@ export default function DailyBoard() {
                                       lineHeight:1.5, borderRadius:4, marginTop:autoVal&&!manual?2:0 }} />
                                 </>
                               ) : display ? (
-                                <div style={{ fontSize:13, color:"#374151", whiteSpace:"pre-wrap", lineHeight:1.5, padding:"2px 5px",
+                                <div style={{ fontSize:14, fontWeight:700, color:"#1e293b", whiteSpace:"pre-wrap", lineHeight:1.5, padding:"2px 5px",
+                                  textAlign:"center",
                                   background:manual?"#fffbeb":autoVal?"#f0f9ff":"transparent",
                                   borderRadius:4, border:autoVal&&!manual?"1px solid #dbeafe":"none" }}>{display}</div>
                               ) : null}
