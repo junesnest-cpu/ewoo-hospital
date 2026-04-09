@@ -268,6 +268,15 @@ function DirectorDashboard({ profile }) {
                   <th style={S.th}>총 진료비</th>
                 </tr></thead>
                 <tbody>
+                  <tr style={{...S.totRow,borderBottom:"2px solid #0f2744"}}>
+                    <td style={{...S.tdL,fontSize:14}}>합계</td>
+                    <td style={{...S.td,fontWeight:800,color:"#0369a1"}}>{fmtAmt(yearTotals.inTotal)}</td>
+                    {hasOutpatient&&<td style={{...S.td,fontWeight:800,color:"#7c3aed"}}>{fmtAmt(yearTotals.outTotal)}</td>}
+                    {hasBedDays&&<td style={{...S.td,textAlign:"center",fontWeight:800}}>{yearTotals.bedDays.toLocaleString()}</td>}
+                    {hasDetail&&<td style={{...S.td,fontWeight:800,color:"#059669"}}>{fmtAmt(yearTotals.gongdan)}</td>}
+                    {hasDetail&&<td style={{...S.td,fontWeight:800,color:"#d97706"}}>{fmtAmt(yearTotals.bonbu)}</td>}
+                    <td style={{...S.td,fontWeight:800,color:"#dc2626",fontSize:14}}>{fmtAmt(yearTotals.grandTotal)}</td>
+                  </tr>
                   {monthlyData.map(r=>{
                     const empty=r.inTotal===0&&r.outTotal===0;
                     return(<tr key={r.month} style={{opacity:year===thisYear&&r.month>thisMonth?0.3:1}}>
@@ -280,15 +289,6 @@ function DirectorDashboard({ profile }) {
                       <td style={{...S.td,fontWeight:800,color:"#dc2626"}}>{empty?"-":fmtAmt(r.grandTotal)}</td>
                     </tr>);
                   })}
-                  <tr style={S.totRow}>
-                    <td style={{...S.tdL,fontSize:14}}>합계</td>
-                    <td style={{...S.td,fontWeight:800,color:"#0369a1"}}>{fmtAmt(yearTotals.inTotal)}</td>
-                    {hasOutpatient&&<td style={{...S.td,fontWeight:800,color:"#7c3aed"}}>{fmtAmt(yearTotals.outTotal)}</td>}
-                    {hasBedDays&&<td style={{...S.td,textAlign:"center",fontWeight:800}}>{yearTotals.bedDays.toLocaleString()}</td>}
-                    {hasDetail&&<td style={{...S.td,fontWeight:800,color:"#059669"}}>{fmtAmt(yearTotals.gongdan)}</td>}
-                    {hasDetail&&<td style={{...S.td,fontWeight:800,color:"#d97706"}}>{fmtAmt(yearTotals.bonbu)}</td>}
-                    <td style={{...S.td,fontWeight:800,color:"#dc2626",fontSize:14}}>{fmtAmt(yearTotals.grandTotal)}</td>
-                  </tr>
                 </tbody>
               </table>
             </div>
@@ -345,7 +345,14 @@ function DirectorDashboard({ profile }) {
             <span>💊 치료항목 월별 현황</span>
             <div style={S.nav}>
               <button style={S.btn} onClick={()=>setTreatMonth(m=>monthAdd(m,-1))}>‹</button>
-              <span style={{fontSize:16,fontWeight:800,minWidth:80,textAlign:"center"}}>{ymLabel(treatMonth)}</span>
+              <select style={S.sel} value={treatMonth.split("-")[0]}
+                onChange={e=>setTreatMonth(`${e.target.value}-${treatMonth.split("-")[1]}`)}>
+                {Array.from({length:thisYear-2019},(_,i)=><option key={2020+i} value={2020+i}>{2020+i}년</option>)}
+              </select>
+              <select style={S.sel} value={parseInt(treatMonth.split("-")[1])}
+                onChange={e=>setTreatMonth(`${treatMonth.split("-")[0]}-${String(e.target.value).padStart(2,"0")}`)}>
+                {Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>{i+1}월</option>)}
+              </select>
               <button style={S.btn} onClick={()=>setTreatMonth(m=>monthAdd(m,1))}>›</button>
             </div>
           </div>
@@ -369,6 +376,17 @@ function DirectorDashboard({ profile }) {
                   <th style={{...S.th,fontSize:11}}>전년 대비</th>
                 </tr></thead>
                 <tbody>
+                  <tr style={{...S.totRow,borderBottom:"2px solid #0f2744"}}>
+                    <td style={{...S.tdL,textAlign:"left",paddingLeft:12,fontSize:14}}>합계</td>
+                    <td style={S.td}></td>
+                    <td style={{...S.td,fontWeight:800,color:"#0369a1",fontSize:14}}>{fmtAmt(treatTotals.curRev)}</td>
+                    <td style={S.td}></td>
+                    <td style={{...S.td,fontWeight:800,color:"#64748b"}}>{fmtAmt(treatTotals.prevRev)}</td>
+                    <td style={{...S.td,fontWeight:800,color:pctChange(treatTotals.curRev,treatTotals.prevRev).color}}>{pctChange(treatTotals.curRev,treatTotals.prevRev).txt}</td>
+                    <td style={S.td}></td>
+                    <td style={{...S.td,fontWeight:800,color:"#64748b"}}>{fmtAmt(treatTotals.lyRev)}</td>
+                    <td style={{...S.td,fontWeight:800,color:pctChange(treatTotals.curRev,treatTotals.lyRev).color}}>{pctChange(treatTotals.curRev,treatTotals.lyRev).txt}</td>
+                  </tr>
                   {treatRows.map(r=>{
                     const pc1=pctChange(r.cur.revenue,r.prev.revenue);
                     const pc2=pctChange(r.cur.revenue,r.ly.revenue);
@@ -386,17 +404,6 @@ function DirectorDashboard({ profile }) {
                       <td style={{...S.td,fontWeight:700,color:pc2.color}}>{pc2.txt}</td>
                     </tr>);
                   })}
-                  <tr style={S.totRow}>
-                    <td style={{...S.tdL,textAlign:"left",paddingLeft:12,fontSize:14}}>합계</td>
-                    <td style={S.td}></td>
-                    <td style={{...S.td,fontWeight:800,color:"#0369a1",fontSize:14}}>{fmtAmt(treatTotals.curRev)}</td>
-                    <td style={S.td}></td>
-                    <td style={{...S.td,fontWeight:800,color:"#64748b"}}>{fmtAmt(treatTotals.prevRev)}</td>
-                    <td style={{...S.td,fontWeight:800,color:pctChange(treatTotals.curRev,treatTotals.prevRev).color}}>{pctChange(treatTotals.curRev,treatTotals.prevRev).txt}</td>
-                    <td style={S.td}></td>
-                    <td style={{...S.td,fontWeight:800,color:"#64748b"}}>{fmtAmt(treatTotals.lyRev)}</td>
-                    <td style={{...S.td,fontWeight:800,color:pctChange(treatTotals.curRev,treatTotals.lyRev).color}}>{pctChange(treatTotals.curRev,treatTotals.lyRev).txt}</td>
-                  </tr>
                 </tbody>
               </table>
             </div>
