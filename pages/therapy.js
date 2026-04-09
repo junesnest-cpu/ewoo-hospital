@@ -359,14 +359,44 @@ export default function TherapyPage() {
     return acc;
   },{});
 
+  // 환자 이름 → 예약 병실 매핑 (날짜별)
+  const reservationByName=useMemo(()=>{
+    const map={};
+    Object.entries(slots).forEach(([sk,slot])=>{
+      (slot?.reservations||[]).forEach(r=>{
+        if(!r?.name||!r.admitDate||r.admitDate==="미정") return;
+        const n=(r.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+        if(!map[n]) map[n]=[];
+        const m=r.admitDate.match(/(\d{1,2})\/(\d{1,2})/);
+        if(m) map[n].push({slotKey:sk,month:parseInt(m[1]),day:parseInt(m[2])});
+      });
+    });
+    return map;
+  },[slots]);
+
   // db_ 슬롯키에서 현재 병실 정보를 동적으로 가져오는 헬퍼
-  const getRoomFromCell=(cell)=>{
-    if(!cell?.slotKey?.startsWith("db_")) return {roomId:cell?.roomId||"",bedNum:cell?.bedNum||""};
-    const internalId=cell.slotKey.slice(3);
-    const currentSlot=patientToSlot[internalId];
-    if(!currentSlot) return {roomId:"",bedNum:""};
-    const [r,b]=currentSlot.split("-");
-    return {roomId:r||"",bedNum:b||""};
+  // dayIdx: 해당 셀의 요일 인덱스 (0=월~6=일), 예약 병실 조회용
+  const getRoomFromCell=(cell,dayIdx)=>{
+    let roomId=cell?.roomId||"", bedNum=cell?.bedNum||"";
+
+    if(cell?.slotKey?.startsWith("db_")){
+      const internalId=cell.slotKey.slice(3);
+      const currentSlot=patientToSlot[internalId];
+      if(currentSlot){ const [r,b]=currentSlot.split("-"); roomId=r||""; bedNum=b||""; }
+      else { roomId=""; bedNum=""; }
+    }
+
+    // 현재 병실이 없으면 해당일 예약 병실 조회
+    if(!roomId && cell?.patientName && dayIdx!==undefined){
+      const n=(cell.patientName||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+      const resList=reservationByName[n];
+      if(resList){
+        const cellDate=addDays(weekStart,dayIdx);
+        const match=resList.find(rv=>rv.month===cellDate.getMonth()+1&&rv.day===cellDate.getDate());
+        if(match){ const [r,b]=match.slotKey.split("-"); roomId=r||""; bedNum=b||""; }
+      }
+    }
+    return {roomId,bedNum};
   };
 
   // ── 환자 목록 ─────────────────────────────────────────────────────────────
@@ -393,15 +423,15 @@ export default function TherapyPage() {
   // ── 인쇄용 데이터 (예정 환자 포함) ──────────────────────────────────────
   const physPrintPatients=(()=>{
     const map={};
-    ["th1","th2"].forEach(rid=>{ Object.entries(physSched[wk]?.[rid]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__ph_${rid}_${di}_${time}`:data.slotKey; if(!map[k]){ const {roomId:rm,bedNum:bd}=getRoomFromCell(data); map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,roomId:rm,bedNum:bd,entries:[]}; } map[k].entries.push({dayIdx:parseInt(di),time,treatmentId:data.treatmentId,memo:data.memo||"",therapistId:rid}); }); }); });
+    ["th1","th2"].forEach(rid=>{ Object.entries(physSched[wk]?.[rid]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__ph_${rid}_${di}_${time}`:data.slotKey; if(!map[k]){ const {roomId:rm,bedNum:bd}=getRoomFromCell(data,parseInt(di)); map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,roomId:rm,bedNum:bd,entries:[]}; } map[k].entries.push({dayIdx:parseInt(di),time,treatmentId:data.treatmentId,memo:data.memo||"",therapistId:rid}); }); }); });
     return Object.values(map).sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
   })();
 
   const hyperPrintPatients=(()=>{
     const map={};
     // __pending__은 저장위치(type_di_time_slot)를 고유키로 사용
-    Object.entries(hyperSched[wk]?.["hyperthermia"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__ht_${di}_${time}`:data.slotKey; if(!map[k]){ const {roomId:rm,bedNum:bd}=getRoomFromCell(data); map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,roomId:rm,bedNum:bd,entries:[]}; } map[k].entries.push({dayIdx:parseInt(di),time,treatmentName:"고주파 온열치료",memo:data.memo||""}); }); });
-    Object.entries(hyperSched[wk]?.["hyperbaric"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,hbSlots])=>{ ["a","b"].forEach(s=>{ const data=hbSlots?.[s]; if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__hb_${di}_${time}_${s}`:data.slotKey; if(!map[k]){ const {roomId:rm,bedNum:bd}=getRoomFromCell(data); map[k]={name:data.patientName,slotKey:k,roomId:rm,bedNum:bd,entries:[]}; } map[k].entries.push({dayIdx:parseInt(di),time:data.subTime||time,treatmentName:"고압산소치료",memo:""}); }); }); });
+    Object.entries(hyperSched[wk]?.["hyperthermia"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,data])=>{ if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__ht_${di}_${time}`:data.slotKey; if(!map[k]){ const {roomId:rm,bedNum:bd}=getRoomFromCell(data,parseInt(di)); map[k]={name:data.patientName,slotKey:k,isOuter:data.isOuter,roomId:rm,bedNum:bd,entries:[]}; } map[k].entries.push({dayIdx:parseInt(di),time,treatmentName:"고주파 온열치료",memo:data.memo||""}); }); });
+    Object.entries(hyperSched[wk]?.["hyperbaric"]||{}).forEach(([di,times])=>{ Object.entries(times||{}).forEach(([time,hbSlots])=>{ ["a","b"].forEach(s=>{ const data=hbSlots?.[s]; if(!data?.slotKey) return; const k=data.slotKey.startsWith("pending_")||data.slotKey==="__pending__"?`__hb_${di}_${time}_${s}`:data.slotKey; if(!map[k]){ const {roomId:rm,bedNum:bd}=getRoomFromCell(data,parseInt(di)); map[k]={name:data.patientName,slotKey:k,roomId:rm,bedNum:bd,entries:[]}; } map[k].entries.push({dayIdx:parseInt(di),time:data.subTime||time,treatmentName:"고압산소치료",memo:""}); }); }); });
     return Object.values(map).sort((a,b)=>(a.name||"").localeCompare(b.name||"","ko"));
   })();
 
@@ -661,7 +691,7 @@ export default function TherapyPage() {
                                       background:ca?"#bae6fd":"#f0f9ff",
                                       border:icA?"1.5px solid #dc2626":"1px solid #7dd3fc",
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
-                                      {ca?(()=>{const {roomId:caR,bedNum:caB}=getRoomFromCell(ca);const caNL=(ca.patientName||"").length;return(
+                                      {ca?(()=>{const {roomId:caR,bedNum:caB}=getRoomFromCell(ca,dayIdx);const caNL=(ca.patientName||"").length;return(
                                         <>
                                           {!ca.isPending && isNewWithin7(ca.patientName, ca.slotKey) && (
                                             <span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800,display:"block",marginBottom:1}}>★신</span>
@@ -685,7 +715,7 @@ export default function TherapyPage() {
                                       background:cb?"#e0f2fe":"#f0f9ff",
                                       border:icB?"1.5px solid #dc2626":"1px solid #7dd3fc",
                                       display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
-                                      {cb?(()=>{const {roomId:cbR,bedNum:cbB}=getRoomFromCell(cb);const cbNL=(cb.patientName||"").length;return(
+                                      {cb?(()=>{const {roomId:cbR,bedNum:cbB}=getRoomFromCell(cb,dayIdx);const cbNL=(cb.patientName||"").length;return(
                                         <>
                                           {!cb.isPending && isNewWithin7(cb.patientName, cb.slotKey) && (
                                             <span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800,display:"block",marginBottom:1}}>★신</span>
@@ -726,7 +756,7 @@ export default function TherapyPage() {
                                     display:"flex",flexDirection:"column",justifyContent:"center",
                                     position:"relative",overflow:"hidden",boxSizing:"border-box"}}>
                                   {cell?(()=>{
-                                    const {roomId:cRoomId,bedNum:cBedNum}=getRoomFromCell(cell);
+                                    const {roomId:cRoomId,bedNum:cBedNum}=getRoomFromCell(cell,dayIdx);
                                     const nameLen=(cell.patientName||"").length;
                                     return (
                                     <>
