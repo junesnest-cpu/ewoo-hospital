@@ -94,11 +94,13 @@ function DirectorDashboard({ profile }) {
   const [error, setError] = useState({});
   const [treatMonth, setTreatMonth] = useState(currentYM);
 
-  // 상담·입원 통계 (Firebase consultations)
+  // 상담·입원 통계 (Firebase consultations) + 병상 데이터 (예상 재원)
   const [consultations, setConsultations] = useState({});
+  const [slots, setSlots] = useState({});
   useEffect(() => {
-    const u = onValue(ref(db, "consultations"), s => setConsultations(s.val() || {}));
-    return () => u();
+    const u1 = onValue(ref(db, "consultations"), s => setConsultations(s.val() || {}));
+    const u2 = onValue(ref(db, "slots"), s => setSlots(s.val() || {}));
+    return () => { u1(); u2(); };
   }, []);
 
   // 월별 상담건수/입원예약건수/신규입원수 계산
@@ -258,35 +260,68 @@ function DirectorDashboard({ profile }) {
   })();
   const yearTotals = monthlyData.reduce((t,r)=>({inTotal:t.inTotal+r.inTotal,outTotal:t.outTotal+r.outTotal,bedDays:t.bedDays+r.bedDays,grandTotal:t.grandTotal+r.grandTotal,gongdan:t.gongdan+(r.gongdan||0)}),{inTotal:0,outTotal:0,bedDays:0,grandTotal:0,gongdan:0});
 
+  // slots 기반 특정 날짜의 예상 재원수 계산
+  const getProjectedOccupancy = (dateStr) => {
+    // dateStr: "YYYYMMDD"
+    const y = parseInt(dateStr.slice(0,4)), m = parseInt(dateStr.slice(4,6))-1, d = parseInt(dateStr.slice(6,8));
+    const vd = new Date(y, m, d); vd.setHours(0,0,0,0);
+    let count = 0;
+    const VALID = new Set(["201","202","203","204","205","206","301","302","303","304","305","306","501","502","503","504","505","506","601","602","603"]);
+    Object.entries(slots).forEach(([sk, slot]) => {
+      if (!VALID.has(sk.split("-")[0])) return;
+      if (!slot) return;
+      // 현재 환자
+      if (slot.current?.name) {
+        const dm = slot.current.discharge?.match(/(\d{1,2})\/(\d{1,2})/);
+        const dd = dm ? new Date(y, parseInt(dm[1])-1, parseInt(dm[2])) : null;
+        if (dd) dd.setHours(0,0,0,0);
+        if (!dd || dd >= vd) { count++; return; }
+      }
+      // 예약 환자
+      for (const r of (slot.reservations || [])) {
+        if (!r?.name) continue;
+        const am = r.admitDate?.match(/(\d{1,2})\/(\d{1,2})/);
+        if (!am) continue;
+        const ad = new Date(y, parseInt(am[1])-1, parseInt(am[2])); ad.setHours(0,0,0,0);
+        const dm2 = r.discharge?.match(/(\d{1,2})\/(\d{1,2})/);
+        const dd2 = dm2 ? new Date(y, parseInt(dm2[1])-1, parseInt(dm2[2])) : null;
+        if (dd2) dd2.setHours(0,0,0,0);
+        if (ad <= vd && (!dd2 || dd2 >= vd)) { count++; break; }
+      }
+    });
+    return count;
+  };
+
   // 일자별 매출/가동률 데이터
   const occData = (() => {
     if (!occupancy?.daily) return { rows:[], avgOcc:0, avgRate:0, sumIn:0, sumOut:0, sumGongdan:0, sumConsult:0, sumReserved:0 };
     const actual = occupancy.daily;
     const isCurrentMonth = year===thisYear && occMonth===thisMonth;
     const daysInMonth = new Date(year,occMonth,0).getDate();
-    const lastActual = actual.length>0 ? actual[actual.length-1] : null;
-    // 일별 상담/예약 건수 계산
+    // 일별 상담/예약 건수 계산 (오늘까지만)
     const dailyConsult = {}, dailyReserved = {};
     Object.values(consultations).forEach(c => {
       if (!c?.name) return;
       if (c.createdAt) {
         const cd = c.createdAt.replace(/-/g,"");
-        if (cd.startsWith(`${year}${String(occMonth).padStart(2,"0")}`)) {
+        if (cd.startsWith(`${year}${String(occMonth).padStart(2,"0")}`) && cd <= todayStr) {
           dailyConsult[cd] = (dailyConsult[cd]||0) + 1;
         }
       }
       if (c.status === "예약완료" && c.admitDate) {
         const ad = c.admitDate.replace(/-/g,"");
-        if (ad.startsWith(`${year}${String(occMonth).padStart(2,"0")}`)) {
+        if (ad.startsWith(`${year}${String(occMonth).padStart(2,"0")}`) && ad <= todayStr) {
           dailyReserved[ad] = (dailyReserved[ad]||0) + 1;
         }
       }
     });
     const rows = [...actual.map(d=>({...d, projected:false, consult:dailyConsult[d.date]||0, reserved:dailyReserved[d.date]||0}))];
-    if (isCurrentMonth && lastActual) {
+    if (isCurrentMonth) {
       for (let d=now.getDate()+1;d<=daysInMonth;d++) {
         const dt = `${year}${String(occMonth).padStart(2,"0")}${String(d).padStart(2,"0")}`;
-        rows.push({date:dt, occupied:lastActual.occupied, total:TOTAL_BEDS, rate:lastActual.rate, projected:true, inTotal:0, outTotal:0, gongdan:0, consult:dailyConsult[dt]||0, reserved:dailyReserved[dt]||0});
+        const projOcc = getProjectedOccupancy(dt);
+        const projRate = Math.round((projOcc / TOTAL_BEDS) * 1000) / 10;
+        rows.push({date:dt, occupied:projOcc, total:TOTAL_BEDS, rate:projRate, projected:true, inTotal:0, outTotal:0, gongdan:0, consult:0, reserved:0});
       }
     }
     const ao = rows.filter(r=>!r.projected);
@@ -297,8 +332,8 @@ function DirectorDashboard({ profile }) {
       sumIn: ao.reduce((s,d)=>s+(d.inTotal||0),0),
       sumOut: ao.reduce((s,d)=>s+(d.outTotal||0),0),
       sumGongdan: ao.reduce((s,d)=>s+(d.gongdan||0),0),
-      sumConsult: rows.reduce((s,d)=>s+d.consult,0),
-      sumReserved: rows.reduce((s,d)=>s+d.reserved,0),
+      sumConsult: ao.reduce((s,d)=>s+d.consult,0),
+      sumReserved: ao.reduce((s,d)=>s+d.reserved,0),
     };
   })();
 
