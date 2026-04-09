@@ -29,13 +29,14 @@ export default async function handler(req, res) {
     if (action === 'revenue') {
       const snap = await db.ref(`directorStats/${targetYear}/revenue`).once('value');
       const data = snap.val();
-      if (!data) return res.json({ year: targetYear, inpatient: {}, outpatient: {}, lastSync: null });
+      if (!data) return res.json({ year: targetYear, inpatient: {}, outpatient: {}, bedDays: {}, lastSync: null });
 
       const lastSyncSnap = await db.ref(`directorStats/${targetYear}/lastSync`).once('value');
       return res.json({
         year: targetYear,
         inpatient: data.inpatient || {},
         outpatient: data.outpatient || {},
+        bedDays: data.bedDays || {},
         lastSync: lastSyncSnap.val(),
       });
     } else if (action === 'occupancy') {

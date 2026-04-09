@@ -2725,8 +2725,12 @@ export default function ApprovalPage() {
 const TOTAL_BEDS = 78;
 
 function DirectorStatsPanel() {
-  const thisYear = new Date().getFullYear();
-  const thisMonth = new Date().getMonth() + 1;
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  const thisMonth = now.getMonth() + 1;
+  const todayDay = now.getDate();
+  const todayStr = `${thisYear}${String(thisMonth).padStart(2,'0')}${String(todayDay).padStart(2,'0')}`;
+
   const [year, setYear] = useState(thisYear);
   const [occMonth, setOccMonth] = useState(thisMonth);
   const [revenue, setRevenue] = useState(null);
@@ -2769,47 +2773,74 @@ function DirectorStatsPanel() {
   const fmtMan = (n) => n != null ? `${Math.round(n / 10000).toLocaleString()}만` : '-';
 
   const hasOutpatient = revenue && revenue.outpatient && Object.keys(revenue.outpatient).length > 0;
+  const hasBedDays = revenue && revenue.bedDays && Object.keys(revenue.bedDays).length > 0;
 
-  // 월별 합산 데이터 생성 (Firebase 객체 형태: { "202601": { covered, nonCovered, total } })
+  // 월별 합산 데이터 생성
   const monthlyData = (() => {
     if (!revenue) return [];
     const map = {};
     for (let m = 1; m <= 12; m++) {
       const ym = `${year}${String(m).padStart(2, '0')}`;
-      map[ym] = { month: m, inCovered: 0, inNonCovered: 0, inTotal: 0, outCovered: 0, outNonCovered: 0, outTotal: 0, grandTotal: 0 };
+      map[ym] = { month: m, inTotal: 0, outTotal: 0, bedDays: 0, grandTotal: 0 };
     }
     const inp = revenue.inpatient || {};
     Object.entries(inp).forEach(([ym, r]) => {
-      if (map[ym]) { map[ym].inCovered = r.covered || 0; map[ym].inNonCovered = r.nonCovered || 0; map[ym].inTotal = r.total || 0; }
+      if (map[ym]) map[ym].inTotal = r.total || 0;
     });
     const outp = revenue.outpatient || {};
     Object.entries(outp).forEach(([ym, r]) => {
-      if (map[ym]) { map[ym].outCovered = r.covered || 0; map[ym].outNonCovered = r.nonCovered || 0; map[ym].outTotal = r.total || 0; }
+      if (map[ym]) map[ym].outTotal = r.total || 0;
+    });
+    const bd = revenue.bedDays || {};
+    Object.entries(bd).forEach(([ym, v]) => {
+      if (map[ym]) map[ym].bedDays = v || 0;
     });
     Object.values(map).forEach(r => { r.grandTotal = r.inTotal + r.outTotal; });
     return Object.values(map).sort((a, b) => a.month - b.month);
   })();
 
   const yearTotals = monthlyData.reduce((t, r) => ({
-    inCovered: t.inCovered + r.inCovered, inNonCovered: t.inNonCovered + r.inNonCovered, inTotal: t.inTotal + r.inTotal,
-    outCovered: t.outCovered + r.outCovered, outNonCovered: t.outNonCovered + r.outNonCovered, outTotal: t.outTotal + r.outTotal,
-    grandTotal: t.grandTotal + r.grandTotal,
-  }), { inCovered: 0, inNonCovered: 0, inTotal: 0, outCovered: 0, outNonCovered: 0, outTotal: 0, grandTotal: 0 });
+    inTotal: t.inTotal + r.inTotal, outTotal: t.outTotal + r.outTotal,
+    bedDays: t.bedDays + r.bedDays, grandTotal: t.grandTotal + r.grandTotal,
+  }), { inTotal: 0, outTotal: 0, bedDays: 0, grandTotal: 0 });
+
+  // 가동률: 오늘까지 실데이터 + 나머지는 마지막 실데이터 기준 예상
+  const occData = (() => {
+    if (!occupancy || !occupancy.daily) return { rows: [], avgOcc: 0, avgRate: 0, lastActual: null };
+    const actual = occupancy.daily;
+    const isCurrentMonth = year === thisYear && occMonth === thisMonth;
+    const daysInMonth = new Date(year, occMonth, 0).getDate();
+    const lastActual = actual.length > 0 ? actual[actual.length - 1] : null;
+
+    const rows = [];
+    // 실데이터
+    for (const d of actual) rows.push({ ...d, projected: false });
+    // 미래 예상 (이번 달일 때만)
+    if (isCurrentMonth && lastActual) {
+      for (let d = todayDay + 1; d <= daysInMonth; d++) {
+        const dt = `${year}${String(occMonth).padStart(2,'0')}${String(d).padStart(2,'0')}`;
+        rows.push({ date: dt, occupied: lastActual.occupied, total: TOTAL_BEDS, rate: lastActual.rate, projected: true });
+      }
+    }
+    const actualOnly = rows.filter(r => !r.projected);
+    const avgOcc = actualOnly.length > 0 ? Math.round(actualOnly.reduce((s,d) => s+d.occupied, 0) / actualOnly.length) : 0;
+    const avgRate = actualOnly.length > 0 ? Math.round(actualOnly.reduce((s,d) => s+d.rate, 0) / actualOnly.length * 10) / 10 : 0;
+    return { rows, avgOcc, avgRate, lastActual };
+  })();
 
   const DS = {
     card: { background:"#fff", borderRadius:14, padding:"20px 24px", boxShadow:"0 1px 6px rgba(0,0,0,0.06)", marginBottom:20 },
-    sectionTitle: { fontSize:17, fontWeight:800, color:"#0f2744", marginBottom:14, display:"flex", alignItems:"center", gap:10 },
+    sectionTitle: { fontSize:17, fontWeight:800, color:"#0f2744", marginBottom:14, display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" },
     table: { width:"100%", borderCollapse:"collapse", fontSize:13 },
-    th: { background:"#0f2744", color:"#fff", padding:"9px 10px", fontWeight:700, textAlign:"center", whiteSpace:"nowrap", borderBottom:"2px solid #0f2744" },
-    thSub: { background:"#1e3a5f", color:"#e2e8f0", padding:"7px 10px", fontWeight:600, textAlign:"center", fontSize:12, whiteSpace:"nowrap" },
+    th: { background:"#0f2744", color:"#fff", padding:"9px 10px", fontWeight:700, textAlign:"center", whiteSpace:"nowrap" },
     td: { padding:"8px 10px", borderBottom:"1px solid #f1f5f9", textAlign:"right", fontVariantNumeric:"tabular-nums" },
     tdLabel: { padding:"8px 10px", borderBottom:"1px solid #f1f5f9", textAlign:"center", fontWeight:700, color:"#374151" },
-    totalRow: { background:"#f8fafc", fontWeight:800 },
+    totalRow: { background:"#f0f4f8", fontWeight:800 },
     nav: { display:"flex", alignItems:"center", gap:8, marginLeft:"auto" },
     btnNav: { background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:7, padding:"5px 14px", cursor:"pointer", fontSize:14, fontWeight:700 },
     select: { border:"1px solid #e2e8f0", borderRadius:7, padding:"5px 10px", fontSize:14, fontWeight:700, outline:"none" },
-    barBg: { height:22, background:"#f1f5f9", borderRadius:4, overflow:"hidden", flex:1 },
-    barFill: (pct) => ({ height:"100%", background: pct>=90?"#16a34a":pct>=70?"#0ea5e9":pct>=50?"#f59e0b":"#ef4444", width:`${Math.min(pct,100)}%`, borderRadius:4, transition:"width 0.3s" }),
+    barBg: { height:20, background:"#f1f5f9", borderRadius:4, overflow:"hidden", flex:1 },
+    barFill: (pct, projected) => ({ height:"100%", background: projected ? "#cbd5e1" : pct>=90?"#16a34a":pct>=70?"#0ea5e9":pct>=50?"#f59e0b":"#ef4444", width:`${Math.min(pct,100)}%`, borderRadius:4, transition:"width 0.3s" }),
   };
 
   return (
@@ -2844,20 +2875,11 @@ function DirectorStatsPanel() {
             <table style={DS.table}>
               <thead>
                 <tr>
-                  <th style={DS.th} rowSpan={2}>월</th>
-                  <th style={DS.th} colSpan={3}>입원 매출</th>
-                  {hasOutpatient && <th style={DS.th} colSpan={3}>외래 매출</th>}
-                  <th style={DS.th} rowSpan={2}>합계</th>
-                </tr>
-                <tr>
-                  <th style={DS.thSub}>급여</th>
-                  <th style={DS.thSub}>비급여</th>
-                  <th style={DS.thSub}>소계</th>
-                  {hasOutpatient && <>
-                    <th style={DS.thSub}>급여</th>
-                    <th style={DS.thSub}>비급여</th>
-                    <th style={DS.thSub}>소계</th>
-                  </>}
+                  <th style={DS.th}>월</th>
+                  <th style={DS.th}>입원</th>
+                  {hasOutpatient && <th style={DS.th}>외래</th>}
+                  {hasBedDays && <th style={DS.th}>입원일수</th>}
+                  <th style={DS.th}>총 진료비</th>
                 </tr>
               </thead>
               <tbody>
@@ -2867,28 +2889,18 @@ function DirectorStatsPanel() {
                   return (
                     <tr key={r.month} style={{ opacity: isFuture ? 0.3 : 1 }}>
                       <td style={DS.tdLabel}>{r.month}월</td>
-                      <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.inCovered)}</td>
-                      <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.inNonCovered)}</td>
-                      <td style={{ ...DS.td, fontWeight:700, color:"#0369a1" }}>{isEmpty ? '-' : fmtAmt(r.inTotal)}</td>
-                      {hasOutpatient && <>
-                        <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.outCovered)}</td>
-                        <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.outNonCovered)}</td>
-                        <td style={{ ...DS.td, fontWeight:700, color:"#7c3aed" }}>{isEmpty ? '-' : fmtAmt(r.outTotal)}</td>
-                      </>}
+                      <td style={{ ...DS.td, color:"#0369a1", fontWeight:600 }}>{isEmpty ? '-' : fmtAmt(r.inTotal)}</td>
+                      {hasOutpatient && <td style={{ ...DS.td, color:"#7c3aed", fontWeight:600 }}>{isEmpty ? '-' : fmtAmt(r.outTotal)}</td>}
+                      {hasBedDays && <td style={{ ...DS.td, textAlign:"center", color:"#64748b" }}>{r.bedDays || '-'}</td>}
                       <td style={{ ...DS.td, fontWeight:800, color:"#dc2626" }}>{isEmpty ? '-' : fmtAmt(r.grandTotal)}</td>
                     </tr>
                   );
                 })}
                 <tr style={DS.totalRow}>
                   <td style={{ ...DS.tdLabel, fontSize:14 }}>합계</td>
-                  <td style={DS.td}>{fmtMan(yearTotals.inCovered)}</td>
-                  <td style={DS.td}>{fmtMan(yearTotals.inNonCovered)}</td>
                   <td style={{ ...DS.td, fontWeight:800, color:"#0369a1", fontSize:14 }}>{fmtMan(yearTotals.inTotal)}</td>
-                  {hasOutpatient && <>
-                    <td style={DS.td}>{fmtMan(yearTotals.outCovered)}</td>
-                    <td style={DS.td}>{fmtMan(yearTotals.outNonCovered)}</td>
-                    <td style={{ ...DS.td, fontWeight:800, color:"#7c3aed", fontSize:14 }}>{fmtMan(yearTotals.outTotal)}</td>
-                  </>}
+                  {hasOutpatient && <td style={{ ...DS.td, fontWeight:800, color:"#7c3aed", fontSize:14 }}>{fmtMan(yearTotals.outTotal)}</td>}
+                  {hasBedDays && <td style={{ ...DS.td, textAlign:"center", fontWeight:800 }}>{yearTotals.bedDays.toLocaleString()}</td>}
                   <td style={{ ...DS.td, fontWeight:800, color:"#dc2626", fontSize:14 }}>{fmtMan(yearTotals.grandTotal)}</td>
                 </tr>
               </tbody>
@@ -2911,10 +2923,15 @@ function DirectorStatsPanel() {
           </div>
         </div>
 
+        {occupancy?.lastSync && (
+          <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
+            마지막 동기화: {new Date(occupancy.lastSync).toLocaleString('ko-KR')}
+          </div>
+        )}
         {loading.occ && <div style={{ color:"#64748b", padding:20, textAlign:"center" }}>가동률 데이터 조회 중...</div>}
         {error.occ && <div style={{ color:"#dc2626", padding:12, background:"#fee2e2", borderRadius:8, fontSize:13, marginBottom:12 }}>⚠️ {error.occ}</div>}
 
-        {occupancy && !loading.occ && occupancy.daily && occupancy.daily.length > 0 && (
+        {!loading.occ && occData.rows.length > 0 && (
           <div style={{ overflowX:"auto" }}>
             <table style={DS.table}>
               <thead>
@@ -2926,55 +2943,59 @@ function DirectorStatsPanel() {
                 </tr>
               </thead>
               <tbody>
-                {occupancy.daily.map(d => {
+                {/* 평균 행 (맨 위) */}
+                <tr style={{ ...DS.totalRow, borderBottom:"2px solid #0f2744" }}>
+                  <td style={{ ...DS.tdLabel, fontSize:14, color:"#0f2744" }}>평균</td>
+                  <td style={{ ...DS.td, textAlign:"center", fontWeight:800 }}>{occData.avgOcc}/{TOTAL_BEDS}</td>
+                  <td style={{ ...DS.td, textAlign:"center", fontWeight:800, fontSize:15,
+                    color: occData.avgRate >= 70 ? "#16a34a" : "#d97706" }}>
+                    {occData.avgRate}%
+                  </td>
+                  <td style={{ ...DS.td, padding:"8px 12px" }}>
+                    <div style={DS.barBg}><div style={DS.barFill(occData.avgRate, false)} /></div>
+                  </td>
+                </tr>
+                {/* 일자별 */}
+                {occData.rows.map(d => {
                   const day = parseInt(d.date.slice(6));
                   const dow = new Date(year, occMonth - 1, day).getDay();
                   const isSun = dow === 0;
                   const isSat = dow === 6;
+                  const isToday = d.date === todayStr;
                   return (
-                    <tr key={d.date} style={{ background: isSun ? "#fff5f5" : isSat ? "#f0f0ff" : undefined }}>
-                      <td style={{ ...DS.tdLabel, color: isSun ? "#dc2626" : isSat ? "#2563eb" : "#374151" }}>
+                    <tr key={d.date} style={{
+                      background: isToday ? "#fffbeb" : isSun ? "#fff5f5" : isSat ? "#f0f0ff" : undefined,
+                      opacity: d.projected ? 0.45 : 1,
+                    }}>
+                      <td style={{ ...DS.tdLabel,
+                        color: isToday ? "#d97706" : isSun ? "#dc2626" : isSat ? "#2563eb" : "#374151",
+                        fontWeight: isToday ? 800 : 700,
+                      }}>
                         {occMonth}/{day}
+                        {isToday && <span style={{ fontSize:9, marginLeft:3, color:"#d97706" }}>오늘</span>}
+                        {d.projected && <span style={{ fontSize:9, marginLeft:3, color:"#94a3b8" }}>예상</span>}
                       </td>
                       <td style={{ ...DS.td, textAlign:"center" }}>{d.occupied}/{d.total}</td>
                       <td style={{ ...DS.td, textAlign:"center", fontWeight:700,
-                        color: d.rate >= 90 ? "#16a34a" : d.rate >= 70 ? "#0ea5e9" : d.rate >= 50 ? "#d97706" : "#dc2626" }}>
+                        color: d.projected ? "#94a3b8" : d.rate >= 90 ? "#16a34a" : d.rate >= 70 ? "#0ea5e9" : d.rate >= 50 ? "#d97706" : "#dc2626" }}>
                         {d.rate}%
                       </td>
                       <td style={{ ...DS.td, padding:"8px 12px" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                          <div style={DS.barBg}><div style={DS.barFill(d.rate)} /></div>
-                        </div>
+                        <div style={DS.barBg}><div style={DS.barFill(d.rate, d.projected)} /></div>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
-              <tfoot>
-                <tr style={DS.totalRow}>
-                  <td style={{ ...DS.tdLabel, fontSize:14 }}>평균</td>
-                  <td style={{ ...DS.td, textAlign:"center" }}>
-                    {Math.round(occupancy.daily.reduce((s, d) => s + d.occupied, 0) / occupancy.daily.length)}/{TOTAL_BEDS}
-                  </td>
-                  <td style={{ ...DS.td, textAlign:"center", fontWeight:800, fontSize:15,
-                    color: (occupancy.daily.reduce((s, d) => s + d.rate, 0) / occupancy.daily.length) >= 70 ? "#16a34a" : "#d97706" }}>
-                    {(occupancy.daily.reduce((s, d) => s + d.rate, 0) / occupancy.daily.length).toFixed(1)}%
-                  </td>
-                  <td style={DS.td}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      <div style={DS.barBg}>
-                        <div style={DS.barFill(occupancy.daily.reduce((s, d) => s + d.rate, 0) / occupancy.daily.length)} />
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         )}
 
-        {occupancy && !loading.occ && (!occupancy.daily || occupancy.daily.length === 0) && (
-          <div style={{ color:"#94a3b8", fontSize:14, padding:20, textAlign:"center" }}>해당 월 데이터가 없습니다.</div>
+        {!loading.occ && occData.rows.length === 0 && occupancy && (
+          <div style={{ color:"#94a3b8", fontSize:14, padding:20, textAlign:"center" }}>
+            해당 월 데이터가 없습니다. 동기화를 실행해주세요.
+            <div style={{ fontSize:12, marginTop:6, color:"#cbd5e1" }}>node scripts/syncDirectorStats.js {year}</div>
+          </div>
         )}
       </div>
     </div>
