@@ -44,14 +44,18 @@ export default async function handler(req, res) {
     } else if (action === 'occupancy') {
       const m = month || (new Date().getMonth() + 1);
       const ym = `${targetYear}${String(m).padStart(2, '0')}`;
-      const snap = await db.ref(`directorStats/${targetYear}/occupancy/${ym}`).once('value');
-      const data = snap.val() || {};
+      const [occSnap, revSnap, lastSyncSnap] = await Promise.all([
+        db.ref(`directorStats/${targetYear}/occupancy/${ym}`).once('value'),
+        db.ref(`directorStats/${targetYear}/dailyRevenue/${ym}`).once('value'),
+        db.ref(`directorStats/${targetYear}/lastSync`).once('value'),
+      ]);
+      const occData = occSnap.val() || {};
+      const revData = revSnap.val() || {};
 
-      const daily = Object.entries(data)
-        .map(([dt, v]) => ({ date: dt, ...v }))
+      const daily = Object.entries(occData)
+        .map(([dt, v]) => ({ date: dt, ...v, inTotal: revData[dt]?.inTotal || 0, outTotal: revData[dt]?.outTotal || 0, gongdan: revData[dt]?.gongdan || 0 }))
         .sort((a, b) => a.date.localeCompare(b.date));
 
-      const lastSyncSnap = await db.ref(`directorStats/${targetYear}/lastSync`).once('value');
       return res.json({
         year: targetYear, month: m, totalBeds: 78,
         daily,

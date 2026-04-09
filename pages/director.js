@@ -258,21 +258,48 @@ function DirectorDashboard({ profile }) {
   })();
   const yearTotals = monthlyData.reduce((t,r)=>({inTotal:t.inTotal+r.inTotal,outTotal:t.outTotal+r.outTotal,bedDays:t.bedDays+r.bedDays,grandTotal:t.grandTotal+r.grandTotal,gongdan:t.gongdan+(r.gongdan||0)}),{inTotal:0,outTotal:0,bedDays:0,grandTotal:0,gongdan:0});
 
-  // 가동률 데이터
+  // 일자별 매출/가동률 데이터
   const occData = (() => {
-    if (!occupancy?.daily) return { rows:[], avgOcc:0, avgRate:0 };
+    if (!occupancy?.daily) return { rows:[], avgOcc:0, avgRate:0, sumIn:0, sumOut:0, sumGongdan:0, sumConsult:0, sumReserved:0 };
     const actual = occupancy.daily;
     const isCurrentMonth = year===thisYear && occMonth===thisMonth;
     const daysInMonth = new Date(year,occMonth,0).getDate();
     const lastActual = actual.length>0 ? actual[actual.length-1] : null;
-    const rows = [...actual.map(d=>({...d,projected:false}))];
+    // 일별 상담/예약 건수 계산
+    const dailyConsult = {}, dailyReserved = {};
+    Object.values(consultations).forEach(c => {
+      if (!c?.name) return;
+      if (c.createdAt) {
+        const cd = c.createdAt.replace(/-/g,"");
+        if (cd.startsWith(`${year}${String(occMonth).padStart(2,"0")}`)) {
+          dailyConsult[cd] = (dailyConsult[cd]||0) + 1;
+        }
+      }
+      if (c.status === "예약완료" && c.admitDate) {
+        const ad = c.admitDate.replace(/-/g,"");
+        if (ad.startsWith(`${year}${String(occMonth).padStart(2,"0")}`)) {
+          dailyReserved[ad] = (dailyReserved[ad]||0) + 1;
+        }
+      }
+    });
+    const rows = [...actual.map(d=>({...d, projected:false, consult:dailyConsult[d.date]||0, reserved:dailyReserved[d.date]||0}))];
     if (isCurrentMonth && lastActual) {
       for (let d=now.getDate()+1;d<=daysInMonth;d++) {
-        rows.push({date:`${year}${String(occMonth).padStart(2,"0")}${String(d).padStart(2,"0")}`,occupied:lastActual.occupied,total:TOTAL_BEDS,rate:lastActual.rate,projected:true});
+        const dt = `${year}${String(occMonth).padStart(2,"0")}${String(d).padStart(2,"0")}`;
+        rows.push({date:dt, occupied:lastActual.occupied, total:TOTAL_BEDS, rate:lastActual.rate, projected:true, inTotal:0, outTotal:0, gongdan:0, consult:dailyConsult[dt]||0, reserved:dailyReserved[dt]||0});
       }
     }
     const ao = rows.filter(r=>!r.projected);
-    return { rows, avgOcc:ao.length?Math.round(ao.reduce((s,d)=>s+d.occupied,0)/ao.length):0, avgRate:ao.length?Math.round(ao.reduce((s,d)=>s+d.rate,0)/ao.length*10)/10:0 };
+    return {
+      rows,
+      avgOcc: ao.length ? Math.round(ao.reduce((s,d)=>s+d.occupied,0)/ao.length) : 0,
+      avgRate: ao.length ? Math.round(ao.reduce((s,d)=>s+d.rate,0)/ao.length*10)/10 : 0,
+      sumIn: ao.reduce((s,d)=>s+(d.inTotal||0),0),
+      sumOut: ao.reduce((s,d)=>s+(d.outTotal||0),0),
+      sumGongdan: ao.reduce((s,d)=>s+(d.gongdan||0),0),
+      sumConsult: rows.reduce((s,d)=>s+d.consult,0),
+      sumReserved: rows.reduce((s,d)=>s+d.reserved,0),
+    };
   })();
 
   // 치료항목 비교 데이터 (EMR 동기화 기준)
@@ -428,10 +455,10 @@ function DirectorDashboard({ profile }) {
           )}
         </div>
 
-        {/* ── 2. 병상 가동률 ── */}
+        {/* ── 2. 일자별 매출현황 ── */}
         <div style={S.card}>
           <div style={S.title}>
-            <span>🛏️ 병상 가동률</span>
+            <span>📅 일자별 매출현황</span>
             <div style={S.nav}>
               <select style={S.sel} value={occMonth} onChange={e=>setOccMonth(parseInt(e.target.value))}>
                 {Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>{i+1}월</option>)}
@@ -445,13 +472,26 @@ function DirectorDashboard({ profile }) {
           {!loading.occ&&occData.rows.length>0&&(
             <div style={{overflowX:"auto"}}>
               <table style={S.table}>
-                <thead><tr><th style={{...S.th,width:70}}>날짜</th><th style={{...S.th,width:70}}>재원</th><th style={{...S.th,width:70}}>가동률</th><th style={S.th}>시각화</th></tr></thead>
+                <thead><tr>
+                  <th style={{...S.th,width:70}}>날짜</th>
+                  <th style={{...S.th,width:65}}>재원</th>
+                  <th style={{...S.th,width:60}}>가동률</th>
+                  <th style={S.th}>입원</th>
+                  <th style={S.th}>외래</th>
+                  <th style={S.th}>공단수입</th>
+                  <th style={{...S.th,width:45}}>상담</th>
+                  <th style={{...S.th,width:45}}>예약</th>
+                </tr></thead>
                 <tbody>
                   <tr style={{...S.totRow,borderBottom:"2px solid #0f2744"}}>
-                    <td style={{...S.tdL,fontSize:14,color:"#0f2744"}}>평균</td>
+                    <td style={{...S.tdL,fontSize:14,color:"#0f2744"}}>합계/평균</td>
                     <td style={{...S.td,textAlign:"center",fontWeight:800}}>{occData.avgOcc}/{TOTAL_BEDS}</td>
                     <td style={{...S.td,textAlign:"center",fontWeight:800,fontSize:15,color:occData.avgRate>=70?"#16a34a":"#d97706"}}>{occData.avgRate}%</td>
-                    <td style={{...S.td,padding:"8px 12px"}}><div style={S.barBg}><div style={S.barFill(occData.avgRate,false)}/></div></td>
+                    <td style={{...S.td,fontWeight:800,color:"#0369a1"}}>{occData.sumIn?fmtAmt(occData.sumIn):"-"}</td>
+                    <td style={{...S.td,fontWeight:800,color:"#7c3aed"}}>{occData.sumOut?fmtAmt(occData.sumOut):"-"}</td>
+                    <td style={{...S.td,fontWeight:800,color:"#059669"}}>{occData.sumGongdan?fmtAmt(occData.sumGongdan):"-"}</td>
+                    <td style={{...S.td,textAlign:"center",fontWeight:800}}>{occData.sumConsult||"-"}</td>
+                    <td style={{...S.td,textAlign:"center",fontWeight:800}}>{occData.sumReserved||"-"}</td>
                   </tr>
                   {occData.rows.map(d=>{
                     const day=parseInt(d.date.slice(6));const dow=new Date(year,occMonth-1,day).getDay();
@@ -462,14 +502,18 @@ function DirectorDashboard({ profile }) {
                       </td>
                       <td style={{...S.td,textAlign:"center"}}>{d.occupied}/{d.total}</td>
                       <td style={{...S.td,textAlign:"center",fontWeight:700,color:d.projected?"#94a3b8":d.rate>=90?"#16a34a":d.rate>=70?"#0ea5e9":d.rate>=50?"#d97706":"#dc2626"}}>{d.rate}%</td>
-                      <td style={{...S.td,padding:"8px 12px"}}><div style={S.barBg}><div style={S.barFill(d.rate,d.projected)}/></div></td>
+                      <td style={{...S.td,color:"#0369a1",fontWeight:600}}>{d.inTotal?fmtAmt(d.inTotal):"-"}</td>
+                      <td style={{...S.td,color:"#7c3aed",fontWeight:600}}>{d.outTotal?fmtAmt(d.outTotal):"-"}</td>
+                      <td style={{...S.td,color:"#059669",fontWeight:600}}>{d.gongdan?fmtAmt(d.gongdan):"-"}</td>
+                      <td style={{...S.td,textAlign:"center",color:"#059669"}}>{d.consult||"-"}</td>
+                      <td style={{...S.td,textAlign:"center",color:"#0ea5e9"}}>{d.reserved||"-"}</td>
                     </tr>);
                   })}
                 </tbody>
               </table>
             </div>
           )}
-          {!loading.occ&&occData.rows.length===0&&occupancy&&<div style={{color:"#94a3b8",fontSize:14,padding:20,textAlign:"center"}}>데이터 없음</div>}
+          {!loading.occ&&occData.rows.length===0&&occupancy&&<div style={{color:"#94a3b8",fontSize:14,padding:20,textAlign:"center"}}>데이터 없음 — 동기화 스크립트를 재실행하세요</div>}
         </div>
 
         {/* ── 3. 치료항목 월별 현황 ── */}

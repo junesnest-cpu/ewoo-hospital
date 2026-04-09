@@ -197,6 +197,42 @@ async function syncYear(pool, year, updates) {
       const avg = result.recordset.length > 0 ? Math.round((totalOcc / result.recordset.length / TOTAL_BEDS) * 1000) / 10 : 0;
       console.log(`    ${m}월: 평균 ${avg}% (${result.recordset.length}일)`);
     } catch (e) { console.log(`    ${m}월 실패: ${e.message}`); }
+
+    // 일별 매출 (입원/외래/공단수입)
+    try {
+      const ymStart = `${ym}01`, ymEnd = `${year}${String(m+1>12?1:m+1).padStart(2,'0')}01`;
+      const nextYear = m+1>12 ? year+1 : year;
+      const ymEndFinal = `${nextYear}${String(m+1>12?1:m+1).padStart(2,'0')}01`;
+      // 입원 매출
+      const inDailyR = await pool.request().query(`
+        SELECT iadd_date AS dt, SUM(CAST(iadd_amt AS bigint)) AS total
+        FROM Wiadd WHERE iadd_date >= '${ymStart}' AND iadd_date < '${ymEndFinal}'
+        GROUP BY iadd_date ORDER BY iadd_date
+      `);
+      // 외래 매출
+      const outDailyR = await pool.request().query(`
+        SELECT oadd_date AS dt, SUM(CAST(oadd_amt AS bigint)) AS total
+        FROM Woadd WHERE oadd_date >= '${ymStart}' AND oadd_date < '${ymEndFinal}'
+        GROUP BY oadd_date ORDER BY oadd_date
+      `);
+      // 공단수입 (입원 - 본부금 - 비급여)
+      const gongdanR = await pool.request().query(`
+        SELECT iadd_date AS dt,
+          SUM(CAST(iadd_amt AS bigint)) AS total,
+          SUM(CAST(ISNULL(iadd_iramt, 0) AS bigint)) AS iramt,
+          SUM(CAST(ISNULL(iadd_biamt, 0) AS bigint)) AS biamt
+        FROM Wiadd WHERE iadd_date >= '${ymStart}' AND iadd_date < '${ymEndFinal}'
+        GROUP BY iadd_date ORDER BY iadd_date
+      `);
+      const dailyRev = {};
+      for (const r of inDailyR.recordset) { if (!dailyRev[r.dt]) dailyRev[r.dt] = {}; dailyRev[r.dt].inTotal = Number(r.total); }
+      for (const r of outDailyR.recordset) { if (!dailyRev[r.dt]) dailyRev[r.dt] = {}; dailyRev[r.dt].outTotal = Number(r.total); }
+      for (const r of gongdanR.recordset) { if (!dailyRev[r.dt]) dailyRev[r.dt] = {}; dailyRev[r.dt].gongdan = Math.max(0, Number(r.total) - Number(r.iramt) - Number(r.biamt)); }
+      if (Object.keys(dailyRev).length > 0) {
+        updates[`directorStats/${year}/dailyRevenue/${ym}`] = dailyRev;
+        console.log(`    ${m}월 일별매출: ${Object.keys(dailyRev).length}일`);
+      }
+    } catch (e) { console.log(`    ${m}월 일별매출 실패: ${e.message}`); }
   }
 
   // 6. 치료항목
