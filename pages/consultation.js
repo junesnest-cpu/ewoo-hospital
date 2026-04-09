@@ -642,29 +642,21 @@ export default function ConsultationPage() {
               );
             })()}
 
-            {/* 치료 이력: 수술 | 항암 | 방사선 한 줄 */}
-            <div style={{display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-start"}}>
-              <div style={{display:"flex", alignItems:"center", gap:6}}>
-                <label style={{...S.checkLabel, minWidth:"auto"}}>
-                  <input type="checkbox" checked={form.surgery} onChange={e=>setF("surgery",e.target.checked)}/>
-                  <span>수술</span>
-                </label>
-                {form.surgery && <input style={{...S.inp, width:140}} type="date" value={form.surgeryDate} onChange={e=>setF("surgeryDate",e.target.value)}/>}
-              </div>
-              <div style={{display:"flex", alignItems:"center", gap:6}}>
-                <label style={{...S.checkLabel, minWidth:"auto"}}>
-                  <input type="checkbox" checked={form.chemo} onChange={e=>setF("chemo",e.target.checked)}/>
-                  <span>항암</span>
-                </label>
-                {form.chemo && <input style={{...S.inp, width:140}} type="date" value={form.chemoDate} onChange={e=>setF("chemoDate",e.target.value)}/>}
-              </div>
-              <div style={{display:"flex", alignItems:"center", gap:6}}>
-                <label style={{...S.checkLabel, minWidth:"auto"}}>
-                  <input type="checkbox" checked={form.radiation} onChange={e=>setF("radiation",e.target.checked)}/>
-                  <span>방사선</span>
-                </label>
-                {form.radiation && <input style={{...S.inp, width:140}} type="date" value={form.radiationDate} onChange={e=>setF("radiationDate",e.target.value)}/>}
-              </div>
+            {/* 치료 이력: 수술 | 항암 | 방사선 한 줄 균등 배치 */}
+            <div style={{display:"flex", gap:10}}>
+              {[
+                {key:"surgery", label:"수술", dateKey:"surgeryDate"},
+                {key:"chemo", label:"항암", dateKey:"chemoDate"},
+                {key:"radiation", label:"방사선", dateKey:"radiationDate"},
+              ].map(t=>(
+                <div key={t.key} style={{flex:1, minWidth:0}}>
+                  <label style={{...S.checkLabel, minWidth:"auto", marginBottom:4}}>
+                    <input type="checkbox" checked={form[t.key]} onChange={e=>setF(t.key,e.target.checked)}/>
+                    <span>{t.label}</span>
+                  </label>
+                  <input style={{...S.inp, width:"100%", boxSizing:"border-box"}} type="date" value={form[t.dateKey]||""} onChange={e=>setF(t.dateKey,e.target.value)}/>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -682,39 +674,39 @@ export default function ConsultationPage() {
               </button>
             </div>
 
-            {/* 입원예약일 + 퇴원예정일 + 희망병실 한 줄 */}
+            {/* 입원예약일 + 퇴원예정일 + 희망병실 */}
             <div style={{display:"flex", gap:16, alignItems:"flex-start", marginBottom:12, flexWrap:"wrap"}}>
               <div style={{minWidth:160}}>
                 <label style={S.lbl}>입원 예약일</label>
-                <div style={{display:"flex", gap:4}}>
-                  <input style={{...S.inp, width:120}} type="date" value={form.admitDate} onChange={e=>setF("admitDate",e.target.value)}/>
+                <input style={{...S.inp, width:"100%", boxSizing:"border-box"}} type="date" value={form.admitDate} onChange={e=>setF("admitDate",e.target.value)}/>
+                <div style={{marginTop:4}}>
                   {(!form.admitTime || TIME_OPTIONS.includes(form.admitTime)) ? (
                     <select value={form.admitTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("admitTime",v?v.trim():""); } else setF("admitTime",e.target.value); }}
-                      style={{...S.inp, width:90, color:form.admitTime?"#166534":"#94a3b8", padding:"6px 4px"}}>
+                      style={{...S.inp, width:"100%", boxSizing:"border-box", color:form.admitTime?"#166534":"#94a3b8"}}>
                       <option value="">시간</option>
                       {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
                       <option value="__custom__">직접입력</option>
                     </select>
                   ) : (
                     <input value={form.admitTime} onChange={e=>setF("admitTime",e.target.value)}
-                      style={{...S.inp, width:90, color:"#166534"}} />
+                      style={{...S.inp, width:"100%", boxSizing:"border-box", color:"#166534"}} />
                   )}
                 </div>
               </div>
               <div style={{minWidth:160}}>
                 <label style={S.lbl}>퇴원 예정일</label>
-                <div style={{display:"flex", gap:4}}>
-                  <input style={{...S.inp, width:120}} type="date" value={form.dischargeDate} onChange={e=>setF("dischargeDate",e.target.value)}/>
+                <input style={{...S.inp, width:"100%", boxSizing:"border-box"}} type="date" value={form.dischargeDate} onChange={e=>setF("dischargeDate",e.target.value)}/>
+                <div style={{marginTop:4}}>
                   {(!form.dischargeTime || TIME_OPTIONS.includes(form.dischargeTime)) ? (
                     <select value={form.dischargeTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("dischargeTime",v?v.trim():""); } else setF("dischargeTime",e.target.value); }}
-                      style={{...S.inp, width:90, color:form.dischargeTime?"#991b1b":"#94a3b8", padding:"6px 4px"}}>
+                      style={{...S.inp, width:"100%", boxSizing:"border-box", color:form.dischargeTime?"#991b1b":"#94a3b8"}}>
                       <option value="">시간</option>
                       {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
                       <option value="__custom__">직접입력</option>
                     </select>
                   ) : (
                     <input value={form.dischargeTime} onChange={e=>setF("dischargeTime",e.target.value)}
-                      style={{...S.inp, width:90, color:"#991b1b"}} />
+                      style={{...S.inp, width:"100%", boxSizing:"border-box", color:"#991b1b"}} />
                   )}
                 </div>
                 {form.admitDate && form.dischargeDate && (() => {
@@ -725,14 +717,14 @@ export default function ConsultationPage() {
                   return null;
                 })()}
               </div>
-              <div style={{flex:1}}>
+              <div style={{flex:1, minWidth:140}}>
                 <label style={S.lbl}>희망 병실 (복수 선택)</label>
-                <div style={{display:"flex", gap:8, flexWrap:"wrap", marginTop:4}}>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginTop:4}}>
                   {ROOM_TYPES.map(rt=>(
-                    <button key={rt} style={{border:`1.5px solid ${TYPE_COLOR[rt]}`, borderRadius:8, padding:"6px 14px",
+                    <button key={rt} style={{border:`1.5px solid ${TYPE_COLOR[rt]}`, borderRadius:8, padding:"6px 0",
                       background: form.roomTypes.includes(rt) ? TYPE_COLOR[rt] : TYPE_BG[rt],
                       color: form.roomTypes.includes(rt) ? "#fff" : TYPE_COLOR[rt],
-                      fontWeight:700, fontSize:13, cursor:"pointer"}}
+                      fontWeight:700, fontSize:13, cursor:"pointer", textAlign:"center"}}
                       onClick={()=>toggleRoomType(rt)}>{rt}</button>
                   ))}
                 </div>
