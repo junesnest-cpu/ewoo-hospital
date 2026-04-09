@@ -29,14 +29,16 @@ export default async function handler(req, res) {
     if (action === 'revenue') {
       const snap = await db.ref(`directorStats/${targetYear}/revenue`).once('value');
       const data = snap.val();
-      if (!data) return res.json({ year: targetYear, inpatient: {}, outpatient: {}, bedDays: {}, lastSync: null });
+      if (!data) return res.json({ year: targetYear, inpatient: {}, outpatient: {}, bedDays: {}, treatmentItems: {}, lastSync: null });
 
       const lastSyncSnap = await db.ref(`directorStats/${targetYear}/lastSync`).once('value');
+      const tiSnap = await db.ref(`directorStats/${targetYear}/treatmentItems`).once('value');
       return res.json({
         year: targetYear,
         inpatient: data.inpatient || {},
         outpatient: data.outpatient || {},
         bedDays: data.bedDays || {},
+        treatmentItems: tiSnap.val() || {},
         lastSync: lastSyncSnap.val(),
       });
     } else if (action === 'occupancy') {

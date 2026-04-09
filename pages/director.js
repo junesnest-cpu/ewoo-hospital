@@ -117,43 +117,22 @@ function DirectorDashboard({ profile }) {
   useEffect(()=>{ fetchRevenue(); },[year]);
   useEffect(()=>{ fetchOccupancy(); },[year,occMonth]);
 
-  // 치료항목 집계 (Firebase treatmentPlans)
+  // 치료항목 집계 — EMR 동기화 데이터 (revenue API에서 함께 가져옴)
+  // revenue 데이터가 로드되면 treatmentItems도 함께 설정
   useEffect(() => {
-    const unsub = onValue(ref(db, "treatmentPlans"), snap => {
-      const all = snap.val() || {};
-      const agg = {};
-      for (const months of Object.values(all)) {
-        if (!months || typeof months !== "object") continue;
-        for (const [mk, days] of Object.entries(months)) {
-          if (!agg[mk]) agg[mk] = {};
-          if (!days || typeof days !== "object") continue;
-          for (const items of Object.values(days)) {
-            if (!Array.isArray(items)) continue;
-            for (const e of items) {
-              if (!e?.id || e.emr === "removed") continue;
-              const def = ITEMS.find(i => i.id === e.id);
-              if (!def || def.price === 0) continue;
-              if (e.id.endsWith("_dm")) continue; // 퇴원약 제외
-              if (!agg[mk][e.id]) agg[mk][e.id] = { count: 0, revenue: 0 };
-              if (def.custom === "vitc") {
-                agg[mk][e.id].count += 1;
-                agg[mk][e.id].revenue += vitcPrice(parseInt(e.qty) || 0);
-              } else if (def.custom === "qty") {
-                const q = parseInt(e.qty) || 1;
-                agg[mk][e.id].count += q;
-                agg[mk][e.id].revenue += (def.price || 0) * q;
-              } else {
-                agg[mk][e.id].count += 1;
-                agg[mk][e.id].revenue += def.price || 0;
-              }
-            }
-          }
-        }
-      }
-      setTreatAgg(agg);
-    });
-    return unsub;
-  }, []);
+    if (revenue?.treatmentItems) setTreatAgg(revenue.treatmentItems);
+  }, [revenue]);
+
+  // 전년도 치료항목도 필요하므로 별도 fetch
+  const [treatAggPrevYear, setTreatAggPrevYear] = useState({});
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/director-stats",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"revenue",year:year-1})});
+        if (r.ok) { const d = await r.json(); setTreatAggPrevYear(d.treatmentItems||{}); }
+      } catch(e) { /* 전년도 없으면 무시 */ }
+    })();
+  }, [year]);
 
   const fmtAmt = n => n != null ? Math.round(n).toLocaleString() : "-";
   const fmtMan = n => n != null && n !== 0 ? `${Math.round(n/10000).toLocaleString()}만` : "-";
@@ -194,12 +173,13 @@ function DirectorDashboard({ profile }) {
     return { rows, avgOcc:ao.length?Math.round(ao.reduce((s,d)=>s+d.occupied,0)/ao.length):0, avgRate:ao.length?Math.round(ao.reduce((s,d)=>s+d.rate,0)/ao.length*10)/10:0 };
   })();
 
-  // 치료항목 비교 데이터
+  // 치료항목 비교 데이터 (EMR 동기화 기준)
   const prevMonth = monthAdd(treatMonth, -1);
   const lastYearMonth = monthAdd(treatMonth, -12);
   const curData = treatAgg[treatMonth] || {};
   const prevData = treatAgg[prevMonth] || {};
-  const lyData = treatAgg[lastYearMonth] || {};
+  // 전년동월: 올해 데이터에 없으면 전년도 API에서 가져옴
+  const lyData = treatAgg[lastYearMonth] || treatAggPrevYear[lastYearMonth] || {};
 
   const treatRows = ITEMS.filter(i => i.price !== 0 && i.price !== null && !i.id.endsWith("_dm")).map(item => {
     const cur = curData[item.id] || { count:0, revenue:0 };
