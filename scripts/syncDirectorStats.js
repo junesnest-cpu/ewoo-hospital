@@ -218,7 +218,7 @@ async function syncYear(pool, year, updates) {
     `);
     const treatItems = {};
     for (const row of treatResult.recordset) {
-      const mapping = EMR_TO_PLAN[row.code];
+      const mapping = EMR_TO_PLAN[row.code] || EMR_TO_PLAN[row.code.replace('-EW','')];
       if (!mapping) continue;
       const ym = `${row.ym.slice(0,4)}-${row.ym.slice(4,6)}`;
       if (!treatItems[ym]) treatItems[ym] = {};
@@ -360,7 +360,7 @@ async function syncMonth(pool, year, month, updates) {
     `);
     const items = {};
     for (const row of tR.recordset) {
-      const m = EMR_TO_PLAN[row.code];
+      const m = EMR_TO_PLAN[row.code] || EMR_TO_PLAN[row.code.replace('-EW','')];
       if (!m) continue;
       if (!items[m.id]) items[m.id] = { count:0, revenue:0 };
       if (m.vitcG) { items[m.id].count += row.cnt; items[m.id].revenue += row.cnt * vitcPrice(m.vitcG); }
