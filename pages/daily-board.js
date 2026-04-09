@@ -204,15 +204,10 @@ export default function DailyBoard() {
       });
     });
 
-    // 입원완료 이력 있는 환자 이름 집합
-    const admittedNames = new Set();
-    Object.values(consultations).forEach(c => {
-      if (c?.name && c.status === "입원완료") admittedNames.add(normName(c.name));
-    });
     // consultations → 신환 병합
     Object.values(consultations).forEach(c => {
       if (!c?.name || !c.admitDate) return;
-      const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !admittedNames.has(normName(c.name));
+      const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       if (!cIsNew) return;
       if (c.status === "취소" || c.status === "입원완료") return;
       if (c.admitDate !== date) return;

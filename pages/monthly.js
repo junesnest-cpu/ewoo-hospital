@@ -127,11 +127,6 @@ export default function MonthlySchedule() {
           doctor: "" });
       });
     });
-    // 입원완료 이력이 있는 환자 이름 집합
-    const admittedNamesAP = new Set();
-    Object.values(consultations || {}).forEach(c => {
-      if (c?.name && c.status === "입원완료") admittedNamesAP.add(normName(c.name));
-    });
     Object.values(consultations || {}).forEach(c => {
       if (!c?.name) return;
       const noteFields = [];
@@ -141,7 +136,7 @@ export default function MonthlySchedule() {
       if (c.surgery)   noteFields.push(c.surgeryDate ? `수술후(${c.surgeryDate})` : "수술후");
       if (c.chemo)     noteFields.push(c.chemoDate   ? `항암(${c.chemoDate})`     : "항암중");
       if (c.radiation) noteFields.push("방사선");
-      const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !admittedNamesAP.has(normName(c.name));
+      const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       add({ name: c.name, room: c.roomTypes?.join("/") || "",
         note: noteFields.join(" · "),
         isNew: cIsNew, isReserved: c.status === "예약완료",
@@ -183,18 +178,13 @@ export default function MonthlySchedule() {
     const data = {};
     const ensure = (key) => { if (!data[key]) data[key] = { admissions:[], discharges:[] }; };
 
-    // 신환 판별용: 이전 입원 이력(입원완료) 있는 환자 이름 집합
-    const admittedNames = new Set();
-    Object.values(consultations).forEach(c => {
-      if (c?.name && c.status === "입원완료") admittedNames.add(normName(c.name));
-    });
+    // 신환 판별용: isNewPatient 명시 설정 우선, 없으면 patientId 없음 = 신환
     const consultNewById = {};
     const consultNewByName = new Set();
     Object.entries(consultations).forEach(([cid, c]) => {
       if (!c?.name) return;
       if (c.status === "취소" || c.status === "입원완료") return;
-      // isNewPatient 명시 설정 우선, 없으면 입원완료 이력으로 자동 판별
-      const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !admittedNames.has(normName(c.name));
+      const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       consultNewById[cid] = isNew;
       if (isNew) consultNewByName.add(normName(c.name));
     });
@@ -235,7 +225,7 @@ export default function MonthlySchedule() {
     // consultations: 슬롯에 미배정된 신환만 추가 (슬롯 배정된 환자는 이미 위에서 신환 플래그 처리됨)
     Object.values(consultations).forEach(c => {
       if (!c?.name || !c.admitDate) return;
-      const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !admittedNames.has(normName(c.name));
+      const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       if (!cIsNew) return;                                    // 재입원 → 제외
       if (c.status === "취소" || c.status === "입원완료") return;
       const admitD = parseISO(c.admitDate);
@@ -470,14 +460,10 @@ export default function MonthlySchedule() {
 
   // 상담일지 신환 이름 집합 (frozen 데이터에도 신환 플래그 반영용)
   const newPatientNorms = useMemo(() => {
-    const admitted = new Set();
-    Object.values(consultations).forEach(c => {
-      if (c?.name && c.status === "입원완료") admitted.add(normName(c.name));
-    });
     const s = new Set();
     Object.values(consultations).forEach(c => {
       if (!c?.name) return;
-      const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !admitted.has(normName(c.name));
+      const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       if (!isNew) return;
       if (c.status === "취소" || c.status === "입원완료") return;
       s.add(normName(c.name));
