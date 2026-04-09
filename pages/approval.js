@@ -2722,6 +2722,8 @@ export default function ApprovalPage() {
 }
 
 // ─── 경영현황 패널 (병원장 전용) ─────────────────────────────────────────────
+const TOTAL_BEDS = 78;
+
 function DirectorStatsPanel() {
   const thisYear = new Date().getFullYear();
   const thisMonth = new Date().getMonth() + 1;
