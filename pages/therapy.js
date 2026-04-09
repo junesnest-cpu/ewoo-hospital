@@ -688,19 +688,19 @@ export default function TherapyPage() {
                                     <div style={{flex:1,borderRadius:3,padding:"2px 3px",
                                       background:ca?"#bae6fd":"#f0f9ff",
                                       border:icA?"1.5px solid #dc2626":"1px solid #7dd3fc",
-                                      display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
+                                      display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",position:"relative",minHeight:24}}>
                                       {ca?(()=>{const {roomId:caR,bedNum:caB}=getRoomFromCell(ca,dayIdx);const caNL=(ca.patientName||"").length;return(
                                         <>
                                           {!ca.isPending && isNewWithin7(ca.patientName, ca.slotKey) && (
                                             <span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800,display:"block",marginBottom:1}}>★신</span>
                                           )}
-                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:caNL>5?"ellipsis":"clip"}}>
+                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:caNL>5?"ellipsis":"clip",textAlign:"center"}}>
                                             {ca.patientName}
                                           </div>
                                           {ca.isOuter
-                                            ?<div style={{fontSize:8,fontWeight:700}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px"}}>외래</span></div>
-                                            :caR?<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{caR}-{caB}</div>:null}
-                                          <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1}}>
+                                            ?<div style={{fontSize:8,fontWeight:700,textAlign:"center"}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px"}}>외래</span></div>
+                                            :caR?<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2,textAlign:"center"}}>{caR}-{caB}</div>:null}
+                                          <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1,justifyContent:"center"}}>
                                             {ca.isPending&&<span style={{fontSize:8,color:"#f59e0b",fontWeight:700,background:"#fff7ed",borderRadius:3,padding:"0 3px"}}>예정</span>}
                                           </div>
                                           <button onClick={e=>{e.stopPropagation();if(!confirm("삭제?"))return;saveHyper("hyperbaric",dayIdx,time,null,"a");}}
@@ -712,19 +712,19 @@ export default function TherapyPage() {
                                     <div style={{flex:1,borderRadius:3,padding:"2px 3px",
                                       background:cb?"#e0f2fe":"#f0f9ff",
                                       border:icB?"1.5px solid #dc2626":"1px solid #7dd3fc",
-                                      display:"flex",flexDirection:"column",justifyContent:"center",position:"relative",minHeight:24}}>
+                                      display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",position:"relative",minHeight:24}}>
                                       {cb?(()=>{const {roomId:cbR,bedNum:cbB}=getRoomFromCell(cb,dayIdx);const cbNL=(cb.patientName||"").length;return(
                                         <>
                                           {!cb.isPending && isNewWithin7(cb.patientName, cb.slotKey) && (
                                             <span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800,display:"block",marginBottom:1}}>★신</span>
                                           )}
-                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:cbNL>5?"ellipsis":"clip"}}>
+                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:cbNL>5?"ellipsis":"clip",textAlign:"center"}}>
                                             {cb.patientName}
                                           </div>
                                           {cb.isOuter
-                                            ?<div style={{fontSize:8,fontWeight:700}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px"}}>외래</span></div>
-                                            :cbR?<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2}}>{cbR}-{cbB}</div>:null}
-                                          <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1}}>
+                                            ?<div style={{fontSize:8,fontWeight:700,textAlign:"center"}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px"}}>외래</span></div>
+                                            :cbR?<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2,textAlign:"center"}}>{cbR}-{cbB}</div>:null}
+                                          <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1,justifyContent:"center"}}>
                                             {cb.isPending&&<span style={{fontSize:8,color:"#f59e0b",fontWeight:700,background:"#fff7ed",borderRadius:3,padding:"0 3px"}}>예정</span>}
                                           </div>
                                           <button onClick={e=>{e.stopPropagation();if(!confirm("삭제?"))return;saveHyper("hyperbaric",dayIdx,time,null,"b");}}
@@ -751,7 +751,7 @@ export default function TherapyPage() {
                                   style={{background:moveMode?(moveMode.roomId===r.id&&moveMode.dayIdx===dayIdx&&moveMode.time===time?"#fef3c7":"#fff7ed"):bg,
                                     borderRadius:5,cursor:moveMode?"crosshair":"pointer",padding:"5px 6px",
                                     border:moveMode?"2px dashed #f59e0b":isConflict?"2px solid #dc2626":`1.5px solid ${col}bb`,
-                                    display:"flex",flexDirection:"column",justifyContent:"center",
+                                    display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",
                                     position:"relative",overflow:"hidden",boxSizing:"border-box"}}>
                                   {cell?(()=>{
                                     const {roomId:cRoomId,bedNum:cBedNum}=getRoomFromCell(cell,dayIdx);
@@ -761,7 +761,7 @@ export default function TherapyPage() {
                                       {!cell.isPending && isNewWithin7(cell.patientName, cell.slotKey) && (
                                         <div style={{marginBottom:1}}><span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800}}>★신</span></div>
                                       )}
-                                      <div style={{display:"flex",alignItems:"center",gap:3,overflow:"hidden",lineHeight:1.4}}>
+                                      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:3,overflow:"hidden",lineHeight:1.4,width:"100%"}}>
                                         <span style={{fontSize:isMobile?14:13,fontWeight:800,flexShrink:1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip",
                                           color:cell.isOuter?"#92400e":"#1e293b",
                                           background:cell.isOuter?"#fef3c7":"transparent",
@@ -771,9 +771,9 @@ export default function TherapyPage() {
                                         {tr2&&<span style={{fontSize:isMobile?11:9,fontWeight:800,background:tr2.color,color:"#fff",borderRadius:3,padding:"0 3px",flexShrink:0}}>{tr2.short}</span>}
                                       </div>
                                       {cell.isOuter
-                                        ?<div style={{fontSize:isMobile?12:11,lineHeight:1.2,fontWeight:700,background:"#fef3c7",color:"#d97706",borderRadius:3,textAlign:"center",padding:"1px 0",width:"3.2em"}}> 외래</div>
-                                        :cRoomId?<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600}}>{cRoomId}-{cBedNum}</div>:null}
-                                      {cell.memo&&<div style={{fontSize:isMobile?12:11,color:"#475569",lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",maxWidth:"100%",marginTop:1}}>💬 {cell.memo}</div>}
+                                        ?<div style={{fontSize:isMobile?12:11,lineHeight:1.2,fontWeight:700,background:"#fef3c7",color:"#d97706",borderRadius:3,textAlign:"center",padding:"1px 0",width:"3.2em"}}>외래</div>
+                                        :cRoomId?<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600,textAlign:"center"}}>{cRoomId}-{cBedNum}</div>:null}
+                                      {cell.memo&&<div style={{fontSize:isMobile?12:11,color:"#475569",lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",maxWidth:"100%",marginTop:1,textAlign:"center"}}>💬 {cell.memo}</div>}
                                       {cell.isPending&&<div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>예정</div>}
                                       {isConflict&&<div style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:"#dc2626"}}/>}
                                       <button onClick={e=>{e.stopPropagation();r.id==="hyperthermia"?(!confirm("삭제하시겠습니까?")||saveHyper("hyperthermia",dayIdx,time,null)):doPhysRemove(r.id,dayIdx,time);}}
