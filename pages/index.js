@@ -1290,38 +1290,41 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, newPat
 
 const TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
 
-// ── PatientModal ──────────────────────────────────────────────────────────────
+// ── PatientModal (타임라인 EditModal과 동일 형식) ─────────────────────────────
 function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, allPatients = [] }) {
   const [form, setForm] = useState({ ...data });
   const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const searchTimer = useRef(null);
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const isReservation = mode === "reservation";
+  const inpStyle = { width:"100%", border:"1.5px solid #e2e8f0", borderRadius:8, padding:"9px 11px", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
 
-  // 모달 열릴 때 환자 목록 미리 캐시
-  useEffect(() => { getCachedPatients().catch(() => {}); }, []);
+  const onNameChange = (val) => {
+    setForm(p => ({ ...p, name: val, patientId: "" }));
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!val.trim()) { setSuggestions([]); setShowSuggestions(false); setSearching(false); return; }
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const results = await searchPatientsByName(val.trim());
+        setSuggestions(results);
+        setShowSuggestions(results.length > 0);
+      } catch(e) {}
+      setSearching(false);
+    }, 300);
+  };
 
-  useEffect(() => {
-    const q = form.name?.trim() || "";
-    if (q.length < 1) { setSuggestions([]); return; }
-    // 캐시된 목록으로 즉시 로컬 필터링
-    getCachedPatients().then(all => {
-      const ql = q.toLowerCase();
-      const matched = all.filter(p => p.name?.includes(q)).slice(0, 6).map(p => ({
-        name: p.name,
-        room: p.chartNo ? `차트 ${p.chartNo}` : "",
-        note: p.note || "",
-        badge: "기록",
-        patientId: p.internalId || "",
-      }));
-      const dbNames = new Set(matched.map(p => p.name));
-      const slotExtra = allPatients.filter(p => !dbNames.has(p.name) && p.name.toLowerCase().includes(ql)).slice(0, 3);
-      setSuggestions([...matched, ...slotExtra].slice(0, 6));
-    }).catch(() => setSuggestions([]));
-  }, [form.name]);
-
-  const selectSuggestion = (p) => {
-    setForm(f => ({ ...f, name: p.name, note: f.note || p.note, patientId: p.patientId || f.patientId || "" }));
+  const selectPatient = (p) => {
+    setForm(prev => ({
+      ...prev,
+      name: p.name,
+      patientId: p.internalId || "",
+      note: prev.note || (p.diagnosis ? `[${p.diagnosis}]` : ""),
+    }));
     setSuggestions([]);
+    setShowSuggestions(false);
   };
 
   const handleSave = () => {
@@ -1329,97 +1332,99 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
     if (isReservation && !form.admitDate?.trim()) { alert("입원 예정일을 입력해 주세요."); return; }
     onSave(form);
   };
+
   return (
-    <div style={S.modalOverlay}>
-      <div style={S.modal}>
-        <div style={{ ...S.modalTitle, color: isReservation ? "#7c3aed":"#0f2744" }}>{title}</div>
-        {isReservation && (
-          <>
-            <label style={{ ...S.label, color:"#7c3aed" }}>입원 예정일 ★</label>
-            <div style={{ display:"flex", gap:6 }}>
-              <input style={{ ...S.input, borderColor:"#a78bfa", flex:1 }} value={form.admitDate||""} onChange={e => setF("admitDate", e.target.value)} placeholder="예: 3/18" />
-              {(!form.admitTime || TIME_OPTIONS.includes(form.admitTime)) ? (
-                <select value={form.admitTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("admitTime",v?v.trim():""); } else setF("admitTime",e.target.value); }}
-                  style={{ ...S.input, width:110, color:form.admitTime?"#166534":"#94a3b8", borderColor:"#a78bfa", flexShrink:0 }}>
-                  <option value="">시간</option>
-                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-                  <option value="__custom__">직접입력</option>
-                </select>
-              ) : (
-                <input value={form.admitTime||""} onChange={e=>setF("admitTime",e.target.value)}
-                  style={{ ...S.input, width:110, color:"#166534", borderColor:"#a78bfa", flexShrink:0 }} />
-              )}
-            </div>
-            <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>M/D 형식 (예: 3/18)</div>
-          </>
-        )}
-        {!isReservation && (
-          <>
-            <label style={S.label}>입원일</label>
-            <div style={{ display:"flex", gap:6 }}>
-              <input style={{...S.input, flex:1}} value={form.admitDate||""} onChange={e => setF("admitDate", e.target.value)} placeholder="예: 3/10" />
-              {(!form.admitTime || TIME_OPTIONS.includes(form.admitTime)) ? (
-                <select value={form.admitTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("admitTime",v?v.trim():""); } else setF("admitTime",e.target.value); }}
-                  style={{ ...S.input, width:110, color:form.admitTime?"#166534":"#94a3b8", flexShrink:0 }}>
-                  <option value="">시간</option>
-                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-                  <option value="__custom__">직접입력</option>
-                </select>
-              ) : (
-                <input value={form.admitTime||""} onChange={e=>setF("admitTime",e.target.value)}
-                  style={{ ...S.input, width:110, color:"#166534", flexShrink:0 }} />
-              )}
-            </div>
-            <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>M/D 형식 (예: 3/10) — 치료 일정표 주차 계산에 사용됩니다</div>
-          </>
-        )}
-        <label style={S.label}>환자명</label>
-        <div style={{ position:"relative" }}>
-          <input style={S.input} value={form.name||""} onChange={e => handleNameChange(e.target.value)}
-            onBlur={() => setTimeout(() => setSuggestions([]), 150)} placeholder="홍길동" autoComplete="off" />
-          {suggestions.length > 0 && (
-            <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#fff", border:"1.5px solid #a78bfa",
-              borderRadius:8, zIndex:200, boxShadow:"0 4px 20px rgba(0,0,0,0.13)", maxHeight:220, overflowY:"auto" }}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background:"#fff", borderRadius:16, padding:"24px 28px", width:"min(92vw,400px)", boxShadow:"0 24px 64px rgba(0,0,0,0.3)" }}>
+        <div style={{ fontWeight:800, fontSize:16, color: isReservation?"#7c3aed":"#0f2744", marginBottom:20 }}>{title}</div>
+
+        {/* 이름 입력 + 환자 자동완성 */}
+        <div style={{ marginBottom:14, position:"relative" }}>
+          <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>
+            환자 이름 *
+            {form.patientId && <span style={{ marginLeft:6, fontSize:11, color:"#059669", fontWeight:700 }}>✓ 기존 환자 연결됨</span>}
+          </label>
+          <div style={{ position:"relative" }}>
+            <input style={{ ...inpStyle, borderColor: form.patientId?"#10b981":"#e2e8f0", paddingRight: searching?80:11 }}
+              value={form.name||""} onChange={e => onNameChange(e.target.value)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              placeholder="이름 입력 (기존 환자 자동완성)" autoFocus />
+            {searching && <span style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", fontSize:11, color:"#94a3b8" }}>검색 중…</span>}
+          </div>
+          {showSuggestions && (
+            <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#fff", borderRadius:8,
+              boxShadow:"0 8px 24px rgba(0,0,0,0.18)", border:"1px solid #e2e8f0", zIndex:50, maxHeight:220, overflowY:"auto", marginTop:2 }}>
               {suggestions.map((p, i) => (
-                <div key={i} onMouseDown={() => selectSuggestion(p)}
-                  style={{ padding:"8px 12px", cursor:"pointer", borderBottom:"1px solid #f1f5f9",
-                    background: i % 2 === 0 ? "#faf5ff" : "#fff" }}>
-                  <span style={{ fontWeight:700, fontSize:14 }}>{p.name}</span>
-                  <span style={{ marginLeft:8, fontSize:11, color:"#7c3aed", background:"#ede9fe",
-                    borderRadius:4, padding:"1px 6px", fontWeight:700 }}>{p.badge}</span>
-                  <span style={{ marginLeft:6, fontSize:12, color:"#94a3b8" }}>{p.room}</span>
-                  {p.note && <div style={{ fontSize:11, color:"#94a3b8", marginTop:2, overflow:"hidden",
-                    whiteSpace:"nowrap", textOverflow:"ellipsis" }}>{p.note}</div>}
+                <div key={i} onMouseDown={() => selectPatient(p)}
+                  style={{ padding:"9px 12px", cursor:"pointer", borderBottom:"1px solid #f1f5f9",
+                    display:"flex", flexDirection:"column", gap:2, background:"#fff", transition:"background 0.1s" }}
+                  onMouseEnter={e => e.currentTarget.style.background="#f0f9ff"}
+                  onMouseLeave={e => e.currentTarget.style.background="#fff"}>
+                  <div style={{ fontWeight:700, fontSize:14, color:"#0f2744" }}>{p.name}</div>
+                  <div style={{ fontSize:11, color:"#94a3b8", display:"flex", gap:8, flexWrap:"wrap" }}>
+                    {p.birthDate && <span>{p.birthDate}</span>}
+                    {p.diagnosis && <span style={{ color:"#64748b" }}>{p.diagnosis}</span>}
+                    {p.chartNo && <span>차트 {p.chartNo}</span>}
+                    {p.doctor && <span>담당 {p.doctor}</span>}
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
-        <label style={S.label}>퇴원 예정일</label>
-        <div style={{ display:"flex", gap:6 }}>
-          <input style={{...S.input, flex:1}} value={form.discharge||""} onChange={e => setF("discharge", e.target.value)} placeholder="예: 3/28, 미정" />
-          {(!form.dischargeTime || TIME_OPTIONS.includes(form.dischargeTime)) ? (
-            <select value={form.dischargeTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("dischargeTime",v?v.trim():""); } else setF("dischargeTime",e.target.value); }}
-              style={{ ...S.input, width:110, color:form.dischargeTime?"#991b1b":"#94a3b8", flexShrink:0 }}>
-              <option value="">시간</option>
-              {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
-              <option value="__custom__">직접입력</option>
-            </select>
-          ) : (
-            <input value={form.dischargeTime||""} onChange={e=>setF("dischargeTime",e.target.value)}
-              style={{ ...S.input, width:110, color:"#991b1b", flexShrink:0 }} />
-          )}
+
+        {/* 입원일 / 퇴원일 + 시간 */}
+        {[
+          ...(isReservation
+            ? [{ label:"예약 입원일 (예: 4/15)", key:"admitDate", timeKey:"admitTime", ph:"4/15" }]
+            : [{ label:"입원일 (예: 4/10)", key:"admitDate", timeKey:"admitTime", ph:"4/10" }]),
+          { label:"퇴원 예정일 (예: 4/25 또는 미정)", key:"discharge", timeKey:"dischargeTime", ph:"4/25 또는 미정" },
+        ].map(f => (
+          <div key={f.key} style={{ marginBottom:14 }}>
+            <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>{f.label}</label>
+            <div style={{ display:"flex", gap:6 }}>
+              <input style={{...inpStyle, flex:1}} value={form[f.key]||""} onChange={e=>setF(f.key,e.target.value)} placeholder={f.ph} />
+              {(!form[f.timeKey] || TIME_OPTIONS.includes(form[f.timeKey])) ? (
+                <select value={form[f.timeKey]||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF(f.timeKey,v?v.trim():""); } else setF(f.timeKey,e.target.value); }}
+                  style={{...inpStyle, width:110, color:form[f.timeKey]?"#166534":"#94a3b8", flexShrink:0}}>
+                  <option value="">시간</option>
+                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                  <option value="__custom__">직접입력</option>
+                </select>
+              ) : (
+                <input value={form[f.timeKey]||""} onChange={e=>setF(f.timeKey,e.target.value)}
+                  style={{...inpStyle, width:110, color:"#166534", flexShrink:0}} />
+              )}
+            </div>
+          </div>
+        ))}
+
+        <div style={{ marginBottom:14 }}>
+          <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>메모</label>
+          <textarea style={{...inpStyle, resize:"vertical", minHeight:72, lineHeight:1.6}} value={form.note||""} onChange={e=>setF("note",e.target.value)} placeholder="치료 내용, 특이사항 등" />
         </div>
-        <label style={S.label}>메모</label>
-        <textarea style={{ ...S.input, height:80, resize:"vertical" }} value={form.note||""} onChange={e => setF("note", e.target.value)} placeholder="치료 내용, 약품, 스케줄 등" />
-        <label style={S.labelCheck}>
+
+        <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20, cursor:"pointer", fontSize:13, color:"#64748b" }}>
           <input type="checkbox" checked={!!form.scheduleAlert} onChange={e => setF("scheduleAlert", e.target.checked)} />
-          <span style={{ marginLeft:6 }}>⚠ 스케줄 확인 필요</span>
+          ⚠ 스케줄 확인 필요
         </label>
-        <div style={S.modalBtns}>
-          {!isNew && onDelete && <button style={{ ...S.btnModal, background:"#fee2e2", color:"#dc2626" }} onClick={onDelete}>{isReservation?"예약 취소":"퇴원 처리"}</button>}
-          <button style={{ ...S.btnModal, background:"#f1f5f9", color:"#64748b" }} onClick={onClose}>취소</button>
-          <button style={{ ...S.btnModal, background: isReservation?"#7c3aed":"#1e3a5f", color:"#fff" }} onClick={handleSave}>저장</button>
+
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          <button onClick={handleSave} disabled={!form.name?.trim()}
+            style={{ flex:1, background:form.name?.trim()?"#0f2744":"#e2e8f0", color:form.name?.trim()?"#fff":"#94a3b8", border:"none", borderRadius:9, padding:"11px", fontSize:14, fontWeight:700, cursor:form.name?.trim()?"pointer":"default" }}>
+            저장
+          </button>
+          {!isNew && onDelete && (
+            <button onClick={onDelete}
+              style={{ background:"#fee2e2", color:"#dc2626", border:"none", borderRadius:9, padding:"11px 14px", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+              {isReservation?"예약 취소":"퇴원 처리"}
+            </button>
+          )}
+          <button onClick={onClose}
+            style={{ background:"#f1f5f9", color:"#64748b", border:"none", borderRadius:9, padding:"11px 14px", fontSize:14, fontWeight:700, cursor:"pointer" }}>
+            취소
+          </button>
         </div>
       </div>
     </div>
