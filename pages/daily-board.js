@@ -674,10 +674,14 @@ export default function DailyBoard() {
               right={<span className="no-print" style={{ fontSize:11, color:"#a16207", fontWeight:500 }}>치료실 스케줄 자동 연동</span>} />
             <div style={{ background:"#fff", border:"1px solid #fde68a", borderTop:"none",
               borderRadius:"0 0 10px 10px", overflowX:"auto" }}>
-              <table style={{ borderCollapse:"collapse", width:"100%", minWidth:520 }}>
+              <table style={{ borderCollapse:"collapse", width:"100%", minWidth:520, tableLayout:"fixed" }}>
+                <colgroup>
+                  <col style={{ width:100 }} />
+                  {therapyCols.map(c => <col key={c.key} />)}
+                </colgroup>
                 <thead>
                   <tr>
-                    <th style={{ ...S.thTh, width:100, background:"#fefce8" }}>시간</th>
+                    <th style={{ ...S.thTh, background:"#fefce8" }}>시간</th>
                     {therapyCols.map(c => (
                       <th key={c.key} style={{ ...S.thTh, whiteSpace:"pre-line" }}>{c.label}</th>
                     ))}
@@ -697,9 +701,9 @@ export default function DailyBoard() {
                           const autoVal = auto[c.key]||"";
                           const display = manual || autoVal;
                           return (
-                            <td key={c.key} style={{ padding:3, borderBottom:"1px solid #f5f5f4",
-                              borderRight:"1px solid #f5f5f4", verticalAlign:"top",
-                              background:isAft?"#fffef5":"#fff" }}>
+                            <td key={c.key} style={{ padding:4, borderBottom:"1px solid #f5f5f4",
+                              borderRight:"1px solid #f5f5f4", verticalAlign:"middle",
+                              background:isAft?"#fffef5":"#fff", height:48 }}>
                               {editMode ? (
                                 <>
                                   {autoVal && !manual && (
@@ -710,9 +714,9 @@ export default function DailyBoard() {
                                   <textarea value={manual||""} onChange={e=>updateTherapy(slot,c.key,e.target.value)}
                                     rows={2} placeholder={autoVal?"":"-"}
                                     style={{ width:"100%", border:manual?"1px solid #fcd34d":"1px solid transparent",
-                                      background:manual?"#fffbeb":"transparent", resize:"vertical", fontSize:13,
+                                      background:manual?"#fffbeb":"transparent", resize:"vertical", fontSize:14,
                                       fontFamily:"inherit", padding:"2px 5px", minHeight:40, outline:"none",
-                                      lineHeight:1.5, borderRadius:4, marginTop:autoVal&&!manual?2:0 }} />
+                                      lineHeight:1.5, borderRadius:4, marginTop:autoVal&&!manual?2:0, boxSizing:"border-box" }} />
                                 </>
                               ) : display ? (
                                 <div style={{ fontSize:14, fontWeight:700, color:"#1e293b", whiteSpace:"pre-wrap", lineHeight:1.5, padding:"2px 5px",
