@@ -453,7 +453,9 @@ function DirectorDashboard({ profile }) {
                     const cs=consultStats[r.month]||{consult:0,reserved:0,newAdmit:0};
                     const pcs=prevYearConsultStats[r.month]||{consult:0,reserved:0,newAdmit:0};
                     const isFuture=year===thisYear&&r.month>thisMonth;
+                    // 값이 있을 때만 증감율 표시 (미래 또는 값 없으면 빈칸)
                     const yoyTd = (cur,prev) => {
+                      if (!cur || isFuture) return <td style={S.td}></td>;
                       const p = yoyPct(cur,prev);
                       const s = yoyStyle(cur,prev);
                       return <td style={{...S.td,...s,fontSize:11}}>{p||""}</td>;
@@ -468,7 +470,7 @@ function DirectorDashboard({ profile }) {
                       {yoyTd(r.outTotal,r.prevOut)}
                       <td style={{...S.td,color:"#059669",fontWeight:600}}>{empty||!r.gongdan?"-":fmtAmt(r.gongdan)}</td>
                       {yoyTd(r.gongdan,r.prevGongdan)}
-                      <td style={{...S.td,color:"#64748b"}}>{r.bedDays||"-"}</td>
+                      <td style={{...S.td,color:"#64748b"}}>{isFuture?"-":(r.bedDays||"-")}</td>
                       {yoyTd(r.bedDays,r.prevBedDays)}
                       <td style={{...S.td,color:"#059669",fontWeight:600}}>{cs.consult||"-"}</td>
                       {yoyTd(cs.consult,pcs.consult)}
