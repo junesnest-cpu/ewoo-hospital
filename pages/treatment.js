@@ -991,8 +991,8 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                         {isAdmit && <span style={{ fontSize:Math.max(10,dayNumFontPx*0.5), fontWeight:700, color:"#16a34a", marginLeft:4 }}>입원</span>}
                         {isDisch && <span style={{ fontSize:Math.max(10,dayNumFontPx*0.5), fontWeight:700, color:"#d97706", marginLeft:4 }}>퇴원</span>}
                       </div>
-                      {/* 치료 항목 — 입원 전 날짜는 인쇄에서 제외 */}
-                      {!isBeforeAdmit && items.map(e => {
+                      {/* 치료 항목 — 입원 전 제외, EMR 삭제 항목 제외, EMR 배지 미표시 */}
+                      {!isBeforeAdmit && items.filter(e => e.emr !== "removed").map(e => {
                         const item = allItems.find(i => i.id === e.id);
                         if (!item) return null;
                         const grp = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === e.id));
@@ -1000,13 +1000,12 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                         const label = item.custom==="vitc" ? `비타민C ${effectiveQty}g`
                                     : item.custom==="qty"  ? `${item.name} ${effectiveQty}개`
                                     : item.name;
-                        const badge = e.emr==="match"?"EMR":e.emr==="removed"?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
                         return (
                           <div key={e.id} style={{ fontSize:treatFontPx, lineHeight:1.3,
-                            color:"#111", opacity:e.emr==="removed"?0.4:1,
+                            color:"#111",
                             borderLeft:`3px solid ${grp?.color||"#555"}`,
                             paddingLeft:4, marginBottom:2 }}>
-                            {label}{badge && ` [${badge}]`}
+                            {label}
                           </div>
                         );
                       })}
