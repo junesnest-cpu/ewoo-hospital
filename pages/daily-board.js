@@ -78,6 +78,7 @@ export default function DailyBoard() {
   // 연동 데이터 소스
   const [slots, setSlots] = useState({});
   const [consultations, setConsultations] = useState({});
+  const [patients, setPatients] = useState({});
   const [monthlyBoard, setMonthlyBoard] = useState({});
   const [physSched, setPhysSched] = useState({});
   const [hyperSched, setHyperSched] = useState({});
@@ -106,7 +107,8 @@ export default function DailyBoard() {
       const v = s.val()||{};
       setTherapists([v.therapist1||"치료사1", v.therapist2||"치료사2"]);
     });
-    return () => { u1(); u2(); u3(); };
+    const u4 = onValue(ref(db,"patients"), s => setPatients(s.val()||{}));
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
   useEffect(() => {
@@ -134,13 +136,45 @@ export default function DailyBoard() {
   // ── 이름→환자정보 매핑 ──
   const patientInfo = useMemo(() => {
     const map = {};
+    // patients DB에서 주치의 정보 (성만 추출: "강국형" → "강")
+    Object.values(patients).forEach(p => {
+      if (!p?.name) return;
+      const n = normName(p.name);
+      const doc = (p.lastDoctor || p.doctor || "").trim();
+      if (n && doc) map[n] = { room:"", doctor: doc.charAt(0), note:"" };
+    });
+    // slots 현재 입원 정보로 덮어쓰기 (우선)
     Object.entries(slots).forEach(([sk, slot]) => {
       if (!slot?.current?.name) return;
       const n = normName(slot.current.name);
-      if (n) map[n] = { room:sk, doctor:slot.current.doctor||"", note:slot.current.note||"" };
+      if (n) map[n] = { room:sk, doctor:slot.current.doctor||map[n]?.doctor||"", note:slot.current.note||"" };
     });
     return map;
-  }, [slots]);
+  }, [slots, patients]);
+
+  // ── 퇴원 환자의 재입원 예정일 매핑 (이름→재입원 날짜) ──
+  const readmitInfo = useMemo(() => {
+    const map = {};
+    // 모든 슬롯의 예약에서 재입원 날짜 수집
+    Object.values(slots).forEach(slot => {
+      (slot?.reservations || []).forEach(r => {
+        if (!r?.name || !r.admitDate || r.admitDate === "미정") return;
+        const n = normName(r.name);
+        if (!map[n]) map[n] = r.admitDate;
+      });
+    });
+    // 상담일지에서도 재입원 일정 검색 (슬롯 미배정 환자 대비)
+    Object.values(consultations).forEach(c => {
+      if (!c?.name || !c.admitDate) return;
+      if (c.status === "취소") return;
+      const n = normName(c.name);
+      if (!map[n]) {
+        const d = new Date(c.admitDate);
+        if (!isNaN(d)) map[n] = `${d.getMonth()+1}/${d.getDate()}`;
+      }
+    });
+    return map;
+  }, [slots, consultations]);
 
   // ── slots 기반 calendarData (월간보드와 동일 로직) ──
   const calendarData = useMemo(() => {
@@ -239,9 +273,14 @@ export default function DailyBoard() {
   const syncedDischarges = useMemo(() => {
     return (displayData.discharges||[]).map(d => {
       const info = patientInfo[normName(d.name)];
-      return { ...d, id:d.id||uid(), room:info?.room||d.room||"", time:d.time||"", note:d.note||"" };
+      const readmit = readmitInfo[normName(d.name)];
+      const readmitNote = readmit ? `${readmit} 재입원 예정` : "";
+      const baseNote = d.note || "";
+      // 재입원 예정이 비고에 이미 포함되어 있으면 중복 추가 안 함
+      const note = readmitNote && !baseNote.includes("재입원") ? (baseNote ? `${baseNote} / ${readmitNote}` : readmitNote) : baseNote;
+      return { ...d, id:d.id||uid(), room:info?.room||d.room||"", time:d.time||"", note };
     });
-  }, [displayData, patientInfo]);
+  }, [displayData, patientInfo, readmitInfo]);
 
   const syncedReserved = useMemo(() => {
     const list = [], seen = new Set();
