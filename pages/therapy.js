@@ -694,12 +694,12 @@ export default function TherapyPage() {
                                           {!ca.isPending && isNewWithin7(ca.patientName, ca.slotKey) && (
                                             <span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800,display:"block",marginBottom:1}}>★신</span>
                                           )}
-                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:caNL>5?"ellipsis":"clip",textAlign:"center"}}>
+                                          <div style={{fontSize:isMobile?15:13,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:caNL>5?"ellipsis":"clip",textAlign:"center"}}>
                                             {ca.patientName}
                                           </div>
                                           {ca.isOuter
-                                            ?<div style={{fontSize:8,fontWeight:700,textAlign:"center"}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px"}}>외래</span></div>
-                                            :caR?<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2,textAlign:"center"}}>{caR}-{caB}</div>:null}
+                                            ?<div style={{fontSize:10,fontWeight:700,textAlign:"center"}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px"}}>외래</span></div>
+                                            :caR?<div style={{fontSize:isMobile?13:12,color:"#0369a1",fontWeight:600,lineHeight:1.2,textAlign:"center"}}>{caR}-{caB}</div>:null}
                                           <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1,justifyContent:"center"}}>
                                             {ca.isPending&&<span style={{fontSize:8,color:"#f59e0b",fontWeight:700,background:"#fff7ed",borderRadius:3,padding:"0 3px"}}>예정</span>}
                                           </div>
@@ -718,12 +718,12 @@ export default function TherapyPage() {
                                           {!cb.isPending && isNewWithin7(cb.patientName, cb.slotKey) && (
                                             <span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800,display:"block",marginBottom:1}}>★신</span>
                                           )}
-                                          <div style={{fontSize:isMobile?13:11,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:cbNL>5?"ellipsis":"clip",textAlign:"center"}}>
+                                          <div style={{fontSize:isMobile?15:13,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:cbNL>5?"ellipsis":"clip",textAlign:"center"}}>
                                             {cb.patientName}
                                           </div>
                                           {cb.isOuter
-                                            ?<div style={{fontSize:8,fontWeight:700,textAlign:"center"}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px"}}>외래</span></div>
-                                            :cbR?<div style={{fontSize:isMobile?11:10,color:"#0369a1",fontWeight:600,lineHeight:1.2,textAlign:"center"}}>{cbR}-{cbB}</div>:null}
+                                            ?<div style={{fontSize:10,fontWeight:700,textAlign:"center"}}><span style={{background:"#fef3c7",color:"#d97706",borderRadius:3,padding:"0 3px"}}>외래</span></div>
+                                            :cbR?<div style={{fontSize:isMobile?13:12,color:"#0369a1",fontWeight:600,lineHeight:1.2,textAlign:"center"}}>{cbR}-{cbB}</div>:null}
                                           <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:1,justifyContent:"center"}}>
                                             {cb.isPending&&<span style={{fontSize:8,color:"#f59e0b",fontWeight:700,background:"#fff7ed",borderRadius:3,padding:"0 3px"}}>예정</span>}
                                           </div>
@@ -762,7 +762,7 @@ export default function TherapyPage() {
                                         <div style={{marginBottom:1}}><span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800}}>★신</span></div>
                                       )}
                                       <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:3,overflow:"hidden",lineHeight:1.4,width:"100%"}}>
-                                        <span style={{fontSize:isMobile?14:13,fontWeight:800,flexShrink:1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip",
+                                        <span style={{fontSize:isMobile?16:15,fontWeight:800,flexShrink:1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip",
                                           color:cell.isOuter?"#92400e":"#1e293b",
                                           background:cell.isOuter?"#fef3c7":"transparent",
                                           borderRadius:cell.isOuter?3:0,padding:cell.isOuter?"0 2px":0}}>
@@ -771,8 +771,8 @@ export default function TherapyPage() {
                                         {tr2&&<span style={{fontSize:isMobile?11:9,fontWeight:800,background:tr2.color,color:"#fff",borderRadius:3,padding:"0 3px",flexShrink:0}}>{tr2.short}</span>}
                                       </div>
                                       {cell.isOuter
-                                        ?<div style={{fontSize:isMobile?12:11,lineHeight:1.2,fontWeight:700,background:"#fef3c7",color:"#d97706",borderRadius:3,textAlign:"center",padding:"1px 0",width:"3.2em"}}>외래</div>
-                                        :cRoomId?<div style={{fontSize:isMobile?12:11,color:"#64748b",lineHeight:1.2,fontWeight:600,textAlign:"center"}}>{cRoomId}-{cBedNum}</div>:null}
+                                        ?<div style={{fontSize:isMobile?14:13,lineHeight:1.2,fontWeight:700,background:"#fef3c7",color:"#d97706",borderRadius:3,textAlign:"center",padding:"1px 0",width:"3.2em"}}>외래</div>
+                                        :cRoomId?<div style={{fontSize:isMobile?14:13,color:"#64748b",lineHeight:1.2,fontWeight:600,textAlign:"center"}}>{cRoomId}-{cBedNum}</div>:null}
                                       {cell.memo&&<div style={{fontSize:isMobile?12:11,color:"#475569",lineHeight:1.3,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",maxWidth:"100%",marginTop:1,textAlign:"center"}}>💬 {cell.memo}</div>}
                                       {cell.isPending&&<div style={{fontSize:8,color:"#f59e0b",fontWeight:700}}>예정</div>}
                                       {isConflict&&<div style={{position:"absolute",top:2,right:2,width:7,height:7,borderRadius:"50%",background:"#dc2626"}}/>}
