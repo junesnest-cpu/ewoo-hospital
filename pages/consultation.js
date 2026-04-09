@@ -68,6 +68,7 @@ const EMPTY_FORM = {
   memo:"",
   createdAt:"", status:"상담중",
   recontact:false, recontactDate:"", recontactMemo:"",
+  isNewPatient:true,
 };
 
 const CUR_YEAR = new Date().getFullYear();
@@ -198,7 +199,7 @@ export default function ConsultationPage() {
         const by = p.birthDate ? p.birthDate.slice(0,4) : (p.birthYear||"");
         return { name: p.name, info: [by ? `${by}년생` : "", p.diagnosis].filter(Boolean).join(" · "),
           fill: { name:p.name, phone:phone, birthYear:by, age:by?calcAge(by):"", diagnosis:p.diagnosis||"",
-                  patientId:p.internalId||id } };
+                  patientId:p.internalId||id, isNewPatient:false } };
       }
     }
     // 전체 상담 검색
@@ -232,6 +233,7 @@ export default function ConsultationPage() {
       age:        by ? calcAge(by) : f.age,
       diagnosis:  p.diagnosis  || f.diagnosis,
       patientId:  p.internalId || p.id || f.patientId,
+      isNewPatient: false,
     }));
     setPtSearchOpen(false);
     setPtSearchQ("");
@@ -665,7 +667,17 @@ export default function ConsultationPage() {
 
           {/* 입원 희망 + 기타 요청사항 */}
           <div style={S.section}>
-            <div style={S.sectionTitle}>📅 입원 희망</div>
+            <div style={{display:"flex", alignItems:"center", gap:12}}>
+              <div style={S.sectionTitle}>📅 입원 희망</div>
+              <button onClick={()=>setF("isNewPatient",!form.isNewPatient)}
+                style={{ fontSize:12, fontWeight:800, border:"1.5px solid",
+                  borderColor: form.isNewPatient ? "#f59e0b" : "#d1d5db",
+                  background: form.isNewPatient ? "#fef08a" : "#f8fafc",
+                  color: form.isNewPatient ? "#713f12" : "#9ca3af",
+                  borderRadius:6, padding:"3px 10px", cursor:"pointer" }}>
+                ★ 신환{form.isNewPatient ? "" : " (아님)"}
+              </button>
+            </div>
 
             {/* 입원예약일 + 퇴원예정일 + 희망병실 한 줄 */}
             <div style={{display:"flex", gap:16, alignItems:"flex-start", marginBottom:12, flexWrap:"wrap"}}>

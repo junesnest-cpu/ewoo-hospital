@@ -226,13 +226,18 @@ export default function HospitalWardManager() {
     return list.sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }, [slots]);
 
-  // 신환 이름 집합 (consultations 기준, patientId 없음=신규, 취소/입원완료 제외)
+  // 신환 이름 집합 (입원완료 이력 없는 상담 환자 = 신환)
   const newPatientNames = useMemo(() => {
     const normN = n => (n||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+    const admitted = new Set();
+    Object.values(consultations).forEach(c => {
+      if (c?.name && c.status === "입원완료") admitted.add(normN(c.name));
+    });
     const s = new Set();
     Object.values(consultations).forEach(c => {
       if (!c?.name) return;
-      if (c.patientId) return;
+      const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !admitted.has(normN(c.name));
+      if (!isNew) return;
       if (c.status === "취소" || c.status === "입원완료") return;
       s.add(normN(c.name));
     });
@@ -406,6 +411,18 @@ export default function HospitalWardManager() {
     if (slot.current?.name) {
       const d = parseDateStr(slot.current.discharge);
       if (!d || dateOnly(d) >= fromD) return false;
+      // 자리보존 기간 체크: 현재 환자 퇴원 다음날 ~ 예약 입원 전날
+      const curDisOnly = dateOnly(d);
+      for (const r of (slot.reservations || [])) {
+        if (!r?.name || !r?.preserveSeat || !r?.admitDate) continue;
+        const rA = parseDateStr(r.admitDate);
+        if (!rA) continue;
+        const presStart = new Date(curDisOnly.getTime() + 86400000);
+        const presEnd   = new Date(dateOnly(rA).getTime() - 86400000);
+        if (presStart > presEnd) continue;
+        if (toD) { if (presStart <= toD && presEnd >= fromD) return false; }
+        else      { if (presEnd >= fromD) return false; }
+      }
     }
     for (const r of (slot.reservations || [])) {
       if (!r?.name) continue;
@@ -468,6 +485,11 @@ export default function HospitalWardManager() {
           else if (rEnd)          overlaps = rEnd >= admitD;
           else                    overlaps = !dischargeD || dateOnly(rA) <= dischargeD;
           if (!overlaps) return;
+
+          // 이 예약을 제거했을 때 실제로 병상이 비는지 검증
+          const simSlots = JSON.parse(JSON.stringify(slotsData));
+          simSlots[slotKey].reservations = (simSlots[slotKey].reservations || []).filter((_, i) => i !== resIdx);
+          if (!slotFreeForPeriod(simSlots, slotKey, admitD, dischargeD)) return;
 
           const alts = findAltSlots(slotsData, slotKey, room.type, dateOnly(rA), rEnd);
           if (alts.length === 0) return;

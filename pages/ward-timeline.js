@@ -659,14 +659,18 @@ export default function WardTimeline() {
     resHighlightTimer.current = setTimeout(() => setResHighlight(null), 3000);
   }, [today, weekOffset]);
 
-  // 신환 이름 집합 (consultations 기준, patientId 없음=신규, 취소/입원완료 제외)
+  // 신환 이름 집합 (입원완료 이력 없는 상담 환자 = 신환)
   const newPatientNames = useMemo(() => {
-    // "신)이름" 같은 접두사 제거 후 비교
     const normName = n => (n || "").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+    const admitted = new Set();
+    Object.values(consultations).forEach(c => {
+      if (c?.name && c.status === "입원완료") admitted.add(normName(c.name));
+    });
     const set = new Set();
     Object.values(consultations).forEach(c => {
       if (!c?.name) return;
-      if (c.patientId) return;                              // patientId 있으면 재입원 → 제외
+      const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !admitted.has(normName(c.name));
+      if (!isNew) return;
       if (c.status === "취소" || c.status === "입원완료") return;
       set.add(normName(c.name));
     });

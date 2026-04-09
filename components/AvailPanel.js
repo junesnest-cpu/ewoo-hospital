@@ -113,6 +113,10 @@ export default function AvailPanel({ onClose }) {
           else if (rEnd)          overlaps = rEnd >= admitD;
           else                    overlaps = !dischargeD || dateOnly(rA) <= dischargeD;
           if (!overlaps) return;
+          // 이 예약을 제거했을 때 실제로 병상이 비는지 검증
+          const simSlots = JSON.parse(JSON.stringify(slotsData));
+          simSlots[slotKey].reservations = (simSlots[slotKey].reservations || []).filter((_, i) => i !== resIdx);
+          if (!slotFreeForPeriod(simSlots, slotKey, admitD, dischargeD)) return;
           const alts = findAltSlots(slotsData, slotKey, room.type, dateOnly(rA), rEnd);
           if (alts.length === 0) return;
           const scoredAlts = alts

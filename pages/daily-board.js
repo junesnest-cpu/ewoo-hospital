@@ -170,10 +170,16 @@ export default function DailyBoard() {
       });
     });
 
+    // 입원완료 이력 있는 환자 이름 집합
+    const admittedNames = new Set();
+    Object.values(consultations).forEach(c => {
+      if (c?.name && c.status === "입원완료") admittedNames.add(normName(c.name));
+    });
     // consultations → 신환 병합
     Object.values(consultations).forEach(c => {
       if (!c?.name || !c.admitDate) return;
-      if (c.patientId) return;
+      const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !admittedNames.has(normName(c.name));
+      if (!cIsNew) return;
       if (c.status === "취소" || c.status === "입원완료") return;
       if (c.admitDate !== date) return;
       const nc = normName(c.name);
@@ -247,13 +253,14 @@ export default function DailyBoard() {
       const curDis = parseMD(cur.discharge, dateYear);
       if (!curDis) return;
       (slot?.reservations||[]).forEach(r => {
-        if (!r?.name) return;
+        if (!r?.name || !r?.preserveSeat) return;   // preserveSeat 플래그 필수
         const readmit = parseMD(r.admitDate, dateYear);
         if (!readmit) return;
         const diffDays = (new Date(readmit)-new Date(curDis))/(1000*60*60*24);
-        if (diffDays<0||diffDays>7) return;
+        if (diffDays<=0||diffDays>7) return;         // 퇴원→입원 간격 1~7일만
         const today = new Date(date);
-        if (today<new Date(curDis)||today>new Date(readmit)) return;
+        // 자리보존 기간: 퇴원 다음날 ~ 입원 전날 (퇴원일·입원일 당일은 제외)
+        if (today<=new Date(curDis)||today>=new Date(readmit)) return;
         const n = normName(r.name); if (seen.has(n)) return; seen.add(n);
         list.push({ id:uid(), name:r.name, room:sk, dischargeDate:cur.discharge||"", readmitDate:r.admitDate||"" });
       });

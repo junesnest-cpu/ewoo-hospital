@@ -104,13 +104,18 @@ export default function TherapyPage() {
     return ()=>{ u0();u1();u2();u3();u4();u5();u6(); };
   },[]);
 
-  // 신환 이름 집합 (patientId 없는 consultations, 취소/입원완료 제외)
+  // 신환 이름 집합 (입원완료 이력 없는 상담 환자 = 신환)
   const newPatientNames = useMemo(() => {
     const normN = n => (n||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+    const admitted = new Set();
+    Object.values(consultations).forEach(c => {
+      if (c?.name && c.status === "입원완료") admitted.add(normN(c.name));
+    });
     const s = new Set();
     Object.values(consultations).forEach(c => {
       if (!c?.name) return;
-      if (c.patientId) return;
+      const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !admitted.has(normN(c.name));
+      if (!isNew) return;
       if (c.status === "취소" || c.status === "입원완료") return;
       s.add(normN(c.name));
     });
