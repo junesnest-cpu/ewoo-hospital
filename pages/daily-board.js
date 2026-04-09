@@ -152,13 +152,17 @@ export default function DailyBoard() {
     return map;
   }, [slots, patients]);
 
-  // ── 퇴원 환자의 재입원 예정일 매핑 (이름→재입원 날짜) ──
+  // ── 퇴원 환자의 재입원 예정일 매핑 (이름→재입원 날짜, 해당일 이후만) ──
   const readmitInfo = useMemo(() => {
     const map = {};
-    // 모든 슬롯의 예약에서 재입원 날짜 수집
+    const today = new Date(date);
+    today.setHours(0,0,0,0);
+    // 모든 슬롯의 예약에서 미래 재입원 날짜 수집
     Object.values(slots).forEach(slot => {
       (slot?.reservations || []).forEach(r => {
         if (!r?.name || !r.admitDate || r.admitDate === "미정") return;
+        const rd = parseMD(r.admitDate, dateYear);
+        if (!rd || new Date(rd) <= today) return;  // 해당일 이후만
         const n = normName(r.name);
         if (!map[n]) map[n] = r.admitDate;
       });
@@ -167,14 +171,13 @@ export default function DailyBoard() {
     Object.values(consultations).forEach(c => {
       if (!c?.name || !c.admitDate) return;
       if (c.status === "취소") return;
+      const cd = new Date(c.admitDate);
+      if (isNaN(cd) || cd <= today) return;  // 해당일 이후만
       const n = normName(c.name);
-      if (!map[n]) {
-        const d = new Date(c.admitDate);
-        if (!isNaN(d)) map[n] = `${d.getMonth()+1}/${d.getDate()}`;
-      }
+      if (!map[n]) map[n] = `${cd.getMonth()+1}/${cd.getDate()}`;
     });
     return map;
-  }, [slots, consultations]);
+  }, [slots, consultations, date, dateYear]);
 
   // ── slots 기반 calendarData (월간보드와 동일 로직) ──
   const calendarData = useMemo(() => {
@@ -193,14 +196,14 @@ export default function DailyBoard() {
         const aKey = parseMD(cur.admitDate, year);
         const dKey = parseMD(cur.discharge, year);
         if (aKey === date) adm.push({ id:uid(), name:cur.name, room:sk, note:cur.note||"", isNew:false, isReserved:false });
-        if (dKey === date) dis.push({ id:uid(), name:cur.name, room:sk, note:cur.discharge||"" });
+        if (dKey === date) dis.push({ id:uid(), name:cur.name, room:sk, note:"" });
       }
       (slot?.reservations||[]).forEach(r => {
         if (!r?.name) return;
         const aKey = parseMD(r.admitDate, year);
         const dKey = parseMD(r.discharge, year);
         if (aKey === date) adm.push({ id:uid(), name:r.name, room:sk, note:r.note||"", isNew:false, isReserved:true });
-        if (dKey === date) dis.push({ id:uid(), name:r.name, room:sk, note:r.discharge||"" });
+        if (dKey === date) dis.push({ id:uid(), name:r.name, room:sk, note:"" });
       });
     });
 
