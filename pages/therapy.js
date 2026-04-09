@@ -359,14 +359,15 @@ export default function TherapyPage() {
     return acc;
   },{});
 
-  // 환자 이름 → 예약 병실 매핑 (현재 미입원 환자의 예약 병실 조회용)
+  // 환자 이름 → 예약 병실 매핑 (슬롯키 + 입원일)
   const reservationByName=useMemo(()=>{
     const map={};
     Object.entries(slots).forEach(([sk,slot])=>{
       (slot?.reservations||[]).forEach(r=>{
-        if(!r?.name) return;
+        if(!r?.name||!r.admitDate||r.admitDate==="미정") return;
         const n=(r.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
-        if(!map[n]) map[n]=sk;  // 첫 번째 예약의 슬롯 사용
+        const m=r.admitDate.match(/(\d{1,2})\/(\d{1,2})/);
+        if(m&&!map[n]) map[n]={slotKey:sk,month:parseInt(m[1]),day:parseInt(m[2])};
       });
     });
     return map;
@@ -383,11 +384,15 @@ export default function TherapyPage() {
       else { roomId=""; bedNum=""; }
     }
 
-    // 현재 병실이 없으면 예약 병실 조회 (날짜 무관 — 예약이 있으면 해당 병실 표시)
-    if(!roomId && cell?.patientName){
+    // 현재 병실이 없으면 예약 병실 조회 (셀 날짜 ≥ 예약 입원일인 경우만)
+    if(!roomId && cell?.patientName && dayIdx!==undefined){
       const n=(cell.patientName||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
-      const resSk=reservationByName[n];
-      if(resSk){ const [r,b]=resSk.split("-"); roomId=r||""; bedNum=b||""; }
+      const res=reservationByName[n];
+      if(res){
+        const cellDate=addDays(weekStart,dayIdx);
+        const resDate=new Date(cellDate.getFullYear(),res.month-1,res.day);
+        if(cellDate>=resDate){ const [r,b]=res.slotKey.split("-"); roomId=r||""; bedNum=b||""; }
+      }
     }
     return {roomId,bedNum};
   };
