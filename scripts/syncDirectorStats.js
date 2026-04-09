@@ -127,7 +127,7 @@ async function main() {
         ) d
         CROSS JOIN SILVER_PATIENT_INFO p
         WHERE p.INDAT <= d.dt
-          AND (p.OUTDAT >= d.dt OR p.OUTDAT IS NULL OR p.OUTDAT = '')
+          AND (p.OUTDAT > d.dt OR p.OUTDAT IS NULL OR p.OUTDAT = '')
           AND p.INSUCLS NOT IN ('50','100')
           AND d.dt >= '${yearStart}' AND d.dt < '${yearEnd}'
       ) sub
@@ -165,7 +165,7 @@ async function main() {
         ) d
         LEFT JOIN SILVER_PATIENT_INFO p
           ON p.INDAT <= d.dt
-          AND (p.OUTDAT >= d.dt OR p.OUTDAT IS NULL OR p.OUTDAT = '')
+          AND (p.OUTDAT > d.dt OR p.OUTDAT IS NULL OR p.OUTDAT = '')
           AND p.INSUCLS NOT IN ('50','100')
         GROUP BY d.dt ORDER BY d.dt
       `);
