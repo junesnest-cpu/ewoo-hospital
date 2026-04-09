@@ -198,9 +198,14 @@ export default function ConsultationPage() {
     for (const [id, p] of Object.entries(patients)) {
       if (p.name && normPhone(p.phone) === norm) {
         const by = p.birthDate ? p.birthDate.slice(0,4) : (p.birthYear||"");
-        return { name: p.name, info: [by ? `${by}년생` : "", p.diagnosis].filter(Boolean).join(" · "),
-          fill: { name:p.name, phone:phone, birthYear:by, age:by?calcAge(by):"", diagnosis:p.diagnosis||"",
-                  patientId:p.internalId||id, isNewPatient:false } };
+        const diag = p.diagnosis || p.diagName || "";
+        // 이전 상담에서 hospital 등 가져오기
+        const prevC = Object.values(allConsultations).find(c =>
+          c?.name === p.name || (p.internalId && c?.patientId === p.internalId)
+        );
+        return { name: p.name, info: [by ? `${by}년생` : "", diag].filter(Boolean).join(" · "),
+          fill: { name:p.name, phone:phone, birthYear:by, age:by?calcAge(by):"", diagnosis:diag,
+                  hospital:prevC?.hospital||"", patientId:p.internalId||id, isNewPatient:false } };
       }
     }
     // 전체 상담 검색
@@ -226,13 +231,26 @@ export default function ConsultationPage() {
 
   function fillFromPatient(p) {
     const by = p.birthDate ? p.birthDate.slice(0,4) : (p.birthYear||"");
+    // EMR diagName을 diagnosis로 사용
+    const diag = p.diagnosis || p.diagName || "";
+    // 이전 상담 기록에서 hospital, surgery, chemo, radiation 등 가져오기
+    const prevConsult = Object.values(allConsultations).find(c =>
+      c?.name === p.name || (p.internalId && c?.patientId === p.internalId)
+    );
     setForm(f => ({
       ...f,
       name:       p.name       || f.name,
       phone:      p.phone ? p.phone.replace(/(\d{3})(\d{4})(\d{4})/,"$1-$2-$3") : f.phone,
       birthYear:  by || f.birthYear,
       age:        by ? calcAge(by) : f.age,
-      diagnosis:  p.diagnosis  || f.diagnosis,
+      diagnosis:  diag         || f.diagnosis,
+      hospital:   prevConsult?.hospital || f.hospital,
+      surgery:    prevConsult?.surgery  ?? f.surgery,
+      surgeryDate: prevConsult?.surgeryDate || f.surgeryDate,
+      chemo:      prevConsult?.chemo    ?? f.chemo,
+      chemoDate:  prevConsult?.chemoDate || f.chemoDate,
+      radiation:  prevConsult?.radiation ?? f.radiation,
+      radiationDate: prevConsult?.radiationDate || f.radiationDate,
       patientId:  p.internalId || p.id || f.patientId,
       isNewPatient: false,
     }));
