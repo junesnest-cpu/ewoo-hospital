@@ -384,69 +384,63 @@ function DirectorDashboard({ profile }) {
           )}
           {revenue && !loading.rev && !monthlyData.every(r=>r.grandTotal===0) && (
             <div style={{overflowX:"auto"}}>
-              <table style={S.table}>
+              <table style={{...S.table,fontSize:12}}>
                 <thead><tr>
-                  <th style={S.th}>월</th>
-                  <th style={S.th}>총 진료비</th>
-                  <th style={S.th}>입원</th>
-                  <th style={S.th}>외래</th>
-                  <th style={S.th}>공단수입</th>
-                  <th style={S.th}>입원일수</th>
-                  <th style={S.th}>상담</th>
-                  <th style={S.th}>예약</th>
-                  <th style={S.th}>신규입원</th>
+                  <th style={S.th} rowSpan={2}>월</th>
+                  <th style={S.th} colSpan={2}>총 진료비</th>
+                  <th style={S.th} colSpan={2}>입원</th>
+                  <th style={S.th} colSpan={2}>외래</th>
+                  <th style={S.th} colSpan={2}>공단수입</th>
+                  <th style={S.th} colSpan={2}>입원일수</th>
+                  <th style={S.th} colSpan={2}>상담</th>
+                  <th style={S.th} colSpan={2}>예약</th>
+                  <th style={S.th} colSpan={2}>신규입원</th>
+                </tr><tr>
+                  {Array(8).fill(0).map((_,i)=><>
+                    <th key={`a${i}`} style={{...S.th,fontSize:10,padding:"3px 6px",background:"#1e3a5f"}}>금액</th>
+                    <th key={`b${i}`} style={{...S.th,fontSize:10,padding:"3px 6px",background:"#1e3a5f"}}>증감</th>
+                  </>)}
                 </tr></thead>
                 <tbody>
                   <tr style={{...S.totRow,borderBottom:"2px solid #0f2744"}}>
-                    <td style={{...S.tdL,fontSize:14}}>합계</td>
-                    <td style={{...S.td,fontWeight:800,color:"#dc2626",fontSize:14}}>{fmtAmt(yearTotals.grandTotal)}</td>
-                    <td style={{...S.td,fontWeight:800,color:"#0369a1"}}>{fmtAmt(yearTotals.inTotal)}</td>
-                    <td style={{...S.td,fontWeight:800,color:"#7c3aed"}}>{fmtAmt(yearTotals.outTotal)}</td>
-                    <td style={{...S.td,fontWeight:800,color:"#059669"}}>{fmtAmt(yearTotals.gongdan)}</td>
-                    <td style={{...S.td,textAlign:"center",fontWeight:800}}>{yearTotals.bedDays.toLocaleString()}</td>
-                    <td style={{...S.td,textAlign:"center",fontWeight:800}}>{Object.values(consultStats).reduce((s,v)=>s+v.consult,0)}</td>
-                    <td style={{...S.td,textAlign:"center",fontWeight:800}}>{Object.values(consultStats).reduce((s,v)=>s+v.reserved,0)}</td>
-                    <td style={{...S.td,textAlign:"center",fontWeight:800}}>{Object.values(consultStats).reduce((s,v)=>s+v.newAdmit,0)}</td>
+                    <td style={{...S.tdL,fontSize:13}}>합계</td>
+                    <td style={{...S.td,fontWeight:800,color:"#dc2626"}}>{fmtAmt(yearTotals.grandTotal)}</td><td style={S.td}></td>
+                    <td style={{...S.td,fontWeight:800,color:"#0369a1"}}>{fmtAmt(yearTotals.inTotal)}</td><td style={S.td}></td>
+                    <td style={{...S.td,fontWeight:800,color:"#7c3aed"}}>{fmtAmt(yearTotals.outTotal)}</td><td style={S.td}></td>
+                    <td style={{...S.td,fontWeight:800,color:"#059669"}}>{fmtAmt(yearTotals.gongdan)}</td><td style={S.td}></td>
+                    <td style={{...S.td,fontWeight:800}}>{yearTotals.bedDays.toLocaleString()}</td><td style={S.td}></td>
+                    <td style={{...S.td,fontWeight:800}}>{Object.values(consultStats).reduce((s,v)=>s+v.consult,0)}</td><td style={S.td}></td>
+                    <td style={{...S.td,fontWeight:800}}>{Object.values(consultStats).reduce((s,v)=>s+v.reserved,0)}</td><td style={S.td}></td>
+                    <td style={{...S.td,fontWeight:800}}>{Object.values(consultStats).reduce((s,v)=>s+v.newAdmit,0)}</td><td style={S.td}></td>
                   </tr>
                   {monthlyData.map(r=>{
                     const empty=r.inTotal===0&&r.outTotal===0;
                     const cs=consultStats[r.month]||{consult:0,reserved:0,newAdmit:0};
                     const pcs=prevYearConsultStats[r.month]||{consult:0,reserved:0,newAdmit:0};
                     const isFuture=year===thisYear&&r.month>thisMonth;
+                    const yoyTd = (cur,prev) => {
+                      const p = yoyPct(cur,prev);
+                      const s = yoyStyle(cur,prev);
+                      return <td style={{...S.td,...s,fontSize:11}}>{p||""}</td>;
+                    };
                     return(<tr key={r.month} style={{opacity:isFuture?0.3:1}}>
                       <td style={S.tdL}>{r.month}월</td>
-                      <td style={{...S.td,fontWeight:800,color:"#dc2626"}}>
-                        {empty?"-":fmtAmt(r.grandTotal)}
-                        {!empty&&r.prevGrand>0&&<span style={yoyStyle(r.grandTotal,r.prevGrand)}>({yoyPct(r.grandTotal,r.prevGrand)})</span>}
-                      </td>
-                      <td style={{...S.td,color:"#0369a1",fontWeight:600}}>
-                        {empty?"-":fmtAmt(r.inTotal)}
-                        {!empty&&r.prevIn>0&&<span style={yoyStyle(r.inTotal,r.prevIn)}>({yoyPct(r.inTotal,r.prevIn)})</span>}
-                      </td>
-                      <td style={{...S.td,color:"#7c3aed",fontWeight:600}}>
-                        {empty?"-":fmtAmt(r.outTotal)}
-                        {!empty&&r.prevOut>0&&<span style={yoyStyle(r.outTotal,r.prevOut)}>({yoyPct(r.outTotal,r.prevOut)})</span>}
-                      </td>
-                      <td style={{...S.td,color:"#059669",fontWeight:600}}>
-                        {empty||!r.gongdan?"-":fmtAmt(r.gongdan)}
-                        {r.gongdan>0&&r.prevGongdan>0&&<span style={yoyStyle(r.gongdan,r.prevGongdan)}>({yoyPct(r.gongdan,r.prevGongdan)})</span>}
-                      </td>
-                      <td style={{...S.td,textAlign:"center",color:"#64748b"}}>
-                        {r.bedDays||"-"}
-                        {r.bedDays>0&&r.prevBedDays>0&&<span style={yoyStyle(r.bedDays,r.prevBedDays)}>({yoyPct(r.bedDays,r.prevBedDays)})</span>}
-                      </td>
-                      <td style={{...S.td,textAlign:"center",color:"#059669",fontWeight:600}}>
-                        {cs.consult||"-"}
-                        {cs.consult>0&&pcs.consult>0&&<span style={yoyStyle(cs.consult,pcs.consult)}>({yoyPct(cs.consult,pcs.consult)})</span>}
-                      </td>
-                      <td style={{...S.td,textAlign:"center",color:"#0ea5e9",fontWeight:600}}>
-                        {cs.reserved||"-"}
-                        {cs.reserved>0&&pcs.reserved>0&&<span style={yoyStyle(cs.reserved,pcs.reserved)}>({yoyPct(cs.reserved,pcs.reserved)})</span>}
-                      </td>
-                      <td style={{...S.td,textAlign:"center",color:"#d97706",fontWeight:600}}>
-                        {cs.newAdmit||"-"}
-                        {cs.newAdmit>0&&pcs.newAdmit>0&&<span style={yoyStyle(cs.newAdmit,pcs.newAdmit)}>({yoyPct(cs.newAdmit,pcs.newAdmit)})</span>}
-                      </td>
+                      <td style={{...S.td,fontWeight:800,color:"#dc2626"}}>{empty?"-":fmtAmt(r.grandTotal)}</td>
+                      {yoyTd(r.grandTotal,r.prevGrand)}
+                      <td style={{...S.td,color:"#0369a1",fontWeight:600}}>{empty?"-":fmtAmt(r.inTotal)}</td>
+                      {yoyTd(r.inTotal,r.prevIn)}
+                      <td style={{...S.td,color:"#7c3aed",fontWeight:600}}>{empty?"-":fmtAmt(r.outTotal)}</td>
+                      {yoyTd(r.outTotal,r.prevOut)}
+                      <td style={{...S.td,color:"#059669",fontWeight:600}}>{empty||!r.gongdan?"-":fmtAmt(r.gongdan)}</td>
+                      {yoyTd(r.gongdan,r.prevGongdan)}
+                      <td style={{...S.td,color:"#64748b"}}>{r.bedDays||"-"}</td>
+                      {yoyTd(r.bedDays,r.prevBedDays)}
+                      <td style={{...S.td,color:"#059669",fontWeight:600}}>{cs.consult||"-"}</td>
+                      {yoyTd(cs.consult,pcs.consult)}
+                      <td style={{...S.td,color:"#0ea5e9",fontWeight:600}}>{cs.reserved||"-"}</td>
+                      {yoyTd(cs.reserved,pcs.reserved)}
+                      <td style={{...S.td,color:"#d97706",fontWeight:600}}>{cs.newAdmit||"-"}</td>
+                      {yoyTd(cs.newAdmit,pcs.newAdmit)}
                     </tr>);
                   })}
                 </tbody>
