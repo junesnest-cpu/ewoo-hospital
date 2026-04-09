@@ -2781,11 +2781,16 @@ function DirectorStatsPanel() {
     const map = {};
     for (let m = 1; m <= 12; m++) {
       const ym = `${year}${String(m).padStart(2, '0')}`;
-      map[ym] = { month: m, inTotal: 0, outTotal: 0, bedDays: 0, grandTotal: 0 };
+      map[ym] = { month: m, inTotal: 0, outTotal: 0, bedDays: 0, grandTotal: 0, gongdan: 0, bonbu: 0, bigub: 0 };
     }
     const inp = revenue.inpatient || {};
     Object.entries(inp).forEach(([ym, r]) => {
-      if (map[ym]) map[ym].inTotal = r.total || 0;
+      if (map[ym]) {
+        map[ym].inTotal = r.total || 0;
+        map[ym].gongdan = r.gongdan || 0;
+        map[ym].bonbu = r.bonbu || 0;
+        map[ym].bigub = r.bigub || 0;
+      }
     });
     const outp = revenue.outpatient || {};
     Object.entries(outp).forEach(([ym, r]) => {
@@ -2799,10 +2804,13 @@ function DirectorStatsPanel() {
     return Object.values(map).sort((a, b) => a.month - b.month);
   })();
 
+  const hasDetail = monthlyData.some(r => r.gongdan > 0 || r.bonbu > 0);
+
   const yearTotals = monthlyData.reduce((t, r) => ({
     inTotal: t.inTotal + r.inTotal, outTotal: t.outTotal + r.outTotal,
     bedDays: t.bedDays + r.bedDays, grandTotal: t.grandTotal + r.grandTotal,
-  }), { inTotal: 0, outTotal: 0, bedDays: 0, grandTotal: 0 });
+    gongdan: t.gongdan + r.gongdan, bonbu: t.bonbu + r.bonbu, bigub: t.bigub + r.bigub,
+  }), { inTotal: 0, outTotal: 0, bedDays: 0, grandTotal: 0, gongdan: 0, bonbu: 0, bigub: 0 });
 
   // 가동률: 오늘까지 실데이터 + 나머지는 마지막 실데이터 기준 예상
   const occData = (() => {
@@ -2879,6 +2887,8 @@ function DirectorStatsPanel() {
                   <th style={DS.th}>입원</th>
                   {hasOutpatient && <th style={DS.th}>외래</th>}
                   {hasBedDays && <th style={DS.th}>입원일수</th>}
+                  {hasDetail && <th style={DS.th}>공단수입</th>}
+                  {hasDetail && <th style={DS.th}>본부금</th>}
                   <th style={DS.th}>총 진료비</th>
                 </tr>
               </thead>
@@ -2892,6 +2902,8 @@ function DirectorStatsPanel() {
                       <td style={{ ...DS.td, color:"#0369a1", fontWeight:600 }}>{isEmpty ? '-' : fmtAmt(r.inTotal)}</td>
                       {hasOutpatient && <td style={{ ...DS.td, color:"#7c3aed", fontWeight:600 }}>{isEmpty ? '-' : fmtAmt(r.outTotal)}</td>}
                       {hasBedDays && <td style={{ ...DS.td, textAlign:"center", color:"#64748b" }}>{r.bedDays || '-'}</td>}
+                      {hasDetail && <td style={{ ...DS.td, color:"#059669" }}>{isEmpty ? '-' : fmtAmt(r.gongdan)}</td>}
+                      {hasDetail && <td style={{ ...DS.td, color:"#d97706" }}>{isEmpty ? '-' : fmtAmt(r.bonbu)}</td>}
                       <td style={{ ...DS.td, fontWeight:800, color:"#dc2626" }}>{isEmpty ? '-' : fmtAmt(r.grandTotal)}</td>
                     </tr>
                   );
@@ -2901,6 +2913,8 @@ function DirectorStatsPanel() {
                   <td style={{ ...DS.td, fontWeight:800, color:"#0369a1", fontSize:14 }}>{fmtMan(yearTotals.inTotal)}</td>
                   {hasOutpatient && <td style={{ ...DS.td, fontWeight:800, color:"#7c3aed", fontSize:14 }}>{fmtMan(yearTotals.outTotal)}</td>}
                   {hasBedDays && <td style={{ ...DS.td, textAlign:"center", fontWeight:800 }}>{yearTotals.bedDays.toLocaleString()}</td>}
+                  {hasDetail && <td style={{ ...DS.td, fontWeight:800, color:"#059669" }}>{fmtMan(yearTotals.gongdan)}</td>}
+                  {hasDetail && <td style={{ ...DS.td, fontWeight:800, color:"#d97706" }}>{fmtMan(yearTotals.bonbu)}</td>}
                   <td style={{ ...DS.td, fontWeight:800, color:"#dc2626", fontSize:14 }}>{fmtMan(yearTotals.grandTotal)}</td>
                 </tr>
               </tbody>
