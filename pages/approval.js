@@ -2164,7 +2164,10 @@ export default function ApprovalPage() {
     },
     ...(isDirector ? [{
       label: "관리",
-      items: [{ key:"all", label:"전체 진행중", badge: allPendingDocs.length, badgeColor:"#f59e0b" }],
+      items: [
+        { key:"all", label:"전체 진행중", badge: allPendingDocs.length, badgeColor:"#f59e0b" },
+        { key:"director_stats", label:"경영현황" },
+      ],
     }] : []),
   ];
 
@@ -2691,6 +2694,11 @@ export default function ApprovalPage() {
         </div>
         )}
         </>)}
+
+        {/* ── 경영현황 (병원장 전용) ── */}
+        {activeTab === "director_stats" && isDirector && (
+          <DirectorStatsPanel />
+        )}
         </main>
       </div>
 
@@ -2709,6 +2717,249 @@ export default function ApprovalPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── 경영현황 패널 (병원장 전용) ─────────────────────────────────────────────
+function DirectorStatsPanel() {
+  const thisYear = new Date().getFullYear();
+  const thisMonth = new Date().getMonth() + 1;
+  const [year, setYear] = useState(thisYear);
+  const [occMonth, setOccMonth] = useState(thisMonth);
+  const [revenue, setRevenue] = useState(null);
+  const [occupancy, setOccupancy] = useState(null);
+  const [loading, setLoading] = useState({ rev: false, occ: false });
+  const [error, setError] = useState({});
+
+  const fetchRevenue = async () => {
+    setLoading(p => ({ ...p, rev: true }));
+    setError(p => ({ ...p, rev: null }));
+    try {
+      const r = await fetch('/api/director-stats', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'revenue', year }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setRevenue(await r.json());
+    } catch (e) { setError(p => ({ ...p, rev: e.message })); }
+    setLoading(p => ({ ...p, rev: false }));
+  };
+
+  const fetchOccupancy = async () => {
+    setLoading(p => ({ ...p, occ: true }));
+    setError(p => ({ ...p, occ: null }));
+    try {
+      const r = await fetch('/api/director-stats', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'occupancy', year, month: occMonth }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setOccupancy(await r.json());
+    } catch (e) { setError(p => ({ ...p, occ: e.message })); }
+    setLoading(p => ({ ...p, occ: false }));
+  };
+
+  useEffect(() => { fetchRevenue(); }, [year]);
+  useEffect(() => { fetchOccupancy(); }, [year, occMonth]);
+
+  const fmtAmt = (n) => n != null ? Math.round(n).toLocaleString() : '-';
+  const fmtMan = (n) => n != null ? `${Math.round(n / 10000).toLocaleString()}만` : '-';
+
+  // 월별 합산 데이터 생성
+  const monthlyData = (() => {
+    if (!revenue) return [];
+    const map = {};
+    for (let m = 1; m <= 12; m++) {
+      const ym = `${year}${String(m).padStart(2, '0')}`;
+      map[ym] = { month: m, inCovered: 0, inNonCovered: 0, inTotal: 0, outCovered: 0, outNonCovered: 0, outTotal: 0, grandTotal: 0 };
+    }
+    (revenue.inpatient || []).forEach(r => {
+      if (map[r.ym]) { map[r.ym].inCovered = r.covered; map[r.ym].inNonCovered = r.nonCovered; map[r.ym].inTotal = r.total; }
+    });
+    (revenue.outpatient || []).forEach(r => {
+      if (map[r.ym]) { map[r.ym].outCovered = r.covered; map[r.ym].outNonCovered = r.nonCovered; map[r.ym].outTotal = r.total; }
+    });
+    Object.values(map).forEach(r => { r.grandTotal = r.inTotal + r.outTotal; });
+    return Object.values(map).sort((a, b) => a.month - b.month);
+  })();
+
+  const yearTotals = monthlyData.reduce((t, r) => ({
+    inCovered: t.inCovered + r.inCovered, inNonCovered: t.inNonCovered + r.inNonCovered, inTotal: t.inTotal + r.inTotal,
+    outCovered: t.outCovered + r.outCovered, outNonCovered: t.outNonCovered + r.outNonCovered, outTotal: t.outTotal + r.outTotal,
+    grandTotal: t.grandTotal + r.grandTotal,
+  }), { inCovered: 0, inNonCovered: 0, inTotal: 0, outCovered: 0, outNonCovered: 0, outTotal: 0, grandTotal: 0 });
+
+  const DS = {
+    card: { background:"#fff", borderRadius:14, padding:"20px 24px", boxShadow:"0 1px 6px rgba(0,0,0,0.06)", marginBottom:20 },
+    sectionTitle: { fontSize:17, fontWeight:800, color:"#0f2744", marginBottom:14, display:"flex", alignItems:"center", gap:10 },
+    table: { width:"100%", borderCollapse:"collapse", fontSize:13 },
+    th: { background:"#0f2744", color:"#fff", padding:"9px 10px", fontWeight:700, textAlign:"center", whiteSpace:"nowrap", borderBottom:"2px solid #0f2744" },
+    thSub: { background:"#1e3a5f", color:"#e2e8f0", padding:"7px 10px", fontWeight:600, textAlign:"center", fontSize:12, whiteSpace:"nowrap" },
+    td: { padding:"8px 10px", borderBottom:"1px solid #f1f5f9", textAlign:"right", fontVariantNumeric:"tabular-nums" },
+    tdLabel: { padding:"8px 10px", borderBottom:"1px solid #f1f5f9", textAlign:"center", fontWeight:700, color:"#374151" },
+    totalRow: { background:"#f8fafc", fontWeight:800 },
+    nav: { display:"flex", alignItems:"center", gap:8, marginLeft:"auto" },
+    btnNav: { background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:7, padding:"5px 14px", cursor:"pointer", fontSize:14, fontWeight:700 },
+    select: { border:"1px solid #e2e8f0", borderRadius:7, padding:"5px 10px", fontSize:14, fontWeight:700, outline:"none" },
+    barBg: { height:22, background:"#f1f5f9", borderRadius:4, overflow:"hidden", flex:1 },
+    barFill: (pct) => ({ height:"100%", background: pct>=90?"#16a34a":pct>=70?"#0ea5e9":pct>=50?"#f59e0b":"#ef4444", width:`${Math.min(pct,100)}%`, borderRadius:4, transition:"width 0.3s" }),
+  };
+
+  return (
+    <div>
+      {/* ── 매출 현황 ── */}
+      <div style={DS.card}>
+        <div style={DS.sectionTitle}>
+          <span>📊 월별 매출 현황</span>
+          <div style={DS.nav}>
+            <button style={DS.btnNav} onClick={() => setYear(y => y - 1)}>‹</button>
+            <span style={{ fontSize:16, fontWeight:800, minWidth:60, textAlign:"center" }}>{year}년</span>
+            <button style={DS.btnNav} onClick={() => setYear(y => y + 1)}>›</button>
+          </div>
+        </div>
+
+        {loading.rev && <div style={{ color:"#64748b", padding:20, textAlign:"center" }}>매출 데이터 조회 중...</div>}
+        {error.rev && <div style={{ color:"#dc2626", padding:12, background:"#fee2e2", borderRadius:8, fontSize:13, marginBottom:12 }}>⚠️ {error.rev}</div>}
+
+        {revenue && !loading.rev && (
+          <div style={{ overflowX:"auto" }}>
+            <table style={DS.table}>
+              <thead>
+                <tr>
+                  <th style={DS.th} rowSpan={2}>월</th>
+                  <th style={DS.th} colSpan={3}>입원 매출</th>
+                  {(revenue.outpatient || []).length > 0 && <th style={DS.th} colSpan={3}>외래 매출</th>}
+                  <th style={DS.th} rowSpan={2}>합계</th>
+                </tr>
+                <tr>
+                  <th style={DS.thSub}>급여</th>
+                  <th style={DS.thSub}>비급여</th>
+                  <th style={DS.thSub}>소계</th>
+                  {(revenue.outpatient || []).length > 0 && <>
+                    <th style={DS.thSub}>급여</th>
+                    <th style={DS.thSub}>비급여</th>
+                    <th style={DS.thSub}>소계</th>
+                  </>}
+                </tr>
+              </thead>
+              <tbody>
+                {monthlyData.map(r => {
+                  const isFuture = year === thisYear && r.month > thisMonth;
+                  const isEmpty = r.inTotal === 0 && r.outTotal === 0;
+                  return (
+                    <tr key={r.month} style={{ opacity: isFuture ? 0.3 : 1 }}>
+                      <td style={DS.tdLabel}>{r.month}월</td>
+                      <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.inCovered)}</td>
+                      <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.inNonCovered)}</td>
+                      <td style={{ ...DS.td, fontWeight:700, color:"#0369a1" }}>{isEmpty ? '-' : fmtAmt(r.inTotal)}</td>
+                      {(revenue.outpatient || []).length > 0 && <>
+                        <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.outCovered)}</td>
+                        <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.outNonCovered)}</td>
+                        <td style={{ ...DS.td, fontWeight:700, color:"#7c3aed" }}>{isEmpty ? '-' : fmtAmt(r.outTotal)}</td>
+                      </>}
+                      <td style={{ ...DS.td, fontWeight:800, color:"#dc2626" }}>{isEmpty ? '-' : fmtAmt(r.grandTotal)}</td>
+                    </tr>
+                  );
+                })}
+                <tr style={DS.totalRow}>
+                  <td style={{ ...DS.tdLabel, fontSize:14 }}>합계</td>
+                  <td style={DS.td}>{fmtMan(yearTotals.inCovered)}</td>
+                  <td style={DS.td}>{fmtMan(yearTotals.inNonCovered)}</td>
+                  <td style={{ ...DS.td, fontWeight:800, color:"#0369a1", fontSize:14 }}>{fmtMan(yearTotals.inTotal)}</td>
+                  {(revenue.outpatient || []).length > 0 && <>
+                    <td style={DS.td}>{fmtMan(yearTotals.outCovered)}</td>
+                    <td style={DS.td}>{fmtMan(yearTotals.outNonCovered)}</td>
+                    <td style={{ ...DS.td, fontWeight:800, color:"#7c3aed", fontSize:14 }}>{fmtMan(yearTotals.outTotal)}</td>
+                  </>}
+                  <td style={{ ...DS.td, fontWeight:800, color:"#dc2626", fontSize:14 }}>{fmtMan(yearTotals.grandTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── 병상 가동률 ── */}
+      <div style={DS.card}>
+        <div style={DS.sectionTitle}>
+          <span>🛏️ 일자별 병상 가동률</span>
+          <div style={DS.nav}>
+            <select style={DS.select} value={occMonth} onChange={e => setOccMonth(parseInt(e.target.value))}>
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>{i + 1}월</option>
+              ))}
+            </select>
+            <span style={{ fontSize:12, color:"#64748b" }}>총 {TOTAL_BEDS}병상</span>
+          </div>
+        </div>
+
+        {loading.occ && <div style={{ color:"#64748b", padding:20, textAlign:"center" }}>가동률 데이터 조회 중...</div>}
+        {error.occ && <div style={{ color:"#dc2626", padding:12, background:"#fee2e2", borderRadius:8, fontSize:13, marginBottom:12 }}>⚠️ {error.occ}</div>}
+
+        {occupancy && !loading.occ && occupancy.daily && occupancy.daily.length > 0 && (
+          <div style={{ overflowX:"auto" }}>
+            <table style={DS.table}>
+              <thead>
+                <tr>
+                  <th style={{ ...DS.th, width:70 }}>날짜</th>
+                  <th style={{ ...DS.th, width:70 }}>재원</th>
+                  <th style={{ ...DS.th, width:70 }}>가동률</th>
+                  <th style={DS.th}>시각화</th>
+                </tr>
+              </thead>
+              <tbody>
+                {occupancy.daily.map(d => {
+                  const day = parseInt(d.date.slice(6));
+                  const dow = new Date(year, occMonth - 1, day).getDay();
+                  const isSun = dow === 0;
+                  const isSat = dow === 6;
+                  return (
+                    <tr key={d.date} style={{ background: isSun ? "#fff5f5" : isSat ? "#f0f0ff" : undefined }}>
+                      <td style={{ ...DS.tdLabel, color: isSun ? "#dc2626" : isSat ? "#2563eb" : "#374151" }}>
+                        {occMonth}/{day}
+                      </td>
+                      <td style={{ ...DS.td, textAlign:"center" }}>{d.occupied}/{d.total}</td>
+                      <td style={{ ...DS.td, textAlign:"center", fontWeight:700,
+                        color: d.rate >= 90 ? "#16a34a" : d.rate >= 70 ? "#0ea5e9" : d.rate >= 50 ? "#d97706" : "#dc2626" }}>
+                        {d.rate}%
+                      </td>
+                      <td style={{ ...DS.td, padding:"8px 12px" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <div style={DS.barBg}><div style={DS.barFill(d.rate)} /></div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={DS.totalRow}>
+                  <td style={{ ...DS.tdLabel, fontSize:14 }}>평균</td>
+                  <td style={{ ...DS.td, textAlign:"center" }}>
+                    {Math.round(occupancy.daily.reduce((s, d) => s + d.occupied, 0) / occupancy.daily.length)}/{TOTAL_BEDS}
+                  </td>
+                  <td style={{ ...DS.td, textAlign:"center", fontWeight:800, fontSize:15,
+                    color: (occupancy.daily.reduce((s, d) => s + d.rate, 0) / occupancy.daily.length) >= 70 ? "#16a34a" : "#d97706" }}>
+                    {(occupancy.daily.reduce((s, d) => s + d.rate, 0) / occupancy.daily.length).toFixed(1)}%
+                  </td>
+                  <td style={DS.td}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <div style={DS.barBg}>
+                        <div style={DS.barFill(occupancy.daily.reduce((s, d) => s + d.rate, 0) / occupancy.daily.length)} />
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        {occupancy && !loading.occ && (!occupancy.daily || occupancy.daily.length === 0) && (
+          <div style={{ color:"#94a3b8", fontSize:14, padding:20, textAlign:"center" }}>해당 월 데이터가 없습니다.</div>
+        )}
+      </div>
     </div>
   );
 }
