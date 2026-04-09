@@ -71,6 +71,15 @@ const TREATMENT_GROUPS = [
       { id: "selenase_f", name: "셀레나제필름", price: 5000,  custom: "qty" },
     ],
   },
+  {
+    group: "퇴원약", color: "#92400e", bg: "#fef3c7",
+    items: [
+      { id: "meshima_dm",    name: "메시마F(퇴원약)",      price: 18000, custom: "qty", dischargeMed: true },
+      { id: "selenase_l_dm", name: "셀레나제액상(퇴원약)", price: 5000,  custom: "qty", dischargeMed: true },
+      { id: "selenase_t_dm", name: "셀레나제정(퇴원약)",   price: 5000,  custom: "qty", dischargeMed: true },
+      { id: "selenase_f_dm", name: "셀레나제필름(퇴원약)", price: 5000,  custom: "qty", dischargeMed: true },
+    ],
+  },
 ];
 
 const ALL_ITEMS = TREATMENT_GROUPS.flatMap(g => g.items);
@@ -233,43 +242,69 @@ export default function TreatmentPage() {
     return true;
   };
 
-  const dayTotal = (day) => {
-    const treatTotal = (monthData[String(day)] || []).reduce((s, e) => s + calcPrice(ALL_ITEMS.find(i => i.id === e.id), e.qty), 0);
-    return treatTotal + (hasRoomCharge(day) ? chargePerNight : 0);
-  };
-
-  const dayTreatTotal = (day) => {
-    const dateObj = new Date(year, month, day);
-    return (monthData[String(day)] || []).reduce((s, e) => s + calcPrice(ALL_ITEMS.find(i => i.id === e.id), e.qty, dateObj), 0);
-  };
-
-  // 달력에 표시된 날짜 기준 치료 합계 + 병실료
-  const allDaysInMonth = Array.from({length: getDaysInMonth(year, month)}, (_,i) => i+1);
-  const monthRoomTotal = chargePerNight > 0
-    ? allDaysInMonth.filter(d => hasRoomCharge(d)).length * chargePerNight
-    : 0;
-  const monthTreatTotal = Object.keys(monthData).reduce((s, d) => s + dayTreatTotal(parseInt(d)), 0);
-  const monthTotal = monthTreatTotal + monthRoomTotal;
-
   // 주N회 계획의 주간 예상 금액 (실제 치료 입력 전)
-  const weeklyPlanTotal = Object.entries(weeklyPlan).reduce((sum, [itemId, plan]) => {
+  const weeklyPlanTotal = Object.entries(weeklyPlan).reduce((sum, [itemId, p]) => {
     const item = ALL_ITEMS.find(i => i.id === itemId);
     if (!item) return sum;
-    const unitPrice = item.price || 0;
-    return sum + unitPrice * (plan.count || 0);
+    return sum + (item.price || 0) * (p.count || 0);
   }, 0);
 
   // 주차별 하한선 계산
-  // - 7일 이하 단기입원(1주차 단독): 하루당 200,000원
-  // - 완전한 1주(7일): weekBase (130만원, roomFree 시 별도)
-  // - 7일 초과 잔여일(2주차 이상 불완전): 하루당 185,000원
   const calcWeekMin = (weekNum, hospDays) => {
     if (hospDays >= 7) return weekBase;
     if (weekNum === 1) return hospDays * 200000;
     return hospDays * 185000;
   };
 
-  // 전체 입원 기간(모든 달) 기준 정산 — 전체 합산 충족 여부
+  // ── 퇴원약 자동 수량 계산 (입원일~퇴원약 입력일까지 미충족 금액 채움) ──
+  const dischargeMedInfo = (() => {
+    const admit = parseDateStr(admitDate);
+    if (!admit) return null;
+    // 전체 plan에서 퇴원약 항목 찾기
+    let dmEntry = null, dmMonthKey = null, dmDay = null;
+    for (const [mk, mdata] of Object.entries(plan)) {
+      if (!mdata || typeof mdata !== 'object') continue;
+      for (const [d, items] of Object.entries(mdata)) {
+        if (!Array.isArray(items)) continue;
+        const found = items.find(e => ALL_ITEMS.find(i => i.id === e.id)?.dischargeMed);
+        if (found) { dmEntry = found; dmMonthKey = mk; dmDay = d; break; }
+      }
+      if (dmEntry) break;
+    }
+    if (!dmEntry) return null;
+    const item = ALL_ITEMS.find(i => i.id === dmEntry.id);
+    if (!item || !item.price) return null;
+    // 퇴원약 입력 날짜
+    const [dmY, dmM] = dmMonthKey.split('-').map(Number);
+    const dmDate = new Date(dmY, dmM - 1, parseInt(dmDay));
+    // 입원일~퇴원약 입력일까지 최소금액 & 실제금액 계산
+    const weeksMap = {};
+    let totalActual = 0;
+    let cur = new Date(dateOnly(admit));
+    while (cur <= dateOnly(dmDate)) {
+      const diff = Math.floor((cur - dateOnly(admit)) / 86400000);
+      const wk = Math.floor(diff / 7) + 1;
+      if (!weeksMap[wk]) weeksMap[wk] = 0;
+      weeksMap[wk]++;
+      const cy = cur.getFullYear(), cm = cur.getMonth() + 1, cd = cur.getDate();
+      const mk = `${cy}-${String(cm).padStart(2, "0")}`;
+      const dayItems = (plan[mk] || {})[String(cd)] || [];
+      totalActual += dayItems
+        .filter(e => e.emr !== "removed" && !ALL_ITEMS.find(i => i.id === e.id)?.dischargeMed)
+        .reduce((s, e) => s + calcPrice(ALL_ITEMS.find(i => i.id === e.id), e.qty, cur), 0);
+      cur = new Date(cur.getTime() + 86400000);
+    }
+    let totalMin = 0;
+    for (const [wkStr, hospDays] of Object.entries(weeksMap)) {
+      totalMin += calcWeekMin(parseInt(wkStr), hospDays);
+    }
+    const deficit = totalMin - totalActual;
+    if (deficit <= 0) return { itemId: dmEntry.id, qty: 0, total: 0, monthKey: dmMonthKey, day: dmDay, deficit: 0, periodMin: totalMin, periodActual: totalActual };
+    const qty = Math.ceil(deficit / item.price);
+    return { itemId: dmEntry.id, qty, total: qty * item.price, monthKey: dmMonthKey, day: dmDay, deficit, periodMin: totalMin, periodActual: totalActual };
+  })();
+
+  // ── 전체 입원 기간 정산 (퇴원약 포함) ──
   const { weeklyStats, totalTreatMin, totalTreatActual } = (() => {
     const empty = { weeklyStats: [], totalTreatMin: 0, totalTreatActual: 0 };
     if (!admitDate) return empty;
@@ -286,14 +321,13 @@ export default function TreatmentPage() {
       if (!weeksMap[wk]) weeksMap[wk] = { total: 0, days: [], planTotal: 0, hospDays: 0 };
       weeksMap[wk].hospDays++;
 
-      const cy = cur.getFullYear();
-      const cm = cur.getMonth() + 1;
-      const cd = cur.getDate();
+      const cy = cur.getFullYear(), cm = cur.getMonth() + 1, cd = cur.getDate();
       const mk = `${cy}-${String(cm).padStart(2, "0")}`;
       const items = (plan[mk] || {})[String(cd)] || [];
 
-      const dayTreat = items.reduce((s, e) => {
+      const dayTreat = items.filter(e => e.emr !== "removed").reduce((s, e) => {
         const item = ALL_ITEMS.find(i => i.id === e.id);
+        if (item?.dischargeMed) return s + (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0);
         return s + calcPrice(item, e.qty, cur);
       }, 0);
       if (dayTreat > 0) {
@@ -304,7 +338,6 @@ export default function TreatmentPage() {
       cur = new Date(cur.getTime() + 86400000);
     }
 
-    // 주N회 계획: 오늘이 속한 주차에 표시
     if (weeklyPlanTotal > 0) {
       const todayWk = getWeekNumber(admitDate, new Date());
       if (todayWk !== null) {
@@ -313,18 +346,43 @@ export default function TreatmentPage() {
       }
     }
 
-    // 모든 주차(치료 없는 주 포함) 기준으로 총 최소금액 산출
     const allWeeks = Object.entries(weeksMap)
       .map(([wk, v]) => ({ week: parseInt(wk), ...v, weekMin: calcWeekMin(parseInt(wk), v.hospDays) }))
       .sort((a, b) => a.week - b.week);
 
     const totalTreatMin    = allWeeks.reduce((s, w) => s + w.weekMin, 0);
     const totalTreatActual = allWeeks.reduce((s, w) => s + w.total,   0);
-    // 표시용: 치료 또는 계획이 있는 주차만
     const weeklyStats = allWeeks.filter(w => w.total > 0 || w.planTotal > 0);
 
     return { weeklyStats, totalTreatMin, totalTreatActual };
   })();
+
+  // ── dayTotal / dayTreatTotal (퇴원약은 자동계산 금액 사용) ──
+  const dayTotal = (day) => {
+    const treatTotal = (monthData[String(day)] || []).filter(e => e.emr !== "removed").reduce((s, e) => {
+      const item = ALL_ITEMS.find(i => i.id === e.id);
+      if (item?.dischargeMed) return s + (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0);
+      return s + calcPrice(item, e.qty);
+    }, 0);
+    return treatTotal + (hasRoomCharge(day) ? chargePerNight : 0);
+  };
+
+  const dayTreatTotal = (day) => {
+    const dateObj = new Date(year, month, day);
+    return (monthData[String(day)] || []).filter(e => e.emr !== "removed").reduce((s, e) => {
+      const item = ALL_ITEMS.find(i => i.id === e.id);
+      if (item?.dischargeMed) return s + (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0);
+      return s + calcPrice(item, e.qty, dateObj);
+    }, 0);
+  };
+
+  // 달력에 표시된 날짜 기준 치료 합계 + 병실료
+  const allDaysInMonth = Array.from({length: getDaysInMonth(year, month)}, (_,i) => i+1);
+  const monthRoomTotal = chargePerNight > 0
+    ? allDaysInMonth.filter(d => hasRoomCharge(d)).length * chargePerNight
+    : 0;
+  const monthTreatTotal = Object.keys(monthData).reduce((s, d) => s + dayTreatTotal(parseInt(d)), 0);
+  const monthTotal = monthTreatTotal + monthRoomTotal;
 
   const daysInMonth = getDaysInMonth(year, month);
   const firstDow    = getFirstDow(year, month);
@@ -510,31 +568,44 @@ export default function TreatmentPage() {
             const isToday   = year===today.getFullYear() && month===today.getMonth() && day===today.getDate();
             const thisDate  = new Date(year, month, day);
             const isDisch   = dischargeDate && dateOnly(dischargeDate).getTime()===dateOnly(thisDate).getTime();
+            const admitParsed = parseDateStr(admitDate);
+            const isAdmit   = admitParsed && dateOnly(admitParsed).getTime()===dateOnly(thisDate).getTime();
+            const isBeforeAdmit = admitParsed && dateOnly(thisDate) < dateOnly(admitParsed);
             const isCopied  = copiedDay && copiedDay.monthKey===monthKey && copiedDay.day===day;
             const wkNum     = admitDate ? getWeekNumber(admitDate, thisDate) : null;
 
             return (
               <div key={day}
                 style={{ ...TS.dayCell,
-                  border: isDisch ? "2px solid #f59e0b" : isToday ? "2px solid #0ea5e9" : isCopied ? "2px dashed #7c3aed" : "1px solid #e2e8f0",
-                  background: isDisch ? "#fffbeb" : items.length>0 ? "#fff" : "#fafafa",
+                  border: isAdmit ? "2px solid #16a34a" : isDisch ? "2px solid #f59e0b" : isToday ? "2px solid #0ea5e9" : isCopied ? "2px dashed #7c3aed" : "1px solid #e2e8f0",
+                  background: isAdmit ? "#f0fdf4" : isDisch ? "#fffbeb" : items.length>0 ? "#fff" : "#fafafa",
+                  opacity: isBeforeAdmit ? 0.4 : 1,
                 }}
                 onClick={() => { setModalDay(day); setSelection({}); }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <div style={{ ...TS.dayNum, background:isToday?"#0ea5e9":undefined, color:isToday?"#fff":dow===0?"#dc2626":dow===6?"#2563eb":"#374151" }}>
+                  <div style={{ ...TS.dayNum, background:isAdmit?"#16a34a":isToday?"#0ea5e9":undefined, color:(isAdmit||isToday)?"#fff":dow===0?"#dc2626":dow===6?"#2563eb":"#374151" }}>
                     {day}
                   </div>
                   {wkNum && <span style={{ fontSize:9, color:"#94a3b8", fontWeight:600 }}>{wkNum}주</span>}
                 </div>
+                {isAdmit && <div style={TS.admitTag}>🏥 입원일</div>}
                 {isDisch && <div style={TS.dischargeTag}>🚪 퇴원 예정</div>}
                 <div style={TS.tagList}>
                   {items.map(e => {
                     const item = ALL_ITEMS.find(i => i.id === e.id);
                     const grp  = getItemGroup(e.id);
                     if (!item) return null;
+                    const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
+                    const label = item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name;
+                    const isRemoved = e.emr==="removed";
+                    const badge = e.emr==="match"?"EMR":e.emr==="removed"?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
+                    const badgeColor = e.emr==="match"?"#10b981":e.emr==="removed"?"#ef4444":"#3b82f6";
                     return (
-                      <span key={e.id} style={{ ...TS.tag, background:grp.bg, color:grp.color, borderColor:grp.color }}>
-                        {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}${item.unit||"개"}`:item.name}
+                      <span key={e.id} style={{ ...TS.tag, background:grp.bg, color:grp.color, borderColor:grp.color,
+                        opacity:isRemoved?0.4:1, position:"relative" }}>
+                        {label}
+                        {badge && <span style={{ fontSize:7, fontWeight:800, color:"#fff", background:badgeColor,
+                          borderRadius:3, padding:"0 3px", marginLeft:3, lineHeight:"14px", verticalAlign:"middle", whiteSpace:"nowrap" }}>{badge}</span>}
                       </span>
                     );
                   })}
@@ -569,12 +640,18 @@ export default function TreatmentPage() {
                       <td style={TS.td}>{month+1}/{day} ({DAY_KO[(firstDow+parseInt(day)-1)%7]})</td>
                       <td style={TS.td}>{admitDate?`${getWeekNumber(admitDate, new Date(year,month,parseInt(day)))}주차`:"-"}</td>
                       <td style={TS.td}>
-                        {(items||[]).map(e => {
+                        {(items||[]).filter(e => e.emr !== "removed").map(e => {
                           const item = ALL_ITEMS.find(i => i.id === e.id);
                           const grp  = getItemGroup(e.id);
                           if (!item) return null;
+                          const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
+                          const label = item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name;
+                          const badge = e.emr==="match"?"EMR":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
+                          const badgeColor = e.emr==="match"?"#10b981":"#3b82f6";
                           return <span key={e.id} style={{ ...TS.tag, marginRight:4, background:grp.bg, color:grp.color, borderColor:grp.color }}>
-                            {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}${item.unit||"개"}`:item.name}
+                            {label}
+                            {badge && <span style={{ fontSize:7, fontWeight:800, color:"#fff", background:badgeColor,
+                              borderRadius:3, padding:"0 3px", marginLeft:3, lineHeight:"14px", verticalAlign:"middle", whiteSpace:"nowrap" }}>{badge}</span>}
                           </span>;
                         })}
                       </td>
@@ -685,13 +762,20 @@ export default function TreatmentPage() {
                   const item = ALL_ITEMS.find(i => i.id === e.id);
                   const grp  = getItemGroup(e.id);
                   if (!item) return null;
+                  const isRemoved = e.emr==="removed";
+                  const badge = e.emr==="match"?"EMR":e.emr==="removed"?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
+                  const badgeColor = e.emr==="match"?"#10b981":e.emr==="removed"?"#ef4444":"#3b82f6";
+                  const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
+                  const effectivePrice = item.dischargeMed ? (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0) : calcPrice(item,e.qty,new Date(year,month,modalDay));
                   return (
-                    <div key={e.id} style={{ ...TS.regItem, borderLeftColor: grp.color }}>
+                    <div key={e.id} style={{ ...TS.regItem, borderLeftColor: grp.color, opacity:isRemoved?0.4:1 }}>
                       <div style={{ flex:1 }}>
                         <span style={{ fontWeight:700, color:grp.color }}>
-                          {item.custom==="vitc"?`비타민C ${e.qty}g`:item.custom==="qty"?`${item.name} ${e.qty}${item.unit||"개"}`:item.name}
+                          {item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name}
                         </span>
-                        <span style={{ color:"#64748b", fontSize:12, marginLeft:8 }}>{calcPrice(item,e.qty,new Date(year,month,modalDay)).toLocaleString()}원</span>
+                        <span style={{ color:"#64748b", fontSize:12, marginLeft:8 }}>{effectivePrice.toLocaleString()}원</span>
+                        {item.dischargeMed && <span style={{ fontSize:10, fontWeight:700, color:"#92400e", marginLeft:6 }}>자동계산</span>}
+                        {badge && <span style={{ fontSize:10, fontWeight:800, color:"#fff", background:badgeColor, borderRadius:3, padding:"1px 5px", marginLeft:8 }}>{badge}</span>}
                       </div>
                       <button style={TS.btnRemove} onClick={() => removeItem(modalDay, e.id)}>✕</button>
                     </div>
@@ -720,8 +804,8 @@ export default function TreatmentPage() {
                       );
                     })}
                   </div>
-                  {/* 수량 입력 (선택된 항목 중 custom 있는 것만) */}
-                  {group.items.filter(item => selection[item.id]!==undefined && item.custom).map(item => (
+                  {/* 수량 입력 (선택된 항목 중 custom 있는 것만, 퇴원약 제외) */}
+                  {group.items.filter(item => selection[item.id]!==undefined && item.custom && !item.dischargeMed).map(item => (
                     <div key={item.id} style={TS.qtyRow}>
                       <span style={{ fontSize:12, color:group.color, fontWeight:700, minWidth:90 }}>{item.name}</span>
                       {item.custom==="vitc" ? (
@@ -738,6 +822,42 @@ export default function TreatmentPage() {
                       )}
                     </div>
                   ))}
+                  {/* 퇴원약 자동계산 안내 */}
+                  {group.items.filter(item => selection[item.id]!==undefined && item.dischargeMed).map(item => {
+                    const admit = parseDateStr(admitDate);
+                    const dmDate = new Date(year, month, modalDay);
+                    // 입원일~해당일까지 미충족 계산 (미리보기)
+                    let previewQty = 0;
+                    if (admit && item.price) {
+                      const wkMap = {};
+                      let actual = 0;
+                      let c = new Date(dateOnly(admit));
+                      while (c <= dateOnly(dmDate)) {
+                        const diff = Math.floor((c - dateOnly(admit)) / 86400000);
+                        const wk = Math.floor(diff / 7) + 1;
+                        if (!wkMap[wk]) wkMap[wk] = 0;
+                        wkMap[wk]++;
+                        const cy=c.getFullYear(),cm=c.getMonth()+1,cd=c.getDate();
+                        const mk=`${cy}-${String(cm).padStart(2,"0")}`;
+                        const di = (plan[mk]||{})[String(cd)]||[];
+                        actual += di.filter(e=>e.emr!=="removed"&&!ALL_ITEMS.find(i=>i.id===e.id)?.dischargeMed)
+                          .reduce((s,e)=>s+calcPrice(ALL_ITEMS.find(i=>i.id===e.id),e.qty,c),0);
+                        c = new Date(c.getTime()+86400000);
+                      }
+                      let pMin = 0;
+                      for (const [w,hd] of Object.entries(wkMap)) pMin += calcWeekMin(parseInt(w),hd);
+                      const def = pMin - actual;
+                      previewQty = def > 0 ? Math.ceil(def / item.price) : 0;
+                    }
+                    return (
+                      <div key={item.id} style={{ ...TS.qtyRow, background:"#fef3c7", borderLeftColor:"#92400e", borderRadius:6, padding:"6px 10px", marginTop:6 }}>
+                        <span style={{ fontSize:12, color:"#92400e", fontWeight:700 }}>{item.name}</span>
+                        <span style={{ fontSize:12, color:"#78350f" }}>
+                          → 자동 <strong>{previewQty}개</strong> ({(previewQty * item.price).toLocaleString()}원) — 입원일~{month+1}/{modalDay} 미충족분
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -763,6 +883,7 @@ export default function TreatmentPage() {
         year={year} month={month} monthData={monthData}
         firstDow={firstDow} daysInMonth={daysInMonth}
         admitDate={admitDate} discharge={discharge}
+        dischargeMedInfo={dischargeMedInfo}
       />
     </div>
   );
@@ -770,8 +891,10 @@ export default function TreatmentPage() {
 
 // ── 인쇄 전용 컴포넌트 ──────────────────────────────────────────────────────
 function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, daysInMonth,
-  admitDate, discharge }) {
+  admitDate, discharge, dischargeMedInfo }) {
   const allItems = TREATMENT_GROUPS.flatMap(g => g.items);
+  const admitParsed = parseDateStr(admitDate);
+  const dischargeParsed = parseDateStr(discharge);
 
   const calCells = [];
   for (let i = 0; i < firstDow; i++) calCells.push(null);
@@ -853,27 +976,37 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                   );
                   const dow   = (firstDow + day - 1) % 7;
                   const items = monthData[String(day)] || [];
+                  const thisDate = new Date(year, month, day);
+                  const isAdmit = admitParsed && dateOnly(admitParsed).getTime()===dateOnly(thisDate).getTime();
+                  const isDisch = dischargeParsed && dateOnly(dischargeParsed).getTime()===dateOnly(thisDate).getTime();
+                  const isBeforeAdmit = admitParsed && dateOnly(thisDate) < dateOnly(admitParsed);
                   return (
                     <td key={di} style={{ border:"1px solid #ddd", verticalAlign:"top",
-                      padding:"3px 5px", background:"#fff" }}>
+                      padding:"3px 5px", background: isAdmit?"#f0fdf4":isDisch?"#fffbeb":"#fff",
+                      opacity: isBeforeAdmit?0.4:1 }}>
                       {/* 날짜 */}
                       <div style={{ fontSize:dayNumFontPx, fontWeight:900, marginBottom:2,
                         color: dow===0?"#cc0000":dow===6?"#0033cc":"#222" }}>
                         {day}
+                        {isAdmit && <span style={{ fontSize:Math.max(10,dayNumFontPx*0.5), fontWeight:700, color:"#16a34a", marginLeft:4 }}>입원</span>}
+                        {isDisch && <span style={{ fontSize:Math.max(10,dayNumFontPx*0.5), fontWeight:700, color:"#d97706", marginLeft:4 }}>퇴원</span>}
                       </div>
-                      {/* 치료 항목만 — 금액 없음 */}
-                      {items.map(e => {
+                      {/* 치료 항목 — 입원 전 날짜는 인쇄에서 제외 */}
+                      {!isBeforeAdmit && items.map(e => {
                         const item = allItems.find(i => i.id === e.id);
                         if (!item) return null;
                         const grp = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === e.id));
-                        const label = item.custom==="vitc" ? `비타민C ${e.qty}g`
-                                    : item.custom==="qty"  ? `${item.name} ${e.qty}개`
+                        const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
+                        const label = item.custom==="vitc" ? `비타민C ${effectiveQty}g`
+                                    : item.custom==="qty"  ? `${item.name} ${effectiveQty}개`
                                     : item.name;
+                        const badge = e.emr==="match"?"EMR":e.emr==="removed"?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
                         return (
-                          <div key={e.id} style={{ fontSize:treatFontPx, lineHeight:1.3, color:"#111",
+                          <div key={e.id} style={{ fontSize:treatFontPx, lineHeight:1.3,
+                            color:"#111", opacity:e.emr==="removed"?0.4:1,
                             borderLeft:`3px solid ${grp?.color||"#555"}`,
                             paddingLeft:4, marginBottom:2 }}>
-                            {label}
+                            {label}{badge && ` [${badge}]`}
                           </div>
                         );
                       })}
@@ -924,6 +1057,7 @@ const TS = {
   emptyCell: { minHeight:100 },
   dayCell: { minHeight:100, borderRadius:8, padding:"6px", cursor:"pointer", display:"flex", flexDirection:"column", transition:"box-shadow 0.15s" },
   dayNum: { width:26, height:26, borderRadius:"50%", fontSize:14, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
+  admitTag: { fontSize:10, fontWeight:700, color:"#16a34a", background:"#dcfce7", borderRadius:3, padding:"1px 5px", marginBottom:2 },
   dischargeTag: { fontSize:10, fontWeight:700, color:"#d97706", background:"#fef3c7", borderRadius:3, padding:"1px 5px", marginBottom:2 },
   tagList: { display:"flex", flexDirection:"column", gap:2, flex:1, overflow:"hidden" },
   tag: { fontSize:12, fontWeight:700, borderRadius:4, padding:"2px 6px", border:"1px solid", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" },
