@@ -638,28 +638,27 @@ export default function DailyBoard() {
                 {dRes.filter(r=>r.name).length===0 && !editMode && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
                 {dRes.map(row => (
                   <div key={row.id} style={{ display:"flex", gap:8, padding:"8px 12px",
-                    borderBottom:"1px solid #faf5ff", alignItems:"center", justifyContent:"center",
+                    borderBottom:"1px solid #faf5ff", alignItems:"center",
                     background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
+                    {editMode ? (
+                      <Field w={80} value={row.room} onChange={v=>updateRow(setEditRes,row.id,"room",v)} placeholder="병실" style={{textAlign:"center",color:"#7c3aed",fontWeight:800,fontSize:16}} />
+                    ) : (
+                      <span style={{ fontSize:16, color:"#7c3aed", fontWeight:800, width:80, textAlign:"center", flexShrink:0 }}>{row.room}</span>
+                    )}
                     {editMode ? (
                       <Field w={80} value={row.name} onChange={v=>updateRow(setEditRes,row.id,"name",v)} placeholder="이름" style={{fontWeight:700,fontSize:16}} />
                     ) : (
                       <span style={{ fontWeight:700, fontSize:16, flexShrink:0 }}>{row.name}</span>
                     )}
                     {editMode ? (
-                      <Field w={70} value={row.room} onChange={v=>updateRow(setEditRes,row.id,"room",v)} placeholder="병실" style={{textAlign:"center",color:"#7c3aed",fontWeight:800,fontSize:16}} />
-                    ) : (
-                      <span style={{ fontSize:16, color:"#7c3aed", fontWeight:800, flexShrink:0 }}>{row.room}</span>
-                    )}
-                    {editMode ? (
                       <>
-                        <Field w={60} value={row.dischargeDate} onChange={v=>updateRow(setEditRes,row.id,"dischargeDate",v)} placeholder="퇴원일" style={{fontSize:14,color:"#64748b",textAlign:"center"}} />
+                        <Field w={70} value={row.dischargeDate} onChange={v=>updateRow(setEditRes,row.id,"dischargeDate",v)} placeholder="퇴원일" style={{fontSize:14,color:"#64748b",textAlign:"center"}} />
                         <Field flex={1} value={row.readmitDate} onChange={v=>updateRow(setEditRes,row.id,"readmitDate",v)} placeholder="재입원" style={{fontSize:14,color:"#7c3aed",textAlign:"center"}} />
                       </>
                     ) : (
-                      <>
-                        {row.dischargeDate && <span style={{ fontSize:14, color:"#64748b" }}>퇴원:{row.dischargeDate}</span>}
-                        {row.readmitDate && <span style={{ fontSize:14, color:"#7c3aed" }}>재입원:{row.readmitDate}</span>}
-                      </>
+                      <span style={{ fontSize:14, color:"#64748b", flex:1, textAlign:"center", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" }}>
+                        {[row.dischargeDate&&`퇴원:${row.dischargeDate}`, row.readmitDate&&`재입원:${row.readmitDate}`].filter(Boolean).join(" / ")}
+                      </span>
                     )}
                     {editMode && <DelBtn onClick={()=>deleteRow(setEditRes,row.id)} />}
                   </div>
