@@ -32,7 +32,7 @@ function parseMD(str, year) {
   if (!m) return null;
   return `${year}-${String(parseInt(m[1])).padStart(2,"0")}-${String(parseInt(m[2])).padStart(2,"0")}`;
 }
-function buildCellText(cell, useTreatNames, slotsRef) {
+function buildCellText(cell, useTreatNames, slotsRef, dateStr) {
   if (!cell) return "";
   const name = cell.patientName || cell.name || "";
   if (!name) return "";
@@ -42,13 +42,30 @@ function buildCellText(cell, useTreatNames, slotsRef) {
     room = `${cell.roomId}-${cell.bedNum}`;
   } else if (cell.slotKey) {
     if (cell.slotKey.startsWith("db_") && slotsRef) {
-      // db_ 환자: slots에서 현재 병실 조회
       const internalId = cell.slotKey.slice(3);
       for (const [sk, sl] of Object.entries(slotsRef)) {
         if (sl?.current?.patientId === internalId) { room = sk; break; }
       }
     } else if (!cell.slotKey.startsWith("pending_") && !cell.slotKey.startsWith("__")) {
       room = cell.slotKey;
+    }
+  }
+  // 병실 없으면 예약 병실 조회
+  if (!room && slotsRef && name) {
+    const nn = normName(name);
+    const viewDate = dateStr ? new Date(dateStr) : new Date();
+    viewDate.setHours(0,0,0,0);
+    for (const [sk, sl] of Object.entries(slotsRef)) {
+      for (const r of (sl?.reservations || [])) {
+        if (!r?.name || normName(r.name) !== nn) continue;
+        if (!r.admitDate || r.admitDate === "미정") continue;
+        const m = r.admitDate.match(/(\d{1,2})\/(\d{1,2})/);
+        if (m) {
+          const resDate = new Date(viewDate.getFullYear(), parseInt(m[1])-1, parseInt(m[2]));
+          if (viewDate >= resDate) { room = sk; break; }
+        }
+      }
+      if (room) break;
     }
   }
   const treatName = useTreatNames ? (TREAT_NAMES[cell.treatmentId]||"") : "";
@@ -311,10 +328,10 @@ export default function DailyBoard() {
     THERAPY_SLOTS.forEach(slot => {
       const st = slot.split("~")[0];
       t[slot] = {
-        highFreq: buildCellText(hyperSched?.["hyperthermia"]?.[di]?.[st], false, slots),
-        physio1: buildCellText(physSched?.["th1"]?.[di]?.[st], true, slots),
-        physio2: buildCellText(physSched?.["th2"]?.[di]?.[st], true, slots),
-        hyperbaric: buildCellText(hyperSched?.["hyperbaric"]?.[di]?.[st], false, slots),
+        highFreq: buildCellText(hyperSched?.["hyperthermia"]?.[di]?.[st], false, slots, date),
+        physio1: buildCellText(physSched?.["th1"]?.[di]?.[st], true, slots, date),
+        physio2: buildCellText(physSched?.["th2"]?.[di]?.[st], true, slots, date),
+        hyperbaric: buildCellText(hyperSched?.["hyperbaric"]?.[di]?.[st], false, slots, date),
       };
     });
     return t;
