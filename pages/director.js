@@ -92,7 +92,6 @@ function DirectorDashboard({ profile }) {
   const [occupancy, setOccupancy] = useState(null);
   const [loading, setLoading] = useState({ rev:false, occ:false });
   const [error, setError] = useState({});
-  const [treatAgg, setTreatAgg] = useState({});
   const [treatMonth, setTreatMonth] = useState(currentYM);
 
   // EMR 매출/가동률
@@ -117,22 +116,26 @@ function DirectorDashboard({ profile }) {
   useEffect(()=>{ fetchRevenue(); },[year]);
   useEffect(()=>{ fetchOccupancy(); },[year,occMonth]);
 
-  // 치료항목 집계 — EMR 동기화 데이터 (revenue API에서 함께 가져옴)
-  // revenue 데이터가 로드되면 treatmentItems도 함께 설정
+  // 치료항목 — treatMonth 기준 연도 + 전달/전년 연도에서 독립적으로 fetch
+  const treatYear = parseInt(treatMonth.split("-")[0]);
+  const [treatData, setTreatData] = useState({}); // { year: { items } }
   useEffect(() => {
-    if (revenue?.treatmentItems) setTreatAgg(revenue.treatmentItems);
-  }, [revenue]);
-
-  // 전년도 치료항목도 필요하므로 별도 fetch
-  const [treatAggPrevYear, setTreatAggPrevYear] = useState({});
-  useEffect(() => {
+    // 필요한 연도 목록: treatMonth 연도 + 전년도 (전년동월 비교용)
+    const years = [...new Set([treatYear, treatYear - 1])];
     (async () => {
-      try {
-        const r = await fetch("/api/director-stats",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"revenue",year:year-1})});
-        if (r.ok) { const d = await r.json(); setTreatAggPrevYear(d.treatmentItems||{}); }
-      } catch(e) { /* 전년도 없으면 무시 */ }
+      const result = {};
+      for (const y of years) {
+        if (treatData[y]) { result[y] = treatData[y]; continue; }
+        try {
+          const r = await fetch("/api/director-stats",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"revenue",year:y})});
+          if (r.ok) { const d = await r.json(); result[y] = d.treatmentItems || {}; }
+          else result[y] = {};
+        } catch(e) { result[y] = {}; }
+      }
+      setTreatData(prev => ({...prev, ...result}));
     })();
-  }, [year]);
+  }, [treatYear]);
+  const treatAggAll = { ...(treatData[treatYear]||{}), ...(treatData[treatYear-1]||{}) };
 
   const fmtAmt = n => n != null ? Math.round(n).toLocaleString() : "-";
   const fmtMan = n => n != null && n !== 0 ? `${Math.round(n/10000).toLocaleString()}만` : "-";
@@ -176,10 +179,9 @@ function DirectorDashboard({ profile }) {
   // 치료항목 비교 데이터 (EMR 동기화 기준)
   const prevMonth = monthAdd(treatMonth, -1);
   const lastYearMonth = monthAdd(treatMonth, -12);
-  const curData = treatAgg[treatMonth] || {};
-  const prevData = treatAgg[prevMonth] || {};
-  // 전년동월: 올해 데이터에 없으면 전년도 API에서 가져옴
-  const lyData = treatAgg[lastYearMonth] || treatAggPrevYear[lastYearMonth] || {};
+  const curData = treatAggAll[treatMonth] || {};
+  const prevData = treatAggAll[prevMonth] || {};
+  const lyData = treatAggAll[lastYearMonth] || {};
 
   const treatRows = ITEMS.filter(i => i.price !== 0 && i.price !== null && !i.id.endsWith("_dm")).map(item => {
     const cur = curData[item.id] || { count:0, revenue:0 };
