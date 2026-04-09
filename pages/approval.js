@@ -2910,12 +2910,12 @@ function DirectorStatsPanel() {
                 })}
                 <tr style={DS.totalRow}>
                   <td style={{ ...DS.tdLabel, fontSize:14 }}>합계</td>
-                  <td style={{ ...DS.td, fontWeight:800, color:"#0369a1", fontSize:14 }}>{fmtMan(yearTotals.inTotal)}</td>
-                  {hasOutpatient && <td style={{ ...DS.td, fontWeight:800, color:"#7c3aed", fontSize:14 }}>{fmtMan(yearTotals.outTotal)}</td>}
+                  <td style={{ ...DS.td, fontWeight:800, color:"#0369a1", fontSize:14 }}>{fmtAmt(yearTotals.inTotal)}</td>
+                  {hasOutpatient && <td style={{ ...DS.td, fontWeight:800, color:"#7c3aed", fontSize:14 }}>{fmtAmt(yearTotals.outTotal)}</td>}
                   {hasBedDays && <td style={{ ...DS.td, textAlign:"center", fontWeight:800 }}>{yearTotals.bedDays.toLocaleString()}</td>}
-                  {hasDetail && <td style={{ ...DS.td, fontWeight:800, color:"#059669" }}>{fmtMan(yearTotals.gongdan)}</td>}
-                  {hasDetail && <td style={{ ...DS.td, fontWeight:800, color:"#d97706" }}>{fmtMan(yearTotals.bonbu)}</td>}
-                  <td style={{ ...DS.td, fontWeight:800, color:"#dc2626", fontSize:14 }}>{fmtMan(yearTotals.grandTotal)}</td>
+                  {hasDetail && <td style={{ ...DS.td, fontWeight:800, color:"#059669" }}>{fmtAmt(yearTotals.gongdan)}</td>}
+                  {hasDetail && <td style={{ ...DS.td, fontWeight:800, color:"#d97706" }}>{fmtAmt(yearTotals.bonbu)}</td>}
+                  <td style={{ ...DS.td, fontWeight:800, color:"#dc2626", fontSize:14 }}>{fmtAmt(yearTotals.grandTotal)}</td>
                 </tr>
               </tbody>
             </table>
