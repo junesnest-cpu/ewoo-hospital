@@ -385,7 +385,7 @@ export default function DailyBoard() {
     setCapturing(true);
     try {
       const html2canvas = (await import("html2canvas")).default;
-      const canvas = await html2canvas(boardRef.current, { scale:2, useCORS:true, backgroundColor:"#ffffff" });
+      const canvas = await html2canvas(boardRef.current, { scale:3, useCORS:true, backgroundColor:"#ffffff" });
       canvas.toBlob(async (blob) => {
         try {
           await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
@@ -473,12 +473,12 @@ export default function DailyBoard() {
       {/* ── 본문 (캡처 대상) ── */}
       <div ref={boardRef}>
         {/* 인쇄/캡처 제목 */}
-        <div className="print-title" style={{ display:"none", textAlign:"center", padding:"8px 0 4px",
-          fontWeight:900, fontSize:22, color:"#0f2744", borderBottom:"2px solid #0f2744", marginBottom:8 }}>
+        <div className="print-title" style={{ display:"none", textAlign:"center", padding:"10px 0 6px",
+          fontWeight:900, fontSize:26, color:"#0f2744", borderBottom:"3px solid #0f2744", marginBottom:10 }}>
           {dateObj.getFullYear()}년 {dateObj.getMonth()+1}월 {dateObj.getDate()}일 ({dow}) 현황판
         </div>
         {/* 화면용 제목 (캡처 시에도 보임) */}
-        <div className="no-print" style={{ textAlign:"center", padding:"6px 0 2px", fontWeight:900, fontSize:20, color:"#0f2744" }}>
+        <div className="no-print" style={{ textAlign:"center", padding:"8px 0 4px", fontWeight:900, fontSize:24, color:"#0f2744" }}>
           {dateObj.getFullYear()}년 {dateObj.getMonth()+1}월 {dateObj.getDate()}일 ({dow}) 현황판
         </div>
 
@@ -492,26 +492,26 @@ export default function DailyBoard() {
               <div style={{ background:"#fff", border:"1px solid #d1fae5", borderTop:"none", borderRadius:"0 0 10px 10px" }}>
                 {dAdm.filter(r=>r.name).length===0 && !editMode && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
                 {dAdm.map(row => (
-                  <div key={row.id} style={{ display:"flex", gap:6, padding:"6px 10px",
+                  <div key={row.id} style={{ display:"flex", gap:8, padding:"8px 12px",
                     borderBottom:"1px solid #f0fdf4", alignItems:"center",
                     background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
                     {editMode ? (
-                      <Field w={75} value={row.room} onChange={v=>updateRow(setEditAdm,row.id,"room",v)} placeholder="호실" style={{fontWeight:800,color:"#059669",textAlign:"center"}} />
+                      <Field w={80} value={row.room} onChange={v=>updateRow(setEditAdm,row.id,"room",v)} placeholder="호실" style={{fontWeight:800,color:"#059669",textAlign:"center",fontSize:16}} />
                     ) : (
-                      <span style={{ fontWeight:800, color:"#059669", fontSize:14, width:75, textAlign:"center", flexShrink:0 }}>{row.room}</span>
+                      <span style={{ fontWeight:800, color:"#059669", fontSize:16, width:80, textAlign:"center", flexShrink:0 }}>{row.room}</span>
                     )}
-                    <div style={{ display:"flex", alignItems:"center", gap:3, minWidth:120 }}>
-                      {row.isNew && <span style={{ fontSize:11, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"0 4px", fontWeight:800, flexShrink:0 }}>★</span>}
+                    <div style={{ display:"flex", alignItems:"center", gap:4, minWidth:130 }}>
+                      {row.isNew && <span style={{ fontSize:12, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"0 5px", fontWeight:800, flexShrink:0 }}>★</span>}
                       {editMode ? (
-                        <Field w={70} value={row.name} onChange={v=>updateRow(setEditAdm,row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
+                        <Field w={75} value={row.name} onChange={v=>updateRow(setEditAdm,row.id,"name",v)} placeholder="이름" style={{fontWeight:700,fontSize:16}} />
                       ) : (
-                        <span style={{ fontWeight:700, fontSize:14 }}>{row.name}</span>
+                        <span style={{ fontWeight:700, fontSize:16 }}>{row.name}</span>
                       )}
-                      <span style={{ color:"#d1d5db", fontSize:12 }}>/</span>
+                      <span style={{ color:"#d1d5db", fontSize:14 }}>/</span>
                       {editMode ? (
-                        <Field w={40} value={row.doctor} onChange={v=>updateRow(setEditAdm,row.id,"doctor",v)} placeholder="Dr" style={{color:"#64748b",fontSize:13}} />
+                        <Field w={40} value={row.doctor} onChange={v=>updateRow(setEditAdm,row.id,"doctor",v)} placeholder="Dr" style={{color:"#64748b",fontSize:14}} />
                       ) : (
-                        <span style={{ fontSize:13, color:"#64748b" }}>{row.doctor}</span>
+                        <span style={{ fontSize:14, color:"#64748b" }}>{row.doctor}</span>
                       )}
                       {editMode && (
                         <button onClick={()=>updateRow(setEditAdm,row.id,"isNew",!row.isNew)}
@@ -532,12 +532,12 @@ export default function DailyBoard() {
                         <Field w={80} value={row.time} onChange={v=>updateRow(setEditAdm,row.id,"time",v)} placeholder="시간" style={{color:"#0891b2",textAlign:"center"}} />
                       )
                     ) : row.time ? (
-                      <span style={{ fontSize:12, color:"#0891b2", fontWeight:600, flexShrink:0 }}>{row.time}</span>
+                      <span style={{ fontSize:14, color:"#0891b2", fontWeight:600, flexShrink:0 }}>{row.time}</span>
                     ) : null}
                     {editMode ? (
-                      <Field flex={1} value={row.note} onChange={v=>updateRow(setEditAdm,row.id,"note",v)} placeholder="비고" style={{color:"#64748b",fontSize:13,textAlign:"center"}} />
+                      <Field flex={1} value={row.note} onChange={v=>updateRow(setEditAdm,row.id,"note",v)} placeholder="비고" style={{color:"#64748b",fontSize:14,textAlign:"center"}} />
                     ) : (
-                      <span style={{ fontSize:13, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", textAlign:"center" }}>{row.note}</span>
+                      <span style={{ fontSize:14, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", textAlign:"center" }}>{row.note}</span>
                     )}
                     {editMode && <DelBtn onClick={()=>deleteRow(setEditAdm,row.id)} />}
                   </div>
@@ -552,18 +552,18 @@ export default function DailyBoard() {
               <div style={{ background:"#fff", border:"1px solid #fecaca", borderTop:"none", borderRadius:"0 0 10px 10px" }}>
                 {dDis.filter(r=>r.name).length===0 && !editMode && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
                 {dDis.map(row => (
-                  <div key={row.id} style={{ display:"flex", gap:6, padding:"6px 10px",
+                  <div key={row.id} style={{ display:"flex", gap:8, padding:"8px 12px",
                     borderBottom:"1px solid #fff5f5", alignItems:"center",
                     background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
                     {editMode ? (
-                      <Field w={75} value={row.room} onChange={v=>updateRow(setEditDis,row.id,"room",v)} placeholder="호실" style={{fontWeight:800,color:"#dc2626",textAlign:"center"}} />
+                      <Field w={80} value={row.room} onChange={v=>updateRow(setEditDis,row.id,"room",v)} placeholder="호실" style={{fontWeight:800,color:"#dc2626",textAlign:"center",fontSize:16}} />
                     ) : (
-                      <span style={{ fontWeight:800, color:"#dc2626", fontSize:14, width:75, textAlign:"center", flexShrink:0 }}>{row.room}</span>
+                      <span style={{ fontWeight:800, color:"#dc2626", fontSize:16, width:80, textAlign:"center", flexShrink:0 }}>{row.room}</span>
                     )}
                     {editMode ? (
-                      <Field w={90} value={row.name} onChange={v=>updateRow(setEditDis,row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
+                      <Field w={90} value={row.name} onChange={v=>updateRow(setEditDis,row.id,"name",v)} placeholder="이름" style={{fontWeight:700,fontSize:16}} />
                     ) : (
-                      <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>
+                      <span style={{ fontWeight:700, fontSize:16, flexShrink:0 }}>{row.name}</span>
                     )}
                     {editMode ? (
                       (!row.time || TIME_OPTIONS.includes(row.time)) ? (
@@ -577,12 +577,12 @@ export default function DailyBoard() {
                         <Field w={80} value={row.time} onChange={v=>updateRow(setEditDis,row.id,"time",v)} placeholder="시간" style={{color:"#0891b2",textAlign:"center"}} />
                       )
                     ) : row.time ? (
-                      <span style={{ fontSize:12, color:"#0891b2", fontWeight:600, flexShrink:0, background:"#ecfeff", borderRadius:3, padding:"0 4px" }}>{row.time}</span>
+                      <span style={{ fontSize:14, color:"#0891b2", fontWeight:600, flexShrink:0, background:"#ecfeff", borderRadius:3, padding:"1px 6px" }}>{row.time}</span>
                     ) : null}
                     {editMode ? (
-                      <Field flex={1} value={row.note} onChange={v=>updateRow(setEditDis,row.id,"note",v)} placeholder="재입원 일정 등" style={{color:"#64748b",fontSize:13,textAlign:"center"}} />
+                      <Field flex={1} value={row.note} onChange={v=>updateRow(setEditDis,row.id,"note",v)} placeholder="재입원 일정 등" style={{color:"#64748b",fontSize:14,textAlign:"center"}} />
                     ) : (
-                      <span style={{ fontSize:13, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", textAlign:"center" }}>{row.note}</span>
+                      <span style={{ fontSize:14, color:"#64748b", flex:1, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis", textAlign:"center" }}>{row.note}</span>
                     )}
                     {editMode && <DelBtn onClick={()=>deleteRow(setEditDis,row.id)} />}
                   </div>
@@ -600,24 +600,24 @@ export default function DailyBoard() {
               <div style={{ background:"#fff", border:"1px solid #bae6fd", borderTop:"none", borderRadius:"0 0 10px 10px" }}>
                 {dTrn.filter(r=>r.name).length===0 && !editMode && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
                 {dTrn.map(row => (
-                  <div key={row.id} style={{ display:"flex", gap:6, padding:"6px 10px",
+                  <div key={row.id} style={{ display:"flex", gap:8, padding:"8px 12px",
                     borderBottom:"1px solid #f0f9ff", alignItems:"center",
                     background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
                     {editMode ? (
-                      <Field w={80} value={row.name} onChange={v=>updateRow(setEditTrn,row.id,"name",v)} placeholder="이름" style={{fontWeight:700}} />
+                      <Field w={80} value={row.name} onChange={v=>updateRow(setEditTrn,row.id,"name",v)} placeholder="이름" style={{fontWeight:700,fontSize:16}} />
                     ) : (
-                      <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>
+                      <span style={{ fontWeight:700, fontSize:16, flexShrink:0 }}>{row.name}</span>
                     )}
                     {editMode ? (
-                      <Field w={65} value={row.fromRoom} onChange={v=>updateRow(setEditTrn,row.id,"fromRoom",v)} placeholder="기존" style={{textAlign:"center",color:"#64748b"}} />
+                      <Field w={65} value={row.fromRoom} onChange={v=>updateRow(setEditTrn,row.id,"fromRoom",v)} placeholder="기존" style={{textAlign:"center",color:"#64748b",fontSize:15}} />
                     ) : (
-                      <span style={{ fontSize:13, color:"#64748b", flexShrink:0 }}>{row.fromRoom}</span>
+                      <span style={{ fontSize:15, color:"#64748b", flexShrink:0 }}>{row.fromRoom}</span>
                     )}
-                    <span style={{ color:"#0369a1", fontWeight:800, fontSize:14, flexShrink:0 }}>→</span>
+                    <span style={{ color:"#0369a1", fontWeight:800, fontSize:16, flexShrink:0 }}>→</span>
                     {editMode ? (
-                      <Field w={65} value={row.toRoom} onChange={v=>updateRow(setEditTrn,row.id,"toRoom",v)} placeholder="이동" style={{textAlign:"center",color:"#0369a1",fontWeight:700}} />
+                      <Field w={65} value={row.toRoom} onChange={v=>updateRow(setEditTrn,row.id,"toRoom",v)} placeholder="이동" style={{textAlign:"center",color:"#0369a1",fontWeight:700,fontSize:15}} />
                     ) : (
-                      <span style={{ fontSize:13, color:"#0369a1", fontWeight:700, flexShrink:0 }}>{row.toRoom}</span>
+                      <span style={{ fontSize:15, color:"#0369a1", fontWeight:700, flexShrink:0 }}>{row.toRoom}</span>
                     )}
                     {editMode ? (
                       <Field flex={1} value={row.time} onChange={v=>updateRow(setEditTrn,row.id,"time",v)} placeholder="시간" style={{color:"#64748b",fontSize:13}} />
@@ -637,28 +637,28 @@ export default function DailyBoard() {
               <div style={{ background:"#fff", border:"1px solid #ddd6fe", borderTop:"none", borderRadius:"0 0 10px 10px" }}>
                 {dRes.filter(r=>r.name).length===0 && !editMode && <div style={{ padding:"8px 12px", color:"#94a3b8", fontSize:13 }}>해당 없음</div>}
                 {dRes.map(row => (
-                  <div key={row.id} style={{ display:"flex", gap:6, padding:"6px 10px",
+                  <div key={row.id} style={{ display:"flex", gap:8, padding:"8px 12px",
                     borderBottom:"1px solid #faf5ff", alignItems:"center", justifyContent:"center",
                     background:(filterName&&row.name?.includes(filterName))?"#fef3c7":"transparent" }}>
                     {editMode ? (
-                      <Field w={80} value={row.name} onChange={v=>updateRow(setEditRes,row.id,"name",v)} placeholder="이름" style={{fontWeight:700,fontSize:14}} />
+                      <Field w={80} value={row.name} onChange={v=>updateRow(setEditRes,row.id,"name",v)} placeholder="이름" style={{fontWeight:700,fontSize:16}} />
                     ) : (
-                      <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>
+                      <span style={{ fontWeight:700, fontSize:16, flexShrink:0 }}>{row.name}</span>
                     )}
                     {editMode ? (
-                      <Field w={65} value={row.room} onChange={v=>updateRow(setEditRes,row.id,"room",v)} placeholder="병실" style={{textAlign:"center",color:"#7c3aed",fontWeight:800}} />
+                      <Field w={70} value={row.room} onChange={v=>updateRow(setEditRes,row.id,"room",v)} placeholder="병실" style={{textAlign:"center",color:"#7c3aed",fontWeight:800,fontSize:16}} />
                     ) : (
-                      <span style={{ fontSize:14, color:"#7c3aed", fontWeight:800, flexShrink:0 }}>{row.room}</span>
+                      <span style={{ fontSize:16, color:"#7c3aed", fontWeight:800, flexShrink:0 }}>{row.room}</span>
                     )}
                     {editMode ? (
                       <>
-                        <Field w={60} value={row.dischargeDate} onChange={v=>updateRow(setEditRes,row.id,"dischargeDate",v)} placeholder="퇴원일" style={{fontSize:13,color:"#64748b",textAlign:"center"}} />
-                        <Field flex={1} value={row.readmitDate} onChange={v=>updateRow(setEditRes,row.id,"readmitDate",v)} placeholder="재입원" style={{fontSize:13,color:"#7c3aed",textAlign:"center"}} />
+                        <Field w={60} value={row.dischargeDate} onChange={v=>updateRow(setEditRes,row.id,"dischargeDate",v)} placeholder="퇴원일" style={{fontSize:14,color:"#64748b",textAlign:"center"}} />
+                        <Field flex={1} value={row.readmitDate} onChange={v=>updateRow(setEditRes,row.id,"readmitDate",v)} placeholder="재입원" style={{fontSize:14,color:"#7c3aed",textAlign:"center"}} />
                       </>
                     ) : (
                       <>
-                        {row.dischargeDate && <span style={{ fontSize:13, color:"#64748b" }}>퇴원:{row.dischargeDate}</span>}
-                        {row.readmitDate && <span style={{ fontSize:13, color:"#7c3aed" }}>재입원:{row.readmitDate}</span>}
+                        {row.dischargeDate && <span style={{ fontSize:14, color:"#64748b" }}>퇴원:{row.dischargeDate}</span>}
+                        {row.readmitDate && <span style={{ fontSize:14, color:"#7c3aed" }}>재입원:{row.readmitDate}</span>}
                       </>
                     )}
                     {editMode && <DelBtn onClick={()=>deleteRow(setEditRes,row.id)} />}
@@ -690,8 +690,8 @@ export default function DailyBoard() {
                     const isAft = slot.startsWith("13");
                     return (
                       <tr key={slot}>
-                        <td style={{ padding:"4px 6px", borderBottom:"1px solid #f5f5f4", borderRight:"1px solid #f5f5f4",
-                          fontWeight:800, fontSize:13, textAlign:"center", color:"#78350f",
+                        <td style={{ padding:"5px 8px", borderBottom:"1px solid #f5f5f4", borderRight:"1px solid #f5f5f4",
+                          fontWeight:800, fontSize:15, textAlign:"center", color:"#78350f",
                           background:isAft?"#fefce8":"#fafaf9", whiteSpace:"nowrap" }}>{slot}</td>
                         {therapyCols.map(c => {
                           const manual = dTher[slot]?.[c.key];
@@ -704,9 +704,9 @@ export default function DailyBoard() {
                               {editMode ? (
                                 <>
                                   {autoVal && !manual && (
-                                    <div style={{ fontSize:13, color:"#374151", whiteSpace:"pre-wrap",
-                                      lineHeight:1.5, padding:"2px 5px", background:"#f0f9ff",
-                                      borderRadius:4, border:"1px solid #dbeafe" }}>{autoVal}</div>
+                                    <div style={{ fontSize:14, fontWeight:700, color:"#1e293b", whiteSpace:"pre-wrap",
+                                      lineHeight:1.5, padding:"3px 6px", background:"#f0f9ff",
+                                      borderRadius:4, border:"1px solid #dbeafe", textAlign:"center" }}>{autoVal}</div>
                                   )}
                                   <textarea value={manual||""} onChange={e=>updateTherapy(slot,c.key,e.target.value)}
                                     rows={2} placeholder={autoVal?"":"-"}
@@ -740,13 +740,13 @@ export default function DailyBoard() {
 /* ── 서브 컴포넌트 ── */
 function SectionHeader({ icon, label, count, color, bg, borderColor, right }) {
   return (
-    <div style={{ background:bg, border:`1px solid ${borderColor}`, borderBottom:"none",
-      borderRadius:"10px 10px 0 0", padding:"7px 14px",
+    <div style={{ background:bg, border:`1.5px solid ${borderColor}`, borderBottom:"none",
+      borderRadius:"10px 10px 0 0", padding:"8px 14px",
       display:"flex", alignItems:"center", gap:8 }}>
-      <span style={{ fontSize:16 }}>{icon}</span>
-      <span style={{ fontWeight:900, fontSize:16, color, letterSpacing:1 }}>{label}</span>
-      {count > 0 && <span style={{ fontSize:13, fontWeight:800, color,
-        background:"rgba(255,255,255,0.7)", borderRadius:10, padding:"1px 8px" }}>{count}</span>}
+      <span style={{ fontSize:18 }}>{icon}</span>
+      <span style={{ fontWeight:900, fontSize:18, color, letterSpacing:1 }}>{label}</span>
+      {count > 0 && <span style={{ fontSize:15, fontWeight:800, color,
+        background:"rgba(255,255,255,0.7)", borderRadius:10, padding:"1px 9px" }}>{count}</span>}
       {right && <div style={{ marginLeft:"auto" }}>{right}</div>}
     </div>
   );
