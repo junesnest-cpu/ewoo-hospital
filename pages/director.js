@@ -94,6 +94,81 @@ function DirectorDashboard({ profile }) {
   const [error, setError] = useState({});
   const [treatMonth, setTreatMonth] = useState(currentYM);
 
+  // 상담·입원 통계 (Firebase consultations)
+  const [consultations, setConsultations] = useState({});
+  useEffect(() => {
+    const u = onValue(ref(db, "consultations"), s => setConsultations(s.val() || {}));
+    return () => u();
+  }, []);
+
+  // 월별 상담건수/입원예약건수/신규입원수 계산
+  const consultStats = (() => {
+    const stats = {};
+    for (let m = 1; m <= 12; m++) {
+      const ym = `${year}-${String(m).padStart(2,"0")}`;
+      stats[m] = { consult: 0, reserved: 0, newAdmit: 0 };
+    }
+    Object.values(consultations).forEach(c => {
+      if (!c?.name) return;
+      // 상담건수: createdAt 기준
+      if (c.createdAt?.startsWith(`${year}-`)) {
+        const m = parseInt(c.createdAt.slice(5, 7));
+        if (stats[m]) stats[m].consult++;
+      }
+      // 입원예약건수: admitDate 기준, 예약완료 상태
+      if (c.status === "예약완료" && c.admitDate?.startsWith(`${year}-`)) {
+        const m = parseInt(c.admitDate.slice(5, 7));
+        if (stats[m]) stats[m].reserved++;
+      }
+      // 신규입원수: admitDate 기준, 입원완료 상태, patientId 없음 (신환)
+      if (c.status === "입원완료" && c.admitDate?.startsWith(`${year}-`)) {
+        const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
+        if (isNew) {
+          const m = parseInt(c.admitDate.slice(5, 7));
+          if (stats[m]) stats[m].newAdmit++;
+        }
+      }
+    });
+    return stats;
+  })();
+
+  // 전년도 상담 통계 (전년 동월 대비용)
+  const prevYearConsultStats = (() => {
+    const stats = {};
+    for (let m = 1; m <= 12; m++) stats[m] = { consult: 0, reserved: 0, newAdmit: 0 };
+    const py = year - 1;
+    Object.values(consultations).forEach(c => {
+      if (!c?.name) return;
+      if (c.createdAt?.startsWith(`${py}-`)) {
+        const m = parseInt(c.createdAt.slice(5, 7));
+        if (stats[m]) stats[m].consult++;
+      }
+      if (c.status === "예약완료" && c.admitDate?.startsWith(`${py}-`)) {
+        const m = parseInt(c.admitDate.slice(5, 7));
+        if (stats[m]) stats[m].reserved++;
+      }
+      if (c.status === "입원완료" && c.admitDate?.startsWith(`${py}-`)) {
+        const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
+        if (isNew) {
+          const m = parseInt(c.admitDate.slice(5, 7));
+          if (stats[m]) stats[m].newAdmit++;
+        }
+      }
+    });
+    return stats;
+  })();
+
+  // 전년도 매출 데이터
+  const [prevYearRevenue, setPrevYearRevenue] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/director-stats",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"revenue",year:year-1})});
+        if (r.ok) setPrevYearRevenue(await r.json());
+      } catch(e) {}
+    })();
+  }, [year]);
+
   // EMR 매출/가동률
   const fetchRevenue = async () => {
     setLoading(p=>({...p,rev:true})); setError(p=>({...p,rev:null}));
@@ -139,6 +214,16 @@ function DirectorDashboard({ profile }) {
 
   const fmtAmt = n => n != null ? Math.round(n).toLocaleString() : "-";
   const fmtMan = n => n != null && n !== 0 ? `${Math.round(n/10000).toLocaleString()}만` : "-";
+  const yoyPct = (cur, prev) => {
+    if (!prev || prev === 0) return cur > 0 ? "+∞" : null;
+    const pct = Math.round(((cur - prev) / prev) * 100);
+    return pct > 0 ? `+${pct}%` : `${pct}%`;
+  };
+  const yoyStyle = (cur, prev) => {
+    if (!prev || prev === 0) return { color: "#94a3b8" };
+    const pct = ((cur - prev) / prev) * 100;
+    return { color: pct > 0 ? "#dc2626" : pct < 0 ? "#2563eb" : "#64748b", fontSize: 11, fontWeight: 600, marginLeft: 3 };
+  };
 
   const hasOutpatient = revenue?.outpatient && Object.keys(revenue.outpatient).length > 0;
   const hasBedDays = revenue?.bedDays && Object.keys(revenue.bedDays).length > 0;
@@ -154,10 +239,24 @@ function DirectorDashboard({ profile }) {
     Object.entries(revenue.outpatient||{}).forEach(([ym,r])=>{ if(map[ym]) map[ym].outTotal=r.total||0; });
     Object.entries(revenue.bedDays||{}).forEach(([ym,v])=>{ if(map[ym]) map[ym].bedDays=v||0; });
     Object.values(map).forEach(r=>{ r.grandTotal=r.inTotal+r.outTotal; });
-    return Object.values(map).sort((a,b)=>a.month-b.month);
+    // 전년 동월 데이터 병합
+    const py = year - 1;
+    const rows = Object.values(map).sort((a,b)=>a.month-b.month);
+    rows.forEach(r => {
+      const pym = `${py}${String(r.month).padStart(2,"0")}`;
+      const pIn = prevYearRevenue?.inpatient?.[pym]?.total || 0;
+      const pOut = prevYearRevenue?.outpatient?.[pym]?.total || 0;
+      const pBd = prevYearRevenue?.bedDays?.[pym] || 0;
+      const pGongdan = prevYearRevenue?.inpatient?.[pym]?.gongdan || 0;
+      r.prevGrand = pIn + pOut;
+      r.prevIn = pIn;
+      r.prevOut = pOut;
+      r.prevBedDays = pBd;
+      r.prevGongdan = pGongdan;
+    });
+    return rows;
   })();
-  const hasDetail = monthlyData.some(r=>r.gongdan>0||r.bonbu>0);
-  const yearTotals = monthlyData.reduce((t,r)=>({inTotal:t.inTotal+r.inTotal,outTotal:t.outTotal+r.outTotal,bedDays:t.bedDays+r.bedDays,grandTotal:t.grandTotal+r.grandTotal,gongdan:t.gongdan+r.gongdan,bonbu:t.bonbu+r.bonbu}),{inTotal:0,outTotal:0,bedDays:0,grandTotal:0,gongdan:0,bonbu:0});
+  const yearTotals = monthlyData.reduce((t,r)=>({inTotal:t.inTotal+r.inTotal,outTotal:t.outTotal+r.outTotal,bedDays:t.bedDays+r.bedDays,grandTotal:t.grandTotal+r.grandTotal,gongdan:t.gongdan+(r.gongdan||0)}),{inTotal:0,outTotal:0,bedDays:0,grandTotal:0,gongdan:0});
 
   // 가동률 데이터
   const occData = (() => {
@@ -260,33 +359,67 @@ function DirectorDashboard({ profile }) {
             <div style={{overflowX:"auto"}}>
               <table style={S.table}>
                 <thead><tr>
-                  <th style={S.th}>월</th><th style={S.th}>입원</th>
-                  {hasOutpatient&&<th style={S.th}>외래</th>}
-                  {hasBedDays&&<th style={S.th}>입원일수</th>}
-                  {hasDetail&&<th style={S.th}>공단수입</th>}
-                  {hasDetail&&<th style={S.th}>본부금</th>}
+                  <th style={S.th}>월</th>
                   <th style={S.th}>총 진료비</th>
+                  <th style={S.th}>입원</th>
+                  <th style={S.th}>외래</th>
+                  <th style={S.th}>공단수입</th>
+                  <th style={S.th}>입원일수</th>
+                  <th style={S.th}>상담</th>
+                  <th style={S.th}>예약</th>
+                  <th style={S.th}>신규입원</th>
                 </tr></thead>
                 <tbody>
                   <tr style={{...S.totRow,borderBottom:"2px solid #0f2744"}}>
                     <td style={{...S.tdL,fontSize:14}}>합계</td>
-                    <td style={{...S.td,fontWeight:800,color:"#0369a1"}}>{fmtAmt(yearTotals.inTotal)}</td>
-                    {hasOutpatient&&<td style={{...S.td,fontWeight:800,color:"#7c3aed"}}>{fmtAmt(yearTotals.outTotal)}</td>}
-                    {hasBedDays&&<td style={{...S.td,textAlign:"center",fontWeight:800}}>{yearTotals.bedDays.toLocaleString()}</td>}
-                    {hasDetail&&<td style={{...S.td,fontWeight:800,color:"#059669"}}>{fmtAmt(yearTotals.gongdan)}</td>}
-                    {hasDetail&&<td style={{...S.td,fontWeight:800,color:"#d97706"}}>{fmtAmt(yearTotals.bonbu)}</td>}
                     <td style={{...S.td,fontWeight:800,color:"#dc2626",fontSize:14}}>{fmtAmt(yearTotals.grandTotal)}</td>
+                    <td style={{...S.td,fontWeight:800,color:"#0369a1"}}>{fmtAmt(yearTotals.inTotal)}</td>
+                    <td style={{...S.td,fontWeight:800,color:"#7c3aed"}}>{fmtAmt(yearTotals.outTotal)}</td>
+                    <td style={{...S.td,fontWeight:800,color:"#059669"}}>{fmtAmt(yearTotals.gongdan)}</td>
+                    <td style={{...S.td,textAlign:"center",fontWeight:800}}>{yearTotals.bedDays.toLocaleString()}</td>
+                    <td style={{...S.td,textAlign:"center",fontWeight:800}}>{Object.values(consultStats).reduce((s,v)=>s+v.consult,0)}</td>
+                    <td style={{...S.td,textAlign:"center",fontWeight:800}}>{Object.values(consultStats).reduce((s,v)=>s+v.reserved,0)}</td>
+                    <td style={{...S.td,textAlign:"center",fontWeight:800}}>{Object.values(consultStats).reduce((s,v)=>s+v.newAdmit,0)}</td>
                   </tr>
                   {monthlyData.map(r=>{
                     const empty=r.inTotal===0&&r.outTotal===0;
-                    return(<tr key={r.month} style={{opacity:year===thisYear&&r.month>thisMonth?0.3:1}}>
+                    const cs=consultStats[r.month]||{consult:0,reserved:0,newAdmit:0};
+                    const pcs=prevYearConsultStats[r.month]||{consult:0,reserved:0,newAdmit:0};
+                    const isFuture=year===thisYear&&r.month>thisMonth;
+                    return(<tr key={r.month} style={{opacity:isFuture?0.3:1}}>
                       <td style={S.tdL}>{r.month}월</td>
-                      <td style={{...S.td,color:"#0369a1",fontWeight:600}}>{empty?"-":fmtAmt(r.inTotal)}</td>
-                      {hasOutpatient&&<td style={{...S.td,color:"#7c3aed",fontWeight:600}}>{empty?"-":fmtAmt(r.outTotal)}</td>}
-                      {hasBedDays&&<td style={{...S.td,textAlign:"center",color:"#64748b"}}>{r.bedDays||"-"}</td>}
-                      {hasDetail&&<td style={{...S.td,color:"#059669"}}>{empty?"-":fmtAmt(r.gongdan)}</td>}
-                      {hasDetail&&<td style={{...S.td,color:"#d97706"}}>{empty?"-":fmtAmt(r.bonbu)}</td>}
-                      <td style={{...S.td,fontWeight:800,color:"#dc2626"}}>{empty?"-":fmtAmt(r.grandTotal)}</td>
+                      <td style={{...S.td,fontWeight:800,color:"#dc2626"}}>
+                        {empty?"-":fmtAmt(r.grandTotal)}
+                        {!empty&&r.prevGrand>0&&<span style={yoyStyle(r.grandTotal,r.prevGrand)}>({yoyPct(r.grandTotal,r.prevGrand)})</span>}
+                      </td>
+                      <td style={{...S.td,color:"#0369a1",fontWeight:600}}>
+                        {empty?"-":fmtAmt(r.inTotal)}
+                        {!empty&&r.prevIn>0&&<span style={yoyStyle(r.inTotal,r.prevIn)}>({yoyPct(r.inTotal,r.prevIn)})</span>}
+                      </td>
+                      <td style={{...S.td,color:"#7c3aed",fontWeight:600}}>
+                        {empty?"-":fmtAmt(r.outTotal)}
+                        {!empty&&r.prevOut>0&&<span style={yoyStyle(r.outTotal,r.prevOut)}>({yoyPct(r.outTotal,r.prevOut)})</span>}
+                      </td>
+                      <td style={{...S.td,color:"#059669",fontWeight:600}}>
+                        {empty||!r.gongdan?"-":fmtAmt(r.gongdan)}
+                        {r.gongdan>0&&r.prevGongdan>0&&<span style={yoyStyle(r.gongdan,r.prevGongdan)}>({yoyPct(r.gongdan,r.prevGongdan)})</span>}
+                      </td>
+                      <td style={{...S.td,textAlign:"center",color:"#64748b"}}>
+                        {r.bedDays||"-"}
+                        {r.bedDays>0&&r.prevBedDays>0&&<span style={yoyStyle(r.bedDays,r.prevBedDays)}>({yoyPct(r.bedDays,r.prevBedDays)})</span>}
+                      </td>
+                      <td style={{...S.td,textAlign:"center",color:"#059669",fontWeight:600}}>
+                        {cs.consult||"-"}
+                        {cs.consult>0&&pcs.consult>0&&<span style={yoyStyle(cs.consult,pcs.consult)}>({yoyPct(cs.consult,pcs.consult)})</span>}
+                      </td>
+                      <td style={{...S.td,textAlign:"center",color:"#0ea5e9",fontWeight:600}}>
+                        {cs.reserved||"-"}
+                        {cs.reserved>0&&pcs.reserved>0&&<span style={yoyStyle(cs.reserved,pcs.reserved)}>({yoyPct(cs.reserved,pcs.reserved)})</span>}
+                      </td>
+                      <td style={{...S.td,textAlign:"center",color:"#d97706",fontWeight:600}}>
+                        {cs.newAdmit||"-"}
+                        {cs.newAdmit>0&&pcs.newAdmit>0&&<span style={yoyStyle(cs.newAdmit,pcs.newAdmit)}>({yoyPct(cs.newAdmit,pcs.newAdmit)})</span>}
+                      </td>
                     </tr>);
                   })}
                 </tbody>
