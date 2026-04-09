@@ -159,7 +159,7 @@ export default function App({ Component, pageProps }) {
   const [showAvailPanel, setShowAvailPanel] = useState(false);
   const router = useRouter();
   const isMobile = useIsMobile();
-  const isApproval = router.pathname === "/approval";
+  const isApproval = router.pathname === "/approval" || router.pathname === "/director";
   const pageTitle = isApproval ? "이우 전자결재시스템" : "이우 병동관리시스템";
 
   useEffect(() => {
