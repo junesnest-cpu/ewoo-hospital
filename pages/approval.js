@@ -2768,7 +2768,9 @@ function DirectorStatsPanel() {
   const fmtAmt = (n) => n != null ? Math.round(n).toLocaleString() : '-';
   const fmtMan = (n) => n != null ? `${Math.round(n / 10000).toLocaleString()}만` : '-';
 
-  // 월별 합산 데이터 생성
+  const hasOutpatient = revenue && revenue.outpatient && Object.keys(revenue.outpatient).length > 0;
+
+  // 월별 합산 데이터 생성 (Firebase 객체 형태: { "202601": { covered, nonCovered, total } })
   const monthlyData = (() => {
     if (!revenue) return [];
     const map = {};
@@ -2776,11 +2778,13 @@ function DirectorStatsPanel() {
       const ym = `${year}${String(m).padStart(2, '0')}`;
       map[ym] = { month: m, inCovered: 0, inNonCovered: 0, inTotal: 0, outCovered: 0, outNonCovered: 0, outTotal: 0, grandTotal: 0 };
     }
-    (revenue.inpatient || []).forEach(r => {
-      if (map[r.ym]) { map[r.ym].inCovered = r.covered; map[r.ym].inNonCovered = r.nonCovered; map[r.ym].inTotal = r.total; }
+    const inp = revenue.inpatient || {};
+    Object.entries(inp).forEach(([ym, r]) => {
+      if (map[ym]) { map[ym].inCovered = r.covered || 0; map[ym].inNonCovered = r.nonCovered || 0; map[ym].inTotal = r.total || 0; }
     });
-    (revenue.outpatient || []).forEach(r => {
-      if (map[r.ym]) { map[r.ym].outCovered = r.covered; map[r.ym].outNonCovered = r.nonCovered; map[r.ym].outTotal = r.total; }
+    const outp = revenue.outpatient || {};
+    Object.entries(outp).forEach(([ym, r]) => {
+      if (map[ym]) { map[ym].outCovered = r.covered || 0; map[ym].outNonCovered = r.nonCovered || 0; map[ym].outTotal = r.total || 0; }
     });
     Object.values(map).forEach(r => { r.grandTotal = r.inTotal + r.outTotal; });
     return Object.values(map).sort((a, b) => a.month - b.month);
@@ -2821,24 +2825,35 @@ function DirectorStatsPanel() {
           </div>
         </div>
 
+        {revenue?.lastSync && (
+          <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
+            마지막 동기화: {new Date(revenue.lastSync).toLocaleString('ko-KR')}
+          </div>
+        )}
         {loading.rev && <div style={{ color:"#64748b", padding:20, textAlign:"center" }}>매출 데이터 조회 중...</div>}
         {error.rev && <div style={{ color:"#dc2626", padding:12, background:"#fee2e2", borderRadius:8, fontSize:13, marginBottom:12 }}>⚠️ {error.rev}</div>}
+        {revenue && !loading.rev && monthlyData.every(r => r.grandTotal === 0) && (
+          <div style={{ color:"#94a3b8", fontSize:14, padding:20, textAlign:"center" }}>
+            {year}년 매출 데이터가 없습니다. 병원 내부 PC에서 동기화 스크립트를 실행해주세요.
+            <div style={{ fontSize:12, marginTop:6, color:"#cbd5e1" }}>node scripts/syncDirectorStats.js {year}</div>
+          </div>
+        )}
 
-        {revenue && !loading.rev && (
+        {revenue && !loading.rev && !monthlyData.every(r => r.grandTotal === 0) && (
           <div style={{ overflowX:"auto" }}>
             <table style={DS.table}>
               <thead>
                 <tr>
                   <th style={DS.th} rowSpan={2}>월</th>
                   <th style={DS.th} colSpan={3}>입원 매출</th>
-                  {(revenue.outpatient || []).length > 0 && <th style={DS.th} colSpan={3}>외래 매출</th>}
+                  {hasOutpatient && <th style={DS.th} colSpan={3}>외래 매출</th>}
                   <th style={DS.th} rowSpan={2}>합계</th>
                 </tr>
                 <tr>
                   <th style={DS.thSub}>급여</th>
                   <th style={DS.thSub}>비급여</th>
                   <th style={DS.thSub}>소계</th>
-                  {(revenue.outpatient || []).length > 0 && <>
+                  {hasOutpatient && <>
                     <th style={DS.thSub}>급여</th>
                     <th style={DS.thSub}>비급여</th>
                     <th style={DS.thSub}>소계</th>
@@ -2855,7 +2870,7 @@ function DirectorStatsPanel() {
                       <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.inCovered)}</td>
                       <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.inNonCovered)}</td>
                       <td style={{ ...DS.td, fontWeight:700, color:"#0369a1" }}>{isEmpty ? '-' : fmtAmt(r.inTotal)}</td>
-                      {(revenue.outpatient || []).length > 0 && <>
+                      {hasOutpatient && <>
                         <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.outCovered)}</td>
                         <td style={DS.td}>{isEmpty ? '-' : fmtAmt(r.outNonCovered)}</td>
                         <td style={{ ...DS.td, fontWeight:700, color:"#7c3aed" }}>{isEmpty ? '-' : fmtAmt(r.outTotal)}</td>
@@ -2869,7 +2884,7 @@ function DirectorStatsPanel() {
                   <td style={DS.td}>{fmtMan(yearTotals.inCovered)}</td>
                   <td style={DS.td}>{fmtMan(yearTotals.inNonCovered)}</td>
                   <td style={{ ...DS.td, fontWeight:800, color:"#0369a1", fontSize:14 }}>{fmtMan(yearTotals.inTotal)}</td>
-                  {(revenue.outpatient || []).length > 0 && <>
+                  {hasOutpatient && <>
                     <td style={DS.td}>{fmtMan(yearTotals.outCovered)}</td>
                     <td style={DS.td}>{fmtMan(yearTotals.outNonCovered)}</td>
                     <td style={{ ...DS.td, fontWeight:800, color:"#7c3aed", fontSize:14 }}>{fmtMan(yearTotals.outTotal)}</td>
