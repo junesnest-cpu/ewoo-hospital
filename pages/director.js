@@ -260,36 +260,18 @@ function DirectorDashboard({ profile }) {
   })();
   const yearTotals = monthlyData.reduce((t,r)=>({inTotal:t.inTotal+r.inTotal,outTotal:t.outTotal+r.outTotal,bedDays:t.bedDays+r.bedDays,grandTotal:t.grandTotal+r.grandTotal,gongdan:t.gongdan+(r.gongdan||0)}),{inTotal:0,outTotal:0,bedDays:0,grandTotal:0,gongdan:0});
 
-  // slots 기반 특정 날짜의 예상 재원수 계산
-  const getProjectedOccupancy = (dateStr) => {
-    // dateStr: "YYYYMMDD"
-    const y = parseInt(dateStr.slice(0,4)), m = parseInt(dateStr.slice(4,6))-1, d = parseInt(dateStr.slice(6,8));
-    const vd = new Date(y, m, d); vd.setHours(0,0,0,0);
-    let count = 0;
-    const VALID = new Set(["201","202","203","204","205","206","301","302","303","304","305","306","501","502","503","504","505","506","601","602","603"]);
-    Object.entries(slots).forEach(([sk, slot]) => {
-      if (!VALID.has(sk.split("-")[0])) return;
-      if (!slot) return;
-      // 현재 환자
-      if (slot.current?.name) {
-        const dm = slot.current.discharge?.match(/(\d{1,2})\/(\d{1,2})/);
-        const dd = dm ? new Date(y, parseInt(dm[1])-1, parseInt(dm[2])) : null;
-        if (dd) dd.setHours(0,0,0,0);
-        if (!dd || dd >= vd) { count++; return; }
-      }
-      // 예약 환자
-      for (const r of (slot.reservations || [])) {
-        if (!r?.name) continue;
-        const am = r.admitDate?.match(/(\d{1,2})\/(\d{1,2})/);
-        if (!am) continue;
-        const ad = new Date(y, parseInt(am[1])-1, parseInt(am[2])); ad.setHours(0,0,0,0);
-        const dm2 = r.discharge?.match(/(\d{1,2})\/(\d{1,2})/);
-        const dd2 = dm2 ? new Date(y, parseInt(dm2[1])-1, parseInt(dm2[2])) : null;
-        if (dd2) dd2.setHours(0,0,0,0);
-        if (ad <= vd && (!dd2 || dd2 >= vd)) { count++; break; }
-      }
-    });
-    return count;
+  // 월간 예정표와 동일한 방식으로 예상 재원수 계산
+  // (오늘 실제 재원수 기준 + 입퇴원 이벤트 순방향 누적)
+  const WARD_ROOMS_DIR = [
+    {id:"201",cap:4},{id:"202",cap:1},{id:"203",cap:4},{id:"204",cap:2},{id:"205",cap:6},{id:"206",cap:6},
+    {id:"301",cap:4},{id:"302",cap:1},{id:"303",cap:4},{id:"304",cap:2},{id:"305",cap:2},{id:"306",cap:6},
+    {id:"501",cap:4},{id:"502",cap:1},{id:"503",cap:4},{id:"504",cap:2},{id:"505",cap:6},{id:"506",cap:6},
+    {id:"601",cap:6},{id:"602",cap:1},{id:"603",cap:6},
+  ];
+  const parseMDDir = (str, y) => {
+    if (!str || str === "미정") return null;
+    const m = str.match(/(\d{1,2})\/(\d{1,2})/);
+    return m ? new Date(y, parseInt(m[1])-1, parseInt(m[2])) : null;
   };
 
   // 일자별 매출/가동률 데이터
@@ -297,8 +279,9 @@ function DirectorDashboard({ profile }) {
     if (!occupancy?.daily) return { rows:[], avgOcc:0, avgRate:0, sumIn:0, sumOut:0, sumGongdan:0, sumConsult:0, sumReserved:0 };
     const actual = occupancy.daily;
     const isCurrentMonth = year===thisYear && occMonth===thisMonth;
-    const daysInMonth = new Date(year,occMonth,0).getDate();
-    // 일별 상담/예약 건수 계산 (오늘까지만)
+    const totalDays = new Date(year,occMonth,0).getDate();
+
+    // 일별 상담/예약 건수 (오늘까지만)
     const dailyConsult = {}, dailyReserved = {};
     Object.values(consultations).forEach(c => {
       if (!c?.name) return;
@@ -315,15 +298,60 @@ function DirectorDashboard({ profile }) {
         }
       }
     });
+
     const rows = [...actual.map(d=>({...d, projected:false, consult:dailyConsult[d.date]||0, reserved:dailyReserved[d.date]||0}))];
-    if (isCurrentMonth) {
-      for (let d=now.getDate()+1;d<=daysInMonth;d++) {
+
+    // 예상 재원수 계산 (월간 예정표와 동일 로직)
+    if (isCurrentMonth && Object.keys(slots).length > 0) {
+      // 오늘 실제 재원수 계산
+      const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      let todayCensus = 0;
+      WARD_ROOMS_DIR.forEach(({ id, cap }) => {
+        for (let i = 1; i <= cap; i++) {
+          const s = slots[`${id}-${i}`];
+          if (!s?.current?.name) continue;
+          const dis = parseMDDir(s.current.discharge, year);
+          if (dis && new Date(dis.getFullYear(), dis.getMonth(), dis.getDate()) <= todayDateOnly) continue;
+          todayCensus++;
+        }
+      });
+
+      // 날짜별 입퇴원 건수 (slots + consultations 기반 calendarData)
+      const normN = n => (n||"").replace(/^신\)/,"").replace(/\d+$/,"").trim().toLowerCase();
+      const getAdmDis = (d) => {
+        const admSet = new Set(), disSet = new Set();
+        Object.entries(slots).forEach(([sk, slot]) => {
+          const rid = sk.split("-")[0];
+          if (!WARD_ROOMS_DIR.some(r=>r.id===rid)) return;
+          const cur = slot?.current;
+          if (cur?.name) {
+            const aKey = parseMDDir(cur.admitDate, year);
+            const dKey = parseMDDir(cur.discharge, year);
+            if (aKey && aKey.getMonth()+1===occMonth && aKey.getDate()===d) admSet.add(normN(cur.name));
+            if (dKey && dKey.getMonth()+1===occMonth && dKey.getDate()===d) disSet.add(normN(cur.name));
+          }
+          (slot?.reservations||[]).forEach(r => {
+            if (!r?.name) return;
+            const aKey = parseMDDir(r.admitDate, year);
+            const dKey = parseMDDir(r.discharge, year);
+            if (aKey && aKey.getMonth()+1===occMonth && aKey.getDate()===d) admSet.add(normN(r.name));
+            if (dKey && dKey.getMonth()+1===occMonth && dKey.getDate()===d) disSet.add(normN(r.name));
+          });
+        });
+        return { adm: admSet.size, dis: disSet.size };
+      };
+
+      // 오늘 이후 순방향 누적
+      let cur = todayCensus;
+      for (let d = now.getDate()+1; d <= totalDays; d++) {
+        const { adm, dis } = getAdmDis(d);
+        cur = Math.max(0, cur + adm - dis);
         const dt = `${year}${String(occMonth).padStart(2,"0")}${String(d).padStart(2,"0")}`;
-        const projOcc = getProjectedOccupancy(dt);
-        const projRate = Math.round((projOcc / TOTAL_BEDS) * 1000) / 10;
-        rows.push({date:dt, occupied:projOcc, total:TOTAL_BEDS, rate:projRate, projected:true, inTotal:0, outTotal:0, gongdan:0, consult:0, reserved:0});
+        const projRate = Math.round((cur / TOTAL_BEDS) * 1000) / 10;
+        rows.push({date:dt, occupied:cur, total:TOTAL_BEDS, rate:projRate, projected:true, inTotal:0, outTotal:0, gongdan:0, consult:0, reserved:0});
       }
     }
+
     const ao = rows.filter(r=>!r.projected);
     return {
       rows,
