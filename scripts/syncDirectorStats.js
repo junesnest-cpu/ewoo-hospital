@@ -203,11 +203,18 @@ async function syncYear(pool, year, updates) {
   console.log('  [치료항목]');
   try {
     const treatResult = await pool.request().query(`
-      SELECT LEFT(idam_date, 6) AS ym, RTRIM(idam_momn) AS code,
-        COUNT(*) AS cnt, SUM(CAST(idam_times AS int)) AS total_times,
-        SUM(CAST(idam_dosage AS float)) AS total_dosage
-      FROM Widam WHERE idam_date >= '${yearStart}' AND idam_date < '${yearEnd}'
-      GROUP BY LEFT(idam_date, 6), RTRIM(idam_momn) ORDER BY ym
+      SELECT ym, code, SUM(cnt) AS cnt, SUM(total_times) AS total_times, SUM(total_dosage) AS total_dosage
+      FROM (
+        SELECT LEFT(idam_date, 6) AS ym, RTRIM(idam_momn) AS code,
+          COUNT(*) AS cnt, SUM(CAST(idam_times AS int)) AS total_times, SUM(CAST(idam_dosage AS float)) AS total_dosage
+        FROM Widam WHERE idam_date >= '${yearStart}' AND idam_date < '${yearEnd}'
+        GROUP BY LEFT(idam_date, 6), RTRIM(idam_momn)
+        UNION ALL
+        SELECT LEFT(odam_date, 6) AS ym, RTRIM(odam_momn) AS code,
+          COUNT(*) AS cnt, SUM(CAST(odam_times AS int)) AS total_times, SUM(CAST(odam_dosage AS float)) AS total_dosage
+        FROM Wodam WHERE odam_date >= '${yearStart}' AND odam_date < '${yearEnd}'
+        GROUP BY LEFT(odam_date, 6), RTRIM(odam_momn)
+      ) t GROUP BY ym, code ORDER BY ym
     `);
     const treatItems = {};
     for (const row of treatResult.recordset) {
@@ -338,10 +345,18 @@ async function syncMonth(pool, year, month, updates) {
   // 치료항목
   try {
     const tR = await pool.request().query(`
-      SELECT RTRIM(idam_momn) AS code, COUNT(*) AS cnt,
-        SUM(CAST(idam_times AS int)) AS total_times, SUM(CAST(idam_dosage AS float)) AS total_dosage
-      FROM Widam WHERE idam_date >= '${ymStart}' AND idam_date < '${nextYm}'
-      GROUP BY RTRIM(idam_momn)
+      SELECT code, SUM(cnt) AS cnt, SUM(total_times) AS total_times, SUM(total_dosage) AS total_dosage
+      FROM (
+        SELECT RTRIM(idam_momn) AS code, COUNT(*) AS cnt,
+          SUM(CAST(idam_times AS int)) AS total_times, SUM(CAST(idam_dosage AS float)) AS total_dosage
+        FROM Widam WHERE idam_date >= '${ymStart}' AND idam_date < '${nextYm}'
+        GROUP BY RTRIM(idam_momn)
+        UNION ALL
+        SELECT RTRIM(odam_momn) AS code, COUNT(*) AS cnt,
+          SUM(CAST(odam_times AS int)) AS total_times, SUM(CAST(odam_dosage AS float)) AS total_dosage
+        FROM Wodam WHERE odam_date >= '${ymStart}' AND odam_date < '${nextYm}'
+        GROUP BY RTRIM(odam_momn)
+      ) t GROUP BY code
     `);
     const items = {};
     for (const row of tR.recordset) {
