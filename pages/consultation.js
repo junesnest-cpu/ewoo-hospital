@@ -5,6 +5,7 @@ import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 
 const ROOM_TYPES = ["1인실","2인실","4인실","6인실"];
+const TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
 const WARD_STRUCTURE = {
   2: { rooms: [
     {id:"201",type:"4인실",cap:4},{id:"202",type:"1인실",cap:1},{id:"203",type:"4인실",cap:4},
@@ -61,7 +62,7 @@ const EMPTY_FORM = {
   phone:"", phoneNote:"",
   phone2:"", phone2Note:"",
   diagnosis:"", hospital:"",
-  admitDate:"", dischargeDate:"", roomTypes:[],
+  admitDate:"", admitTime:"", dischargeDate:"", dischargeTime:"", roomTypes:[],
   surgery:false, surgeryDate:"",
   chemo:false, chemoDate:"",
   radiation:false, radiationDate:"",
@@ -330,7 +331,9 @@ export default function ConsultationPage() {
       newReservations.push({
         name: consult.name,
         admitDate: consult.admitDate ? fmtDate(consult.admitDate) : "",
+        admitTime: consult.admitTime || "",
         discharge: consult.dischargeDate ? fmtDate(consult.dischargeDate) : (consult.discharge || "미정"),
+        dischargeTime: consult.dischargeTime || "",
         note: consult.diagnosis || "",
         consultationId: reserveModal.id,
       });
@@ -683,11 +686,37 @@ export default function ConsultationPage() {
             <div style={{display:"flex", gap:16, alignItems:"flex-start", marginBottom:12, flexWrap:"wrap"}}>
               <div style={{minWidth:160}}>
                 <label style={S.lbl}>입원 예약일</label>
-                <input style={{...S.inp, width:160}} type="date" value={form.admitDate} onChange={e=>setF("admitDate",e.target.value)}/>
+                <div style={{display:"flex", gap:4}}>
+                  <input style={{...S.inp, width:120}} type="date" value={form.admitDate} onChange={e=>setF("admitDate",e.target.value)}/>
+                  {(!form.admitTime || TIME_OPTIONS.includes(form.admitTime)) ? (
+                    <select value={form.admitTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("admitTime",v?v.trim():""); } else setF("admitTime",e.target.value); }}
+                      style={{...S.inp, width:90, color:form.admitTime?"#166534":"#94a3b8", padding:"6px 4px"}}>
+                      <option value="">시간</option>
+                      {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                      <option value="__custom__">직접입력</option>
+                    </select>
+                  ) : (
+                    <input value={form.admitTime} onChange={e=>setF("admitTime",e.target.value)}
+                      style={{...S.inp, width:90, color:"#166534"}} />
+                  )}
+                </div>
               </div>
               <div style={{minWidth:160}}>
                 <label style={S.lbl}>퇴원 예정일</label>
-                <input style={{...S.inp, width:160}} type="date" value={form.dischargeDate} onChange={e=>setF("dischargeDate",e.target.value)}/>
+                <div style={{display:"flex", gap:4}}>
+                  <input style={{...S.inp, width:120}} type="date" value={form.dischargeDate} onChange={e=>setF("dischargeDate",e.target.value)}/>
+                  {(!form.dischargeTime || TIME_OPTIONS.includes(form.dischargeTime)) ? (
+                    <select value={form.dischargeTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("dischargeTime",v?v.trim():""); } else setF("dischargeTime",e.target.value); }}
+                      style={{...S.inp, width:90, color:form.dischargeTime?"#991b1b":"#94a3b8", padding:"6px 4px"}}>
+                      <option value="">시간</option>
+                      {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                      <option value="__custom__">직접입력</option>
+                    </select>
+                  ) : (
+                    <input value={form.dischargeTime} onChange={e=>setF("dischargeTime",e.target.value)}
+                      style={{...S.inp, width:90, color:"#991b1b"}} />
+                  )}
+                </div>
                 {form.admitDate && form.dischargeDate && (() => {
                   const a = new Date(form.admitDate), d = new Date(form.dischargeDate);
                   const days = Math.round((d - a) / 86400000);

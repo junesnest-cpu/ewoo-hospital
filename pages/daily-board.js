@@ -6,6 +6,7 @@ import useIsMobile from "../lib/useismobile";
 
 const DOW = ["일","월","화","수","목","금","토"];
 const THERAPY_SLOTS = ["09:00~10:00","10:00~11:00","11:00~12:00","13:00~14:00","14:00~15:00","15:00~16:00","16:00~17:00","17:00~18:00"];
+const TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
 const TREAT_NAMES = { pain:"페인", manip2:"도수2", manip1:"도수1" };
 const VALID_ROOMS = new Set([
   "201","202","203","204","205","206","301","302","303","304","305","306",
@@ -195,15 +196,15 @@ export default function DailyBoard() {
       if (cur?.name) {
         const aKey = parseMD(cur.admitDate, year);
         const dKey = parseMD(cur.discharge, year);
-        if (aKey === date) adm.push({ id:uid(), name:cur.name, room:sk, note:cur.note||"", isNew:false, isReserved:false });
-        if (dKey === date) dis.push({ id:uid(), name:cur.name, room:sk, note:"" });
+        if (aKey === date) adm.push({ id:uid(), name:cur.name, room:sk, note:cur.note||"", isNew:false, isReserved:false, time:cur.admitTime||"" });
+        if (dKey === date) dis.push({ id:uid(), name:cur.name, room:sk, note:"", time:cur.dischargeTime||"" });
       }
       (slot?.reservations||[]).forEach(r => {
         if (!r?.name) return;
         const aKey = parseMD(r.admitDate, year);
         const dKey = parseMD(r.discharge, year);
-        if (aKey === date) adm.push({ id:uid(), name:r.name, room:sk, note:r.note||"", isNew:false, isReserved:true });
-        if (dKey === date) dis.push({ id:uid(), name:r.name, room:sk, note:"" });
+        if (aKey === date) adm.push({ id:uid(), name:r.name, room:sk, note:r.note||"", isNew:false, isReserved:true, time:r.admitTime||"" });
+        if (dKey === date) dis.push({ id:uid(), name:r.name, room:sk, note:"", time:r.dischargeTime||"" });
       });
     });
 
@@ -503,7 +504,16 @@ export default function DailyBoard() {
                       )}
                     </div>
                     {editMode ? (
-                      <Field w={80} value={row.time} onChange={v=>updateRow(setEditAdm,row.id,"time",v)} placeholder="시간" style={{color:"#0891b2",textAlign:"center"}} />
+                      (!row.time || TIME_OPTIONS.includes(row.time)) ? (
+                        <select value={row.time||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력"); updateRow(setEditAdm,row.id,"time",v?v.trim():""); } else updateRow(setEditAdm,row.id,"time",e.target.value); }}
+                          style={{ border:"none", outline:"none", background:"transparent", fontSize:13, color:row.time?"#0891b2":"#94a3b8", fontFamily:"inherit", width:80, flexShrink:0 }}>
+                          <option value="">시간</option>
+                          {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                          <option value="__custom__">직접입력</option>
+                        </select>
+                      ) : (
+                        <Field w={80} value={row.time} onChange={v=>updateRow(setEditAdm,row.id,"time",v)} placeholder="시간" style={{color:"#0891b2",textAlign:"center"}} />
+                      )
                     ) : row.time ? (
                       <span style={{ fontSize:12, color:"#0891b2", fontWeight:600, flexShrink:0 }}>{row.time}</span>
                     ) : null}
@@ -539,7 +549,16 @@ export default function DailyBoard() {
                       <span style={{ fontWeight:700, fontSize:14, flexShrink:0 }}>{row.name}</span>
                     )}
                     {editMode ? (
-                      <Field w={80} value={row.time} onChange={v=>updateRow(setEditDis,row.id,"time",v)} placeholder="시간" style={{color:"#0891b2",textAlign:"center"}} />
+                      (!row.time || TIME_OPTIONS.includes(row.time)) ? (
+                        <select value={row.time||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력"); updateRow(setEditDis,row.id,"time",v?v.trim():""); } else updateRow(setEditDis,row.id,"time",e.target.value); }}
+                          style={{ border:"none", outline:"none", background:"transparent", fontSize:13, color:row.time?"#0891b2":"#94a3b8", fontFamily:"inherit", width:80, flexShrink:0 }}>
+                          <option value="">시간</option>
+                          {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                          <option value="__custom__">직접입력</option>
+                        </select>
+                      ) : (
+                        <Field w={80} value={row.time} onChange={v=>updateRow(setEditDis,row.id,"time",v)} placeholder="시간" style={{color:"#0891b2",textAlign:"center"}} />
+                      )
                     ) : row.time ? (
                       <span style={{ fontSize:12, color:"#0891b2", fontWeight:600, flexShrink:0, background:"#ecfeff", borderRadius:3, padding:"0 4px" }}>{row.time}</span>
                     ) : null}

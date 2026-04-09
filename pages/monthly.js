@@ -198,8 +198,8 @@ export default function MonthlySchedule() {
         // 현재 입원 환자: consultationId 직접 연결 또는 이름 매칭으로 신환 판별
         const curIsNew = cur.consultationId ? !!consultNewById[cur.consultationId]
           : consultNewByName.has(normName(cur.name));
-        if (aKey) { ensure(aKey); data[aKey].admissions.push({ id:uid(), name:cur.name, room:roomLabel, note:cur.note||"", isNew:curIsNew, isReserved:false }); }
-        if (dKey) { ensure(dKey); data[dKey].discharges.push({ id:uid(), name:cur.name, room:roomLabel, note:cur.discharge||"" }); }
+        if (aKey) { ensure(aKey); data[aKey].admissions.push({ id:uid(), name:cur.name, room:roomLabel, note:cur.note||"", isNew:curIsNew, isReserved:false, time:cur.admitTime||"" }); }
+        if (dKey) { ensure(dKey); data[dKey].discharges.push({ id:uid(), name:cur.name, room:roomLabel, note:cur.discharge||"", time:cur.dischargeTime||"" }); }
       }
       (slot?.reservations || []).forEach(r => {
         if (!r?.name) return;
@@ -208,8 +208,8 @@ export default function MonthlySchedule() {
         // 예약 환자: consultationId 직접 연결 또는 이름 매칭으로 신환 판별
         const rIsNew = r.consultationId ? !!consultNewById[r.consultationId]
           : consultNewByName.has(normName(r.name));
-        if (aKey) { ensure(aKey); data[aKey].admissions.push({ id:uid(), name:r.name, room:roomLabel, note:r.note||"", isNew:rIsNew, isReserved:true }); }
-        if (dKey) { ensure(dKey); data[dKey].discharges.push({ id:uid(), name:r.name, room:roomLabel, note:r.discharge||"" }); }
+        if (aKey) { ensure(aKey); data[aKey].admissions.push({ id:uid(), name:r.name, room:roomLabel, note:r.note||"", isNew:rIsNew, isReserved:true, time:r.admitTime||"" }); }
+        if (dKey) { ensure(dKey); data[dKey].discharges.push({ id:uid(), name:r.name, room:roomLabel, note:r.discharge||"", time:r.dischargeTime||"" }); }
       });
     });
 

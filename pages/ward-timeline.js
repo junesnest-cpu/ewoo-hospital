@@ -107,11 +107,15 @@ function getOverlaps(bars) {
 }
 
 // ── 편집 모달 ─────────────────────────────────────────────────────────────────
+const TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
+
 function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving, currentPatient }) {
   const [form, setForm] = useState({
     name:          modal.data.name          || "",
     admitDate:     modal.data.admitDate     || "",
+    admitTime:     modal.data.admitTime     || "",
     discharge:     modal.data.discharge     || "미정",
+    dischargeTime: modal.data.dischargeTime || "",
     note:          modal.data.note          || "",
     scheduleAlert: modal.data.scheduleAlert || false,
     patientId:     modal.data.patientId     || "",
@@ -213,14 +217,27 @@ function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving, curren
           )}
         </div>
 
-        {/* 입원일 / 퇴원일 */}
+        {/* 입원일 / 퇴원일 + 시간 */}
         {[
-          ...(isReservation ? [{ label:"예약 입원일 (예: 4/15)", key:"admitDate", ph:"4/15" }] : []),
-          { label:"퇴원 예정일 (예: 4/25 또는 미정)", key:"discharge", ph:"4/25 또는 미정" },
+          ...(isReservation ? [{ label:"예약 입원일 (예: 4/15)", key:"admitDate", timeKey:"admitTime", ph:"4/15" }] : []),
+          { label:"퇴원 예정일 (예: 4/25 또는 미정)", key:"discharge", timeKey:"dischargeTime", ph:"4/25 또는 미정" },
         ].map(f => (
           <div key={f.key} style={{ marginBottom:14 }}>
             <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>{f.label}</label>
-            <input style={inpStyle} value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} placeholder={f.ph} />
+            <div style={{ display:"flex", gap:6 }}>
+              <input style={{...inpStyle, flex:1}} value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} placeholder={f.ph} />
+              {(!form[f.timeKey] || TIME_OPTIONS.includes(form[f.timeKey])) ? (
+                <select value={form[f.timeKey]||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setForm(p=>({...p,[f.timeKey]:v?v.trim():""})); } else setForm(p=>({...p,[f.timeKey]:e.target.value})); }}
+                  style={{...inpStyle, width:110, color:form[f.timeKey]?"#166534":"#94a3b8", flexShrink:0}}>
+                  <option value="">시간</option>
+                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                  <option value="__custom__">직접입력</option>
+                </select>
+              ) : (
+                <input value={form[f.timeKey]} onChange={e=>setForm(p=>({...p,[f.timeKey]:e.target.value}))}
+                  style={{...inpStyle, width:110, color:"#166534", flexShrink:0}} />
+              )}
+            </div>
           </div>
         ))}
 

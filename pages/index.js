@@ -1288,6 +1288,8 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, newPat
   );
 }
 
+const TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
+
 // ── PatientModal ──────────────────────────────────────────────────────────────
 function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, allPatients = [] }) {
   const [form, setForm] = useState({ ...data });
@@ -1334,14 +1336,40 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
         {isReservation && (
           <>
             <label style={{ ...S.label, color:"#7c3aed" }}>입원 예정일 ★</label>
-            <input style={{ ...S.input, borderColor:"#a78bfa" }} value={form.admitDate||""} onChange={e => setF("admitDate", e.target.value)} placeholder="예: 3/18" />
+            <div style={{ display:"flex", gap:6 }}>
+              <input style={{ ...S.input, borderColor:"#a78bfa", flex:1 }} value={form.admitDate||""} onChange={e => setF("admitDate", e.target.value)} placeholder="예: 3/18" />
+              {(!form.admitTime || TIME_OPTIONS.includes(form.admitTime)) ? (
+                <select value={form.admitTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("admitTime",v?v.trim():""); } else setF("admitTime",e.target.value); }}
+                  style={{ ...S.input, width:110, color:form.admitTime?"#166534":"#94a3b8", borderColor:"#a78bfa", flexShrink:0 }}>
+                  <option value="">시간</option>
+                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                  <option value="__custom__">직접입력</option>
+                </select>
+              ) : (
+                <input value={form.admitTime||""} onChange={e=>setF("admitTime",e.target.value)}
+                  style={{ ...S.input, width:110, color:"#166534", borderColor:"#a78bfa", flexShrink:0 }} />
+              )}
+            </div>
             <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>M/D 형식 (예: 3/18)</div>
           </>
         )}
         {!isReservation && (
           <>
             <label style={S.label}>입원일</label>
-            <input style={S.input} value={form.admitDate||""} onChange={e => setF("admitDate", e.target.value)} placeholder="예: 3/10" />
+            <div style={{ display:"flex", gap:6 }}>
+              <input style={{...S.input, flex:1}} value={form.admitDate||""} onChange={e => setF("admitDate", e.target.value)} placeholder="예: 3/10" />
+              {(!form.admitTime || TIME_OPTIONS.includes(form.admitTime)) ? (
+                <select value={form.admitTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("admitTime",v?v.trim():""); } else setF("admitTime",e.target.value); }}
+                  style={{ ...S.input, width:110, color:form.admitTime?"#166534":"#94a3b8", flexShrink:0 }}>
+                  <option value="">시간</option>
+                  {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                  <option value="__custom__">직접입력</option>
+                </select>
+              ) : (
+                <input value={form.admitTime||""} onChange={e=>setF("admitTime",e.target.value)}
+                  style={{ ...S.input, width:110, color:"#166534", flexShrink:0 }} />
+              )}
+            </div>
             <div style={{ fontSize:11, color:"#94a3b8", marginTop:3 }}>M/D 형식 (예: 3/10) — 치료 일정표 주차 계산에 사용됩니다</div>
           </>
         )}
@@ -1368,7 +1396,20 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
           )}
         </div>
         <label style={S.label}>퇴원 예정일</label>
-        <input style={S.input} value={form.discharge||""} onChange={e => setF("discharge", e.target.value)} placeholder="예: 3/28, 미정" />
+        <div style={{ display:"flex", gap:6 }}>
+          <input style={{...S.input, flex:1}} value={form.discharge||""} onChange={e => setF("discharge", e.target.value)} placeholder="예: 3/28, 미정" />
+          {(!form.dischargeTime || TIME_OPTIONS.includes(form.dischargeTime)) ? (
+            <select value={form.dischargeTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("dischargeTime",v?v.trim():""); } else setF("dischargeTime",e.target.value); }}
+              style={{ ...S.input, width:110, color:form.dischargeTime?"#991b1b":"#94a3b8", flexShrink:0 }}>
+              <option value="">시간</option>
+              {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+              <option value="__custom__">직접입력</option>
+            </select>
+          ) : (
+            <input value={form.dischargeTime||""} onChange={e=>setF("dischargeTime",e.target.value)}
+              style={{ ...S.input, width:110, color:"#991b1b", flexShrink:0 }} />
+          )}
+        </div>
         <label style={S.label}>메모</label>
         <textarea style={{ ...S.input, height:80, resize:"vertical" }} value={form.note||""} onChange={e => setF("note", e.target.value)} placeholder="치료 내용, 약품, 스케줄 등" />
         <label style={S.labelCheck}>
