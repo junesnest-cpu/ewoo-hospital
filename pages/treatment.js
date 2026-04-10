@@ -596,7 +596,7 @@ export default function TreatmentPage() {
                     const grp  = getItemGroup(e.id);
                     if (!item) return null;
                     const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
-                    const label = item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name;
+                    const label = item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?(effectiveQty>1?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name):item.name;
                     const isRemoved = e.emr==="removed";
                     const badge = e.emr==="match"?"EMR":e.emr==="removed"?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
                     const badgeColor = e.emr==="match"?"#10b981":e.emr==="removed"?"#ef4444":"#3b82f6";
@@ -645,7 +645,7 @@ export default function TreatmentPage() {
                           const grp  = getItemGroup(e.id);
                           if (!item) return null;
                           const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
-                          const label = item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name;
+                          const label = item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?(effectiveQty>1?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name):item.name;
                           const badge = e.emr==="match"?"EMR":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
                           const badgeColor = e.emr==="match"?"#10b981":"#3b82f6";
                           return <span key={e.id} style={{ ...TS.tag, marginRight:4, background:grp.bg, color:grp.color, borderColor:grp.color }}>
@@ -771,7 +771,7 @@ export default function TreatmentPage() {
                     <div key={e.id} style={{ ...TS.regItem, borderLeftColor: grp.color, opacity:isRemoved?0.4:1 }}>
                       <div style={{ flex:1 }}>
                         <span style={{ fontWeight:700, color:grp.color }}>
-                          {item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name}
+                          {item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?(effectiveQty>1?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name):item.name}
                         </span>
                         <span style={{ color:"#64748b", fontSize:12, marginLeft:8 }}>{effectivePrice.toLocaleString()}원</span>
                         {item.dischargeMed && <span style={{ fontSize:10, fontWeight:700, color:"#92400e", marginLeft:6 }}>자동계산</span>}
@@ -998,7 +998,7 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                         const grp = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === e.id));
                         const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
                         const label = item.custom==="vitc" ? `비타민C ${effectiveQty}g`
-                                    : item.custom==="qty"  ? `${item.name} ${effectiveQty}개`
+                                    : item.custom==="qty"  ? (effectiveQty>1 ? `${item.name} ${effectiveQty}${item.unit||"개"}` : item.name)
                                     : item.name;
                         return (
                           <div key={e.id} style={{ fontSize:treatFontPx, lineHeight:1.3,
