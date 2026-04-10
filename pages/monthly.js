@@ -1321,7 +1321,7 @@ function PatientChip({ p, type, onDelete, highlight, onTimeChange }) {
       borderRadius:4, background: highlight ? "#fef3c7" : "transparent",
       outline: highlight ? "2px solid #f59e0b" : "none", position:"relative" }}>
       {p.isNew && <span style={{ fontSize:12, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>★신</span>}
-      <span style={{ fontSize:16, fontWeight:700, color: type==="admission" ? "#065f46" : "#991b1b", flexShrink:0 }}>{p.name}</span>
+      <span style={{ fontSize:16, fontWeight:700, color: type==="admission" ? "#000000" : "#991b1b", flexShrink:0 }}>{p.name}</span>
       {p.room && <span style={{ fontSize:13, color:"#64748b", flexShrink:0 }}>({p.room})</span>}
       {onTimeChange && (
         <span className="no-print" onClick={(e) => { e.stopPropagation(); setShowTime(s => !s); }}
