@@ -1098,18 +1098,14 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                         return (
                           <div key={i} style={S.patientChip}>
                             <span style={{ ...S.bedPositionBadge, background: isNewPat?"#fbbf24":bedColor }}>{posNum}</span>
-                            <span
-                              style={{ ...S.patientName,
-                                color: isNameHighlighted ? "#fff" : isNewPat ? "#713f12" : nameColor,
-                                background: isNameHighlighted ? "#ef4444" : isNewPat ? "#fef08a" : "transparent",
-                                borderRadius: (isNameHighlighted || isNewPat) ? 4 : 0,
-                                padding: (isNameHighlighted || isNewPat) ? "1px 5px" : undefined,
-                                boxShadow: isNameHighlighted ? "0 0 0 2px #fca5a5" : "none",
-                                fontWeight: isNewPat ? 800 : 700,
-                                transition: "all 0.3s",
-                                ...((b.person.patientId || isReservedType || isAdmitting) ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                            <span style={{ ...S.patientName, color: nameColor }}
                               onClick={(b.person.patientId || isReservedType || isAdmitting) ? (e) => { e.stopPropagation(); b.person.patientId ? router.push(`/patients?id=${encodeURIComponent(b.person.patientId)}`) : router.push(`/patients?name=${encodeURIComponent(b.person.name)}`); } : undefined}>
-                              {b.person.name}
+                              <span style={{
+                                ...(isNameHighlighted ? { color:"#fff", background:"#ef4444", borderRadius:4, padding:"1px 5px", boxShadow:"0 0 0 2px #fca5a5" } :
+                                    isNewPat ? { color:"#713f12", background:"#fef08a", borderRadius:4, padding:"1px 5px", fontWeight:800 } : {}),
+                                transition: "all 0.3s",
+                                ...((b.person.patientId || isReservedType || isAdmitting) ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}),
+                              }}>{b.person.name}</span>
                             </span>
                             {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
                             <span style={S.colDischarge}>{b.person.discharge && b.person.discharge !== "미정" ? b.person.discharge : ""}</span>
