@@ -284,39 +284,72 @@ export default function MonthlySchedule() {
     return data;
   }, [slots, consultations, year, month]);
 
-  // 과거 날짜 자동 스냅샷: 슬롯 데이터가 변해도 과거 기록 유지
+  // 당일 이전 날짜 자동 스냅샷 + 당일은 누적 병합: 슬롯 데이터가 변해도 기록 유지
   useEffect(() => {
     if (!Object.keys(slots).length) return;
     const today = new Date(); today.setHours(0,0,0,0);
     const total = daysInMonth(year, month);
     const ym = toYM(year, month);
+
+    // calendarData + boardData 병합 헬퍼
+    const mergeCdBd = (key) => {
+      const cd = calendarData[key] || { admissions:[], discharges:[] };
+      const bd = boardData[key];
+      if (!bd || bd.frozen) return { admissions: cd.admissions || [], discharges: cd.discharges || [] };
+      const hiddenAdm = new Set(bd.hiddenAdmissions || []);
+      const hiddenDis = new Set(bd.hiddenDischarges || []);
+      const baseAdm = (cd.admissions || []).filter(a => !hiddenAdm.has(normName(a.name)));
+      const baseDis = (cd.discharges || []).filter(dd => !hiddenDis.has(normName(dd.name)));
+      const cdAdmNorms = new Set((cd.admissions || []).map(a => normName(a.name)));
+      const cdDisNorms = new Set((cd.discharges || []).map(dd => normName(dd.name)));
+      const manualAdm = (bd.admissions || []).filter(a => !cdAdmNorms.has(normName(a.name)));
+      const manualDis = (bd.discharges || []).filter(dd => !cdDisNorms.has(normName(dd.name)));
+      return { admissions: [...baseAdm, ...manualAdm], discharges: [...baseDis, ...manualDis] };
+    };
+
+    // 이름 기준 병합: 기존 frozen 항목 + 새 항목 (기존 항목은 유지, 새 항목만 추가)
+    const mergeKeepExisting = (frozen, live) => {
+      const existingNorms = new Set((frozen || []).map(a => normName(a.name)));
+      const newItems = (live || []).filter(a => a.name && !existingNorms.has(normName(a.name)));
+      return [...(frozen || []), ...newItems];
+    };
+
     for (let d = 1; d <= total; d++) {
       const key = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
       const dayDate = new Date(year, month - 1, d);
-      if (dayDate >= today) continue;
-      if (boardData[key]?.frozen) continue;
-      if (frozenKeysRef.current.has(key)) continue;
-      // calendarData + boardData 병합한 표시 데이터 계산
-      const cd = calendarData[key] || { admissions:[], discharges:[] };
+      if (dayDate > today) continue; // 미래 날짜만 건너뜀 (당일 포함)
+
+      const isToday = dayDate.getTime() === today.getTime();
       const bd = boardData[key];
-      let admissions, discharges;
-      if (!bd) {
-        admissions = cd.admissions || []; discharges = cd.discharges || [];
+
+      if (isToday) {
+        // 당일: frozen이 있으면 새 항목만 누적 병합, 없으면 최초 스냅샷 생성
+        const live = mergeCdBd(key);
+        if (bd?.frozen) {
+          const merged = {
+            frozen: true,
+            admissions: mergeKeepExisting(bd.admissions, live.admissions),
+            discharges: mergeKeepExisting(bd.discharges, live.discharges),
+          };
+          // 새로 추가된 항목이 있을 때만 저장
+          if (merged.admissions.length > (bd.admissions||[]).length || merged.discharges.length > (bd.discharges||[]).length) {
+            set(ref(db, `monthlyBoards/${ym}/${key}`), merged);
+          }
+        } else {
+          if (frozenKeysRef.current.has(key)) continue;
+          if (!live.admissions.length && !live.discharges.length) continue;
+          frozenKeysRef.current.add(key);
+          set(ref(db, `monthlyBoards/${ym}/${key}`), { frozen: true, admissions: live.admissions, discharges: live.discharges });
+        }
       } else {
-        const hiddenAdm = new Set(bd.hiddenAdmissions || []);
-        const hiddenDis = new Set(bd.hiddenDischarges || []);
-        const baseAdm = (cd.admissions || []).filter(a => !hiddenAdm.has(normName(a.name)));
-        const baseDis = (cd.discharges || []).filter(dd => !hiddenDis.has(normName(dd.name)));
-        const cdAdmNorms = new Set((cd.admissions || []).map(a => normName(a.name)));
-        const cdDisNorms = new Set((cd.discharges || []).map(dd => normName(dd.name)));
-        const manualAdm = (bd.admissions || []).filter(a => !cdAdmNorms.has(normName(a.name)));
-        const manualDis = (bd.discharges || []).filter(dd => !cdDisNorms.has(normName(dd.name)));
-        admissions = [...baseAdm, ...manualAdm];
-        discharges = [...baseDis, ...manualDis];
+        // 과거 날짜: 한번 frozen되면 다시 건드리지 않음
+        if (bd?.frozen) continue;
+        if (frozenKeysRef.current.has(key)) continue;
+        const live = mergeCdBd(key);
+        if (!live.admissions.length && !live.discharges.length) { frozenKeysRef.current.add(key); continue; }
+        frozenKeysRef.current.add(key);
+        set(ref(db, `monthlyBoards/${ym}/${key}`), { frozen: true, admissions: live.admissions, discharges: live.discharges });
       }
-      if (!admissions.length && !discharges.length) { frozenKeysRef.current.add(key); continue; }
-      frozenKeysRef.current.add(key);
-      set(ref(db, `monthlyBoards/${ym}/${key}`), { frozen: true, admissions, discharges });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendarData, boardData, year, month, slots]);
@@ -344,11 +377,21 @@ export default function MonthlySchedule() {
       });
     };
 
-    // 날짜별 입/퇴원 건수 계산 (calendarData + boardData 병합, 이름 중복 제거)
+    // 날짜별 입/퇴원 건수 계산 (frozen 스냅샷 우선, 이름 중복 제거)
     const getAdmDis = (d) => {
       const k = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
       const cd = calendarData[k] || { admissions:[], discharges:[] };
       const bd = boardData[k];
+      // frozen 스냅샷이 있으면 그 데이터를 기준으로 사용
+      if (bd?.frozen) {
+        const allAdm = dedupByName(bd.admissions || []);
+        const allDis = dedupByName(bd.discharges || []);
+        return {
+          adm: allAdm.length,
+          admActual: allAdm.filter(a => !a.isReserved).length,
+          dis: allDis.length,
+        };
+      }
       if (!bd) {
         const allAdm = dedupByName(cd.admissions || []);
         const allDis = dedupByName(cd.discharges || []);
