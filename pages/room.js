@@ -455,7 +455,7 @@ export default function RoomPage() {
                 style={{ background: isMovingFrom?"#fffbeb":isMoveTarget?"#f0fdf4":isAdmitting?"#eff6ff":isDischarging?"#fffbeb":isReservedType?"#faf5ff":"#fff",
                   border:`2px ${person?"solid":"dashed"} ${borderColor}`,
                   borderRadius:10, padding:10, minWidth:0, overflow:"hidden",
-                  height:"calc(100vh - 150px)", display:"flex", flexDirection:"column",
+                  height:"calc(100vh - 180px)", display:"flex", flexDirection:"column",
                   cursor:movingPatient&&!isMovingFrom?"pointer":"default",
                   boxShadow:"0 1px 6px rgba(0,0,0,0.06)", transition:"all 0.2s" }}>
 
@@ -470,7 +470,7 @@ export default function RoomPage() {
                 </div>
 
                 {/* ── 섹션1: 현재 입원 환자 (flex 비율, 버튼 하단 고정) ── */}
-                <div style={{ flex:5, minHeight:0, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+                <div style={{ flex:3, minHeight:0, display:"flex", flexDirection:"column", overflow:"hidden" }}>
                 {person ? (<>
                   <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4, flexShrink:0 }}>
