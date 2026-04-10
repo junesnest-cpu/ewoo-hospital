@@ -1541,7 +1541,7 @@ const S = {
   patientList: { display:"flex", flexDirection:"column", gap:3 },
   patientChip: { display:"flex", alignItems:"center", gap:0, fontSize:15, overflow:"hidden", minWidth:0 },
   bedPositionBadge: { color:"#fff", borderRadius:4, width:22, height:22, fontSize:13, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
-  patientName: { fontWeight:700, fontSize:15, width:52, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginLeft:5 },
+  patientName: { fontWeight:700, fontSize:15, width:68, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginLeft:5 },
   colDischarge: { width:42, flexShrink:0, textAlign:"center", fontSize:12, color:"#64748b", marginLeft:4 },
   colDday: { width:38, flexShrink:0, textAlign:"center", fontSize:12, fontWeight:800, marginLeft:2 },
   colNextName: { width:42, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:12, fontWeight:700, color:"#6d28d9", textAlign:"center", marginLeft:4 },
