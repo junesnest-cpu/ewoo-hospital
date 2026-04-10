@@ -136,7 +136,7 @@ function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving, curren
   const diffDays  = (curDisD && frmAdmitD)
     ? Math.round((dateOnly(frmAdmitD).getTime() - dateOnly(curDisD).getTime()) / 86400000)
     : -1;
-  const showPreserveSeat = isReservation && !!currentPatient?.name && diffDays >= 1 && diffDays <= 7;
+  const showPreserveSeat = isReservation && !!currentPatient?.name && currentPatient.name === form.name && diffDays >= 1 && diffDays <= 7;
   const inpStyle = { width:"100%", border:"1.5px solid #e2e8f0", borderRadius:8, padding:"9px 11px", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
 
   const onNameChange = (val) => {
