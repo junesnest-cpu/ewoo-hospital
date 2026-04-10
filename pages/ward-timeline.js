@@ -19,7 +19,7 @@ const DAY_W    = 58;
 const LEFT_W   = 188;
 const ROW_H    = 60;   // 메모 2줄 표시를 위해 높임
 const DAYS_BACK  = 3;
-const DAYS_TOTAL = 21;
+const DAYS_MIN   = 21;  // 최소 표시 일수
 
 // ── 날짜 유틸 ─────────────────────────────────────────────────────────────────
 function parseDateStr(str) {
@@ -91,7 +91,7 @@ function getBars(slot, days) {
 }
 
 // ── 겹침 구간 계산 ────────────────────────────────────────────────────────────
-function getOverlaps(bars) {
+function getOverlaps(bars, totalDays) {
   const overlaps = [];
   for (let i = 0; i < bars.length; i++) {
     for (let j = i + 1; j < bars.length; j++) {
@@ -99,7 +99,7 @@ function getOverlaps(bars) {
       const start = Math.max(a.rawStart, b.rawStart);
       const end   = Math.min(a.rawEnd,   b.rawEnd);
       if (start <= end) {
-        overlaps.push({ startDay: Math.max(0, start), endDay: Math.min(DAYS_TOTAL-1, end) });
+        overlaps.push({ startDay: Math.max(0, start), endDay: Math.min(totalDays-1, end) });
       }
     }
   }
@@ -333,6 +333,7 @@ export default function WardTimeline() {
   const [editModal,  setEditModal]  = useState(null);
   const [saving,     setSaving]     = useState(false);
   const [memoOpen,   setMemoOpen]   = useState(true);
+  const [daysTotal,  setDaysTotal]  = useState(DAYS_MIN);
   const [localMemos, setLocalMemos] = useState({});  // 입력 중 로컬 상태
   const [memoWidth,  setMemoWidth]  = useState(220);
   const [singleRoomMemoText, setSingleRoomMemoText] = useState("");
@@ -403,6 +404,19 @@ export default function WardTimeline() {
     document.addEventListener("mouseup", onUp);
   }, [memoWidth]);
 
+  // ── 화면 크기에 맞게 표시 일수 동적 계산 ──────────────────────────────────
+  useEffect(() => {
+    const calc = () => {
+      const mw = memoOpen ? memoWidth : 36;
+      const available = window.innerWidth - LEFT_W - mw - 20; // 여백 20px
+      const fit = Math.max(DAYS_MIN, Math.floor(available / DAY_W));
+      setDaysTotal(fit);
+    };
+    calc();
+    window.addEventListener("resize", calc);
+    return () => window.removeEventListener("resize", calc);
+  }, [memoOpen, memoWidth]);
+
   // ── 드래그 앤 드롭 상태 ──────────────────────────────────────────────────
   const [dragging,   setDragging]   = useState(null);  // { slotKey, bar }
   const [dragOver,   setDragOver]   = useState(null);  // 대상 slotKey
@@ -451,12 +465,12 @@ export default function WardTimeline() {
   const days = useMemo(() => {
     const start = new Date(today.getTime() + (weekOffset * 7 - DAYS_BACK) * 86400000);
     start.setHours(0,0,0,0);
-    return Array.from({ length: DAYS_TOTAL }, (_, i) => {
+    return Array.from({ length: daysTotal }, (_, i) => {
       const d = new Date(start.getTime() + i * 86400000);
       d.setHours(0,0,0,0);
       return d;
     });
-  }, [today, weekOffset]);
+  }, [today, weekOffset, daysTotal]);
 
   const todayIdx = useMemo(
     () => days.findIndex(d => d.getTime() === today.getTime()),
@@ -651,7 +665,7 @@ export default function WardTimeline() {
     if (admitD && container) {
       const diRelToToday = Math.round((dateOnly(admitD).getTime() - today.getTime()) / 86400000);
       const windowStart  = weekOffset * 7 - DAYS_BACK;
-      const windowEnd    = windowStart + DAYS_TOTAL - 1;
+      const windowEnd    = windowStart + daysTotal - 1;
 
       const scrollToX = (diInWindow) => {
         const targetLeft = Math.max(0, diInWindow * DAY_W - DAY_W * 2);
@@ -663,7 +677,7 @@ export default function WardTimeline() {
         scrollToX(diRelToToday - windowStart);
       } else {
         // 현재 뷰 밖 → weekOffset 변경 후 재렌더링 대기 후 스크롤
-        const newWeekOffset = Math.round((diRelToToday + DAYS_BACK - DAYS_TOTAL / 2) / 7);
+        const newWeekOffset = Math.round((diRelToToday + DAYS_BACK - daysTotal / 2) / 7);
         setWeekOffset(newWeekOffset);
         const newWindowStart = newWeekOffset * 7 - DAYS_BACK;
         const newDi = diRelToToday - newWindowStart;
@@ -987,7 +1001,7 @@ export default function WardTimeline() {
       <div style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
       {/* 타임라인 스크롤 (가로+세로) — 메모 패널은 여기 포함 안 됨 */}
       <div ref={timelineScrollRef} style={{ flex:1, overflow:"auto" }} onScroll={onTimelineScroll}>
-      <div style={{ minWidth: LEFT_W + DAY_W * DAYS_TOTAL }}>
+      <div style={{ minWidth: LEFT_W + DAY_W * daysTotal }}>
 
       {/* 타임라인 */}
       <div style={{ flex:1, position:"relative" }}>
@@ -1068,7 +1082,7 @@ export default function WardTimeline() {
                         const slotKey  = `${room.id}-${bi+1}`;
                         const slot     = slots[slotKey];
                         const bars     = getBars(slot, days);
-                        const overlaps = getOverlaps(bars);
+                        const overlaps = getOverlaps(bars, daysTotal);
                         const isDragTarget  = dragOver === slotKey && dragging?.slotKey !== slotKey;
                         const isDragSource  = dragging?.slotKey === slotKey;
                         const isRowHighlit  = highlightKey?.slotKey === slotKey;
@@ -1114,7 +1128,7 @@ export default function WardTimeline() {
                             </div>
 
                             {/* 타임라인 트랙 */}
-                            <div style={{ position:"relative", flex:1, minWidth:DAY_W*DAYS_TOTAL, overflow:"hidden" }}>
+                            <div style={{ position:"relative", flex:1, minWidth:DAY_W*daysTotal, overflow:"hidden" }}>
 
                               {/* 배경 그리드 & 빈 칸 클릭 */}
                               {days.map((day, di) => (
