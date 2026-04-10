@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
@@ -78,6 +78,31 @@ export default function TherapyPage() {
   const [mobileDayIdx,setMobileDayIdx]=useState(()=>{ const d=new Date().getDay(); return d===0?6:d-1; });
   // 이동/복사 모드: {type:"move"|"copy", roomId, dayIdx, time, hbSlot, data}
   const [moveMode,   setMoveMode]  = useState(null);
+
+  // 환자 검색 하이라이트
+  const [searchHL, setSearchHL] = useState("");  // 검색 중인 이름
+  const [hlVisible, setHlVisible] = useState(true); // 점멸용
+  const hlTimerRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      const q = e.detail?.q;
+      if (!q) return;
+      setSearchHL(q.trim());
+      setHlVisible(true);
+      if (hlTimerRef.current) clearInterval(hlTimerRef.current);
+      let tick = 0;
+      hlTimerRef.current = setInterval(() => {
+        tick++;
+        if (tick >= 8) { clearInterval(hlTimerRef.current); setSearchHL(""); setHlVisible(true); return; }
+        setHlVisible(v => !v);
+      }, 300);
+    };
+    window.addEventListener("sidebar-search", handler);
+    return () => { window.removeEventListener("sidebar-search", handler); if (hlTimerRef.current) clearInterval(hlTimerRef.current); };
+  }, []);
+
+  const isSearchMatch = (name) => searchHL && hlVisible && name && name.includes(searchHL);
 
   // 인쇄
   const [printMode, setPrintMode] = useState(false);
@@ -694,7 +719,10 @@ export default function TherapyPage() {
                                           {!ca.isPending && isNewWithin7(ca.patientName, ca.slotKey) && (
                                             <span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800,display:"block",marginBottom:1}}>★신</span>
                                           )}
-                                          <div style={{fontSize:isMobile?15:13,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:caNL>5?"ellipsis":"clip",textAlign:"center"}}>
+                                          <div style={{fontSize:isMobile?15:13,fontWeight:800,color:isSearchMatch(ca.patientName)?"#fff":"#1e293b",
+                                            background:isSearchMatch(ca.patientName)?"#ef4444":"transparent",borderRadius:isSearchMatch(ca.patientName)?4:0,
+                                            padding:isSearchMatch(ca.patientName)?"1px 4px":0,boxShadow:isSearchMatch(ca.patientName)?"0 0 0 2px #fca5a5":"none",
+                                            lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:caNL>5?"ellipsis":"clip",textAlign:"center",transition:"all 0.2s"}}>
                                             {ca.patientName}
                                           </div>
                                           {ca.isOuter
@@ -718,7 +746,10 @@ export default function TherapyPage() {
                                           {!cb.isPending && isNewWithin7(cb.patientName, cb.slotKey) && (
                                             <span style={{fontSize:8,background:"#fef08a",color:"#713f12",borderRadius:2,padding:"0 3px",fontWeight:800,display:"block",marginBottom:1}}>★신</span>
                                           )}
-                                          <div style={{fontSize:isMobile?15:13,fontWeight:800,color:"#1e293b",lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:cbNL>5?"ellipsis":"clip",textAlign:"center"}}>
+                                          <div style={{fontSize:isMobile?15:13,fontWeight:800,color:isSearchMatch(cb.patientName)?"#fff":"#1e293b",
+                                            background:isSearchMatch(cb.patientName)?"#ef4444":"transparent",borderRadius:isSearchMatch(cb.patientName)?4:0,
+                                            padding:isSearchMatch(cb.patientName)?"1px 4px":0,boxShadow:isSearchMatch(cb.patientName)?"0 0 0 2px #fca5a5":"none",
+                                            lineHeight:1.3,overflow:"hidden",whiteSpace:"nowrap",textOverflow:cbNL>5?"ellipsis":"clip",textAlign:"center",transition:"all 0.2s"}}>
                                             {cb.patientName}
                                           </div>
                                           {cb.isOuter
@@ -763,9 +794,10 @@ export default function TherapyPage() {
                                       )}
                                       <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:3,overflow:"hidden",lineHeight:1.4,width:"100%"}}>
                                         <span style={{fontSize:isMobile?16:15,fontWeight:800,flexShrink:1,overflow:"hidden",whiteSpace:"nowrap",textOverflow:nameLen>5?"ellipsis":"clip",
-                                          color:cell.isOuter?"#92400e":"#1e293b",
-                                          background:cell.isOuter?"#fef3c7":"transparent",
-                                          borderRadius:cell.isOuter?3:0,padding:cell.isOuter?"0 2px":0}}>
+                                          color:isSearchMatch(cell.patientName)?"#fff":cell.isOuter?"#92400e":"#1e293b",
+                                          background:isSearchMatch(cell.patientName)?"#ef4444":cell.isOuter?"#fef3c7":"transparent",
+                                          borderRadius:isSearchMatch(cell.patientName)?4:cell.isOuter?3:0,padding:isSearchMatch(cell.patientName)?"1px 4px":cell.isOuter?"0 2px":0,
+                                          boxShadow:isSearchMatch(cell.patientName)?"0 0 0 2px #fca5a5":"none",transition:"all 0.2s"}}>
                                           {cell.patientName}
                                         </span>
                                         {tr2&&<span style={{fontSize:isMobile?11:9,fontWeight:800,background:tr2.color,color:"#fff",borderRadius:3,padding:"0 3px",flexShrink:0}}>{tr2.short}</span>}
