@@ -97,11 +97,31 @@ export default function MonthlySchedule() {
     return () => window.removeEventListener("sidebar-search", handler);
   }, []);
 
+  const [dailyBoards, setDailyBoards] = useState({});
+
   useEffect(() => {
     const u1 = onValue(ref(db,"slots"), snap => setSlots(snap.val() || {}));
     const u2 = onValue(ref(db,"consultations"), snap => setConsultations(snap.val() || {}));
     return () => { u1(); u2(); };
   }, []);
+
+  // 일일현황판 데이터 로드 (해당 월 전체)
+  useEffect(() => {
+    const ym = toYM(year, month);
+    const total = daysInMonth(year, month);
+    const unsubs = [];
+    const boards = {};
+    for (let d = 1; d <= total; d++) {
+      const dateStr = `${ym}-${String(d).padStart(2,"0")}`;
+      unsubs.push(onValue(ref(db, `dailyBoards/${dateStr}`), snap => {
+        const val = snap.val();
+        if (val) boards[dateStr] = val;
+        else delete boards[dateStr];
+        setDailyBoards({ ...boards });
+      }));
+    }
+    return () => unsubs.forEach(u => u());
+  }, [year, month]);
 
   // 자동완성용 전체 환자 목록 (MonthlySchedule 레벨에서 계산)
   const allPatients = useMemo(() => {
@@ -187,6 +207,12 @@ export default function MonthlySchedule() {
       const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       consultNewById[cid] = isNew;
       if (isNew) consultNewByName.add(normName(c.name));
+    });
+    // 일일현황판에서 ★ 신규 표시한 환자도 포함
+    Object.values(dailyBoards).forEach(db => {
+      (db.admissions || []).forEach(a => {
+        if (a.isNew && a.name) consultNewByName.add(normName(a.name));
+      });
     });
 
     Object.entries(slots).forEach(([slotKey, slot]) => {
@@ -282,7 +308,7 @@ export default function MonthlySchedule() {
       }
     });
     return data;
-  }, [slots, consultations, year, month]);
+  }, [slots, consultations, dailyBoards, year, month]);
 
   // 당일 이전 날짜 자동 스냅샷 + 당일은 누적 병합: 슬롯 데이터가 변해도 기록 유지
   useEffect(() => {
@@ -501,7 +527,7 @@ export default function MonthlySchedule() {
     });
   }
 
-  // 상담일지 신환 이름 집합 (frozen 데이터에도 신환 플래그 반영용)
+  // 신환 이름 집합: 상담일지 + 일일현황판 (frozen 데이터에도 신환 플래그 반영용)
   const newPatientNorms = useMemo(() => {
     const s = new Set();
     Object.values(consultations).forEach(c => {
@@ -511,8 +537,14 @@ export default function MonthlySchedule() {
       if (c.status === "취소" || c.status === "입원완료") return;
       s.add(normName(c.name));
     });
+    // 일일현황판에서 ★ 신규 표시한 환자도 포함
+    Object.values(dailyBoards).forEach(db => {
+      (db.admissions || []).forEach(a => {
+        if (a.isNew && a.name) s.add(normName(a.name));
+      });
+    });
     return s;
-  }, [consultations]);
+  }, [consultations, dailyBoards]);
 
   // 표시 데이터: calendarData 기반 + boardData 수동 추가/숨김 병합
   function getDisplayData(key) {
