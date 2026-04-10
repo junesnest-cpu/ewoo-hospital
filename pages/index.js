@@ -1110,21 +1110,27 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                             {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
                             <span style={S.colDischarge}>{b.person.discharge && b.person.discharge !== "미정" ? b.person.discharge : ""}</span>
                             <span style={S.colDday}>{dday ? <span style={{ ...S.ddayBadge, color:dday.color, background:dday.bg }}>{dday.text}</span> : ""}</span>
-                            <span style={S.colNextName}>{nextRes?.name||""}</span>
-                            <span style={S.colNextDate}>{nextRes?.admitDate||""}</span>
+                            {(()=>{
+                              const isNextNew = nextRes && newPatientNames.has((nextRes.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase());
+                              return <>
+                                <span style={{ ...S.colNextName, ...(isNextNew ? { color:"#713f12", background:"#fef08a", borderRadius:4, padding:"1px 3px", fontWeight:800 } : {}) }}>{nextRes?.name||""}</span>
+                                <span style={S.colNextDate}>{nextRes?.admitDate||""}</span>
+                              </>;
+                            })()}
                             <span style={S.colExtra}>{nextResList.length > 1 ? <span style={S.extraBadge}>+{nextResList.length-1}</span> : ""}</span>
                           </div>
                         );
                       }
                       if (!isPreview && b.hasReserve) {
                         const nextRes = b.slot?.reservations?.find(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) > todayDate(); });
+                        const isNextNew = nextRes && newPatientNames.has((nextRes.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase());
                         return (
                           <div key={i} style={S.patientChip}>
                             <span style={{ ...S.bedPositionBadge, background:"#7c3aed" }}>{i+1}</span>
                             <span style={{ ...S.patientName, color:"#cbd5e1" }}>—</span>
                             <span style={S.colDischarge}></span>
                             <span style={S.colDday}></span>
-                            <span style={S.colNextName}>{nextRes?.name||""}</span>
+                            <span style={{ ...S.colNextName, ...(isNextNew ? { color:"#713f12", background:"#fef08a", borderRadius:4, padding:"1px 3px", fontWeight:800 } : {}) }}>{nextRes?.name||""}</span>
                             <span style={S.colNextDate}>{nextRes?.admitDate||""}</span>
                             <span style={S.colExtra}></span>
                           </div>
@@ -1539,8 +1545,8 @@ const S = {
   bedPositionBadge: { color:"#fff", borderRadius:4, width:22, height:22, fontSize:13, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
   patientName: { fontWeight:700, fontSize:15, width:68, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginLeft:5 },
   colDischarge: { width:42, flexShrink:0, textAlign:"center", fontSize:12, color:"#64748b", marginLeft:4 },
-  colDday: { width:44, flexShrink:0, textAlign:"center", fontSize:12, fontWeight:800, marginLeft:2, display:"flex", alignItems:"center", justifyContent:"center" },
-  colNextName: { width:42, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:12, fontWeight:700, color:"#6d28d9", textAlign:"center", marginLeft:4 },
+  colDday: { width:44, flexShrink:0, textAlign:"left", fontSize:12, fontWeight:800, marginLeft:2, display:"flex", alignItems:"center", justifyContent:"flex-start" },
+  colNextName: { width:60, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:12, fontWeight:700, color:"#6d28d9", textAlign:"left", marginLeft:4 },
   colNextDate: { width:36, flexShrink:0, fontSize:11, color:"#a78bfa", textAlign:"center", marginLeft:2 },
   colExtra: { width:24, flexShrink:0, textAlign:"center", marginLeft:2, display:"flex", alignItems:"center", justifyContent:"center" },
   extraBadge: { fontSize:12, fontWeight:800, color:"#7c3aed", background:"#ede9fe", borderRadius:4, padding:"1px 5px" },

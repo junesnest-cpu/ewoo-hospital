@@ -193,8 +193,15 @@ export default function RoomPage() {
     return ()=>unsub();
   },[]);
 
+  const [newPatientFlags, setNewPatientFlags] = useState({});
+
   useEffect(()=>{
     const unsub = onValue(ref(db,"consultations"), snap=>{ setConsultations(snap.val()||{}); });
+    return ()=>unsub();
+  },[]);
+
+  useEffect(()=>{
+    const unsub = onValue(ref(db,"newPatientFlags"), snap=>{ setNewPatientFlags(snap.val()||{}); });
     return ()=>unsub();
   },[]);
 
@@ -350,6 +357,27 @@ export default function RoomPage() {
     </div>
   );
 
+  // 신환 이름 집합
+  const normN = n => (n||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+  const newPatientNames = useMemo(() => {
+    const s = new Set();
+    const weekMs = 7*24*60*60*1000;
+    const now = todayDate();
+    Object.values(consultations).forEach(c => {
+      if (!c?.name) return;
+      const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
+      if (!isNew) return;
+      if (c.status === "취소" || c.status === "입원완료") return;
+      s.add(normN(c.name));
+    });
+    Object.entries(newPatientFlags).forEach(([nk, flag]) => {
+      if (!flag?.admitDate) { s.add(nk); return; }
+      const d = parseDateStr(flag.admitDate); if (!d) { s.add(nk); return; }
+      if (now.getTime() - dateOnly(d).getTime() < weekMs) s.add(nk);
+    });
+    return s;
+  }, [consultations, newPatientFlags]);
+
   const bedList = Array.from({length:room.capacity},(_,i)=>{
     const slotKey=`${room.id}-${i+1}`;
     const slot=slots[slotKey]||null;
@@ -441,16 +469,20 @@ export default function RoomPage() {
                 </div>
 
                 {/* ── 섹션1: 현재 입원 환자 (고정 높이, 버튼 하단 고정) ── */}
-                <div style={{ height:230, display:"flex", flexDirection:"column" }}>
+                <div style={{ height:"calc(50vh - 160px)", minHeight:200, display:"flex", flexDirection:"column" }}>
                 {person ? (<>
                   <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
-                    <div
-                      style={{ fontSize:20, fontWeight:800, flexShrink:0,
-                        color:isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
-                        marginBottom:4,
-                        ...(person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
-                      onClick={person.patientId ? () => router.push(`/patients?id=${encodeURIComponent(person.patientId)}`) : undefined}>
-                      {person.name}
+                    <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4, flexShrink:0 }}>
+                      <span
+                        style={{ fontSize:20, fontWeight:800,
+                          color:isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
+                          ...(person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                        onClick={person.patientId ? () => router.push(`/patients?id=${encodeURIComponent(person.patientId)}`) : undefined}>
+                        {person.name}
+                      </span>
+                      {newPatientNames.has(normN(person.name)) && (
+                        <span style={{ fontSize:12, background:"#fef08a", color:"#713f12", borderRadius:4, padding:"1px 6px", fontWeight:800, flexShrink:0 }}>★ 신환</span>
+                      )}
                     </div>
                     {person.admitDate&&<div style={{ fontSize:14,color:"#7c3aed",marginBottom:2,flexShrink:0 }}>입원일: {person.admitDate}</div>}
                     <div style={{ fontSize:15,color:"#64748b",marginBottom:4,flexShrink:0 }}>퇴원: {person.discharge||"미정"}</div>
@@ -495,18 +527,23 @@ export default function RoomPage() {
                 </div>
 
                 {/* ── 섹션2: 입원 예약 목록 (고정 높이, 추가 버튼 하단 고정) ── */}
-                <div style={{ height:265, marginTop:6, borderTop:"1px solid #e2e8f0", paddingTop:6, display:"flex", flexDirection:"column" }}>
+                <div style={{ height:"calc(50vh - 160px)", minHeight:220, marginTop:6, borderTop:"1px solid #e2e8f0", paddingTop:6, display:"flex", flexDirection:"column" }}>
                   <div style={{ fontSize:14,fontWeight:700,color:"#7c3aed",marginBottom:4,flexShrink:0 }}>📅 입원 예약 ({reservations.length}건)</div>
                   <div style={{ flex:1, overflowY:"auto", minHeight:0 }}>
                     {reservations.map((r,ri)=>(
-                      <div key={ri} style={{ height:68, background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:8,padding:"5px 8px",marginBottom:4,overflow:"hidden",boxSizing:"border-box" }}>
+                      <div key={ri} style={{ height:72, background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:8,padding:"5px 8px",marginBottom:4,overflow:"hidden",boxSizing:"border-box" }}>
                         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",gap:4 }}>
-                          <span
-                            style={{ fontWeight:700,color:"#7c3aed",fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
-                              cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" }}
-                            onClick={() => r.patientId ? router.push(`/patients?id=${encodeURIComponent(r.patientId)}`) : router.push(`/patients?name=${encodeURIComponent(r.name)}`)}>
-                            {r.name}
-                          </span>
+                          <div style={{ display:"flex", alignItems:"center", gap:4, overflow:"hidden", minWidth:0 }}>
+                            <span
+                              style={{ fontWeight:700,color:"#7c3aed",fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                                cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" }}
+                              onClick={() => r.patientId ? router.push(`/patients?id=${encodeURIComponent(r.patientId)}`) : router.push(`/patients?name=${encodeURIComponent(r.name)}`)}>
+                              {r.name}
+                            </span>
+                            {newPatientNames.has(normN(r.name)) && (
+                              <span style={{ fontSize:11, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"0 5px", fontWeight:800, flexShrink:0 }}>★</span>
+                            )}
+                          </div>
                           {!isPreview&&!movingPatient&&<div style={{ display:"flex",gap:3,flexShrink:0 }}>
                             <button style={{...NS.btnSmall,color:"#7c3aed",padding:"2px 6px",fontSize:12}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:r,resIndex:ri})); router.push("/"); }}>🚚</button>
                             <button style={{...NS.btnSmall,padding:"2px 6px",fontSize:12}} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...r},resIndex:ri})}>수정</button>
