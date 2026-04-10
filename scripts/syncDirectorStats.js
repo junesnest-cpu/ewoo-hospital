@@ -98,17 +98,23 @@ async function syncYear(pool, year, updates) {
   console.log(`  ${year}년 동기화`);
   console.log('━'.repeat(50));
 
-  // 1. 입원 매출
+  // 1. 입원 매출 + 급여총액
   console.log('\n  [입원 매출]');
   const inResult = await pool.request().query(`
-    SELECT LEFT(iadd_date, 6) AS ym, SUM(CAST(iadd_amt AS bigint)) AS total
+    SELECT LEFT(iadd_date, 6) AS ym,
+      SUM(CAST(iadd_amt AS bigint)) AS total,
+      SUM(CAST(iadd_i_mtamt AS bigint)) AS i_mt,
+      SUM(CAST(iadd_ii_mtamt AS bigint)) AS ii_mt
     FROM Wiadd WHERE iadd_date >= '${yearStart}' AND iadd_date < '${yearEnd}'
     GROUP BY LEFT(iadd_date, 6) ORDER BY ym
   `);
   const inpatient = {};
   for (const r of inResult.recordset) {
-    inpatient[r.ym] = { total: Number(r.total) };
-    console.log(`    ${r.ym}: ${Math.round(Number(r.total)/10000).toLocaleString()}만`);
+    inpatient[r.ym] = {
+      total: Number(r.total),
+      geupyeo_in: Number(r.i_mt) + Number(r.ii_mt),
+    };
+    console.log(`    ${r.ym}: ${Math.round(Number(r.total)/10000).toLocaleString()}만 (급여 ${Math.round((Number(r.i_mt)+Number(r.ii_mt))/10000).toLocaleString()}만)`);
   }
 
   // 2. 공단수입/본부금
@@ -133,21 +139,37 @@ async function syncYear(pool, year, updates) {
   } catch (e) { console.log(`    공단/본부금 실패: ${e.message}`); }
   updates[`directorStats/${year}/revenue/inpatient`] = inpatient;
 
-  // 3. 외래 매출
+  // 3. 외래 매출 + 급여총액
   console.log('  [외래 매출]');
   let outpatient = {};
   try {
     const outResult = await pool.request().query(`
-      SELECT LEFT(oadd_date, 6) AS ym, SUM(CAST(oadd_amt AS bigint)) AS total
+      SELECT LEFT(oadd_date, 6) AS ym,
+        SUM(CAST(oadd_amt AS bigint)) AS total,
+        SUM(CAST(oadd_i_mtamt AS bigint)) AS i_mt,
+        SUM(CAST(oadd_ii_mtamt AS bigint)) AS ii_mt
       FROM Woadd WHERE oadd_date >= '${yearStart}' AND oadd_date < '${yearEnd}'
       GROUP BY LEFT(oadd_date, 6) ORDER BY ym
     `);
     for (const r of outResult.recordset) {
-      outpatient[r.ym] = { total: Number(r.total) };
-      console.log(`    ${r.ym}: ${Math.round(Number(r.total)/10000).toLocaleString()}만`);
+      outpatient[r.ym] = {
+        total: Number(r.total),
+        geupyeo_out: Number(r.i_mt) + Number(r.ii_mt),
+      };
+      console.log(`    ${r.ym}: ${Math.round(Number(r.total)/10000).toLocaleString()}만 (급여 ${Math.round((Number(r.i_mt)+Number(r.ii_mt))/10000).toLocaleString()}만)`);
     }
   } catch (e) { console.log(`    외래 실패: ${e.message}`); }
   updates[`directorStats/${year}/revenue/outpatient`] = Object.keys(outpatient).length > 0 ? outpatient : null;
+
+  // 급여총액 = 입원 + 외래
+  console.log('  [급여총액]');
+  const geupyeo = {};
+  for (const ym of Object.keys(inpatient)) {
+    const g = (inpatient[ym]?.geupyeo_in || 0) + (outpatient[ym]?.geupyeo_out || 0);
+    geupyeo[ym] = g;
+    console.log(`    ${ym}: ${g.toLocaleString()}`);
+  }
+  updates[`directorStats/${year}/revenue/geupyeo`] = geupyeo;
 
   // 4. 입원일수
   console.log('  [입원일수]');
@@ -306,13 +328,16 @@ async function syncMonth(pool, year, month, updates) {
 
   console.log(`\n📅 ${year}년 ${month}월 업데이트`);
 
-  // 입원 매출
+  // 입원 매출 + 급여총액
   const inR = await pool.request().query(`
-    SELECT SUM(CAST(iadd_amt AS bigint)) AS total FROM Wiadd
-    WHERE iadd_date >= '${ymStart}' AND iadd_date < '${nextYm}'
+    SELECT SUM(CAST(iadd_amt AS bigint)) AS total,
+      SUM(CAST(iadd_i_mtamt AS bigint)) AS i_mt,
+      SUM(CAST(iadd_ii_mtamt AS bigint)) AS ii_mt
+    FROM Wiadd WHERE iadd_date >= '${ymStart}' AND iadd_date < '${nextYm}'
   `);
   const inTotal = Number(inR.recordset[0]?.total || 0);
-  const inp = { total: inTotal };
+  const inGeupyeo = Number(inR.recordset[0]?.i_mt || 0) + Number(inR.recordset[0]?.ii_mt || 0);
+  const inp = { total: inTotal, geupyeo_in: inGeupyeo };
 
   try {
     const dR = await pool.request().query(`
@@ -325,20 +350,29 @@ async function syncMonth(pool, year, month, updates) {
     inp.bonbu = ir; inp.bigub = bi;
   } catch(e) {}
   updates[`directorStats/${year}/revenue/inpatient/${ym}`] = inp;
-  console.log(`  입원: ${Math.round(inTotal/10000).toLocaleString()}만`);
+  console.log(`  입원: ${Math.round(inTotal/10000).toLocaleString()}만 (급여 ${Math.round(inGeupyeo/10000).toLocaleString()}만)`);
 
-  // 외래 매출
+  // 외래 매출 + 급여총액
+  let outGeupyeo = 0;
   try {
     const outR = await pool.request().query(`
-      SELECT SUM(CAST(oadd_amt AS bigint)) AS total FROM Woadd
-      WHERE oadd_date >= '${ymStart}' AND oadd_date < '${nextYm}'
+      SELECT SUM(CAST(oadd_amt AS bigint)) AS total,
+        SUM(CAST(oadd_i_mtamt AS bigint)) AS i_mt,
+        SUM(CAST(oadd_ii_mtamt AS bigint)) AS ii_mt
+      FROM Woadd WHERE oadd_date >= '${ymStart}' AND oadd_date < '${nextYm}'
     `);
     const outTotal = Number(outR.recordset[0]?.total || 0);
+    outGeupyeo = Number(outR.recordset[0]?.i_mt || 0) + Number(outR.recordset[0]?.ii_mt || 0);
     if (outTotal > 0) {
-      updates[`directorStats/${year}/revenue/outpatient/${ym}`] = { total: outTotal };
-      console.log(`  외래: ${Math.round(outTotal/10000).toLocaleString()}만`);
+      updates[`directorStats/${year}/revenue/outpatient/${ym}`] = { total: outTotal, geupyeo_out: outGeupyeo };
+      console.log(`  외래: ${Math.round(outTotal/10000).toLocaleString()}만 (급여 ${Math.round(outGeupyeo/10000).toLocaleString()}만)`);
     }
   } catch(e) {}
+
+  // 급여총액
+  const geupyeoTotal = inGeupyeo + outGeupyeo;
+  updates[`directorStats/${year}/revenue/geupyeo/${ym}`] = geupyeoTotal;
+  console.log(`  급여총액: ${geupyeoTotal.toLocaleString()}`);
 
   // 입원일수
   try {
