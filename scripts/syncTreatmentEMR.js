@@ -287,6 +287,9 @@ async function main() {
   }
 
   console.log('\n' + '═'.repeat(50));
+  // EMR 싱크 완료 시간 기록
+  await db.ref('emrSyncLog/lastSync').set(new Date().toISOString());
+
   console.log('✅ 치료계획표 EMR 연동 완료');
   console.log(`   ✅ 일치:  ${matchCount}건`);
   console.log(`   ➕ 추가:  ${addCount}건`);

@@ -162,6 +162,7 @@ export default function HospitalWardManager() {
   const [pendingCount,   setPendingCount]   = useState(0);
   const [lastSync,       setLastSync]       = useState(null);
   const [syncing,        setSyncing]        = useState(true);
+  const [emrSyncTime,    setEmrSyncTime]    = useState(null);
   const [previewDate,    setPreviewDate]    = useState(null);
   const [previewInput,   setPreviewInput]   = useState(toInputValue(todayDate()));
   const [showReserved,   setShowReserved]   = useState(true);
@@ -203,7 +204,11 @@ export default function HospitalWardManager() {
         setPendingCount(0);
       }
     });
-    return () => { unsubS(); unsubL(); unsubC(); unsubP(); };
+    const unsubE = onValue(ref(db, "emrSyncLog/lastSync"), snap => {
+      const val = snap.val();
+      if (val) setEmrSyncTime(new Date(val));
+    });
+    return () => { unsubS(); unsubL(); unsubC(); unsubP(); unsubE(); };
   }, []);
 
   // ── 자동완성용 전체 환자 목록 (현재 입원 + 예약) ──────────────────────────────
@@ -855,6 +860,11 @@ export default function HospitalWardManager() {
         <div style={S.datebarLeft}>
           {isPreview ? <span style={S.previewBadge}>🔭 미래 미리보기 중</span> : <span style={S.todayBadge}>📅 오늘 실시간 현황</span>}
           <span style={S.activeDateLabel}>{toKoreanDate(viewDate)}</span>
+          {!isPreview && emrSyncTime && (
+            <span style={{ fontSize:12, color:"#94a3b8", marginLeft:8 }}>
+              EMR {emrSyncTime.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}
+            </span>
+          )}
         </div>
         <div style={S.datebarRight}>
           <span style={{ fontSize:13, color:"#64748b", fontWeight:600 }}>날짜 미리보기:</span>

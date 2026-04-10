@@ -662,6 +662,9 @@ async function main() {
   console.log(`\n✅ 과거 입원이력 동기화 완료\n`);
 
   // ════════════════════════════════════════════════════════════════
+  // EMR 싱크 완료 시간 기록
+  await db.ref('emrSyncLog/lastSync').set(new Date().toISOString());
+
   console.log('🎉 전체 동기화 완료!');
   console.log(`   [0]   차트번호 중복 정리`);
   console.log(`   [0.5] 구형 슬롯 키 마이그레이션`);
