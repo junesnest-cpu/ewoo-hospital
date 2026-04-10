@@ -351,13 +351,7 @@ export default function RoomPage() {
     return list.sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }, [slots]);
 
-  if (loading || !room) return (
-    <div style={{ display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"'Noto Sans KR',sans-serif",color:"#64748b" }}>
-      {loading ? "로딩 중..." : "병실을 찾을 수 없습니다."}
-    </div>
-  );
-
-  // 신환 이름 집합
+  // 신환 이름 집합 (Hooks는 early return 이전에 호출)
   const normN = n => (n||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
   const newPatientNames = useMemo(() => {
     const s = new Set();
@@ -377,6 +371,12 @@ export default function RoomPage() {
     });
     return s;
   }, [consultations, newPatientFlags]);
+
+  if (loading || !room) return (
+    <div style={{ display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"'Noto Sans KR',sans-serif",color:"#64748b" }}>
+      {loading ? "로딩 중..." : "병실을 찾을 수 없습니다."}
+    </div>
+  );
 
   const bedList = Array.from({length:room.capacity},(_,i)=>{
     const slotKey=`${room.id}-${i+1}`;
