@@ -455,7 +455,7 @@ export default function RoomPage() {
                 style={{ background: isMovingFrom?"#fffbeb":isMoveTarget?"#f0fdf4":isAdmitting?"#eff6ff":isDischarging?"#fffbeb":isReservedType?"#faf5ff":"#fff",
                   border:`2px ${person?"solid":"dashed"} ${borderColor}`,
                   borderRadius:10, padding:10, minWidth:0, overflow:"hidden",
-                  height:"calc(100vh - 110px)", display:"flex", flexDirection:"column",
+                  height:"calc(100vh - 150px)", display:"flex", flexDirection:"column",
                   cursor:movingPatient&&!isMovingFrom?"pointer":"default",
                   boxShadow:"0 1px 6px rgba(0,0,0,0.06)", transition:"all 0.2s" }}>
 
