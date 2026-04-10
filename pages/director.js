@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ref, onValue } from "firebase/database";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../lib/firebaseConfig";
+import useIsMobile from "../lib/useismobile";
 
 // ── 치료 항목 정의 (treatment.js와 동일) ──
 const ITEMS = [
@@ -80,6 +81,7 @@ export default function DirectorPage() {
 }
 
 function DirectorDashboard({ profile }) {
+  const isMobile = useIsMobile();
   const now = new Date();
   const thisYear = now.getFullYear();
   const thisMonth = now.getMonth() + 1;
@@ -87,6 +89,9 @@ function DirectorDashboard({ profile }) {
   const currentYM = `${thisYear}-${String(thisMonth).padStart(2,"0")}`;
 
   const [year, setYear] = useState(thisYear);
+  const [activeSection, setActiveSection] = useState("revenue");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sectionRefs = { revenue: useRef(null), daily: useRef(null), treatment: useRef(null) };
   const [occMonth, setOccMonth] = useState(thisMonth);
   const [revenue, setRevenue] = useState(null);
   const [occupancy, setOccupancy] = useState(null);
@@ -398,10 +403,28 @@ function DirectorDashboard({ profile }) {
     return {txt:"0%",color:"#64748b"};
   };
 
+  const navItems = [
+    { key:"revenue",   label:"📊 월별 매출 현황" },
+    { key:"daily",     label:"📅 일자별 매출현황" },
+    { key:"treatment", label:"💊 치료항목 월별 현황" },
+  ];
+
+  const scrollToSection = (key) => {
+    setActiveSection(key);
+    if (sectionRefs[key]?.current) {
+      sectionRefs[key].current.scrollIntoView({ behavior:"smooth", block:"start" });
+    }
+    if (isMobile) setSidebarOpen(false);
+  };
+
   const S = {
-    page: { fontFamily:"'Noto Sans KR',sans-serif", background:"#f0f4f8", minHeight:"100vh" },
+    page: { fontFamily:"'Noto Sans KR',sans-serif", background:"#f0f4f8", minHeight:"100vh", display:"flex", flexDirection:"column" },
     header: { background:"#0f2744", color:"#fff", padding:"12px 24px", display:"flex", alignItems:"center", gap:12, position:"sticky", top:0, zIndex:100 },
-    main: { maxWidth:1100, margin:"0 auto", padding:"24px 16px" },
+    body: { display:"flex", flex:1 },
+    sidebar: { width:175, flexShrink:0, background:"#fff", borderRight:"1px solid #e2e8f0", display:"flex", flexDirection:"column", position:"sticky", top:60, height:"calc(100vh - 60px)", overflowY:"auto" },
+    navGroup: { fontSize:10, fontWeight:800, color:"#94a3b8", letterSpacing:"0.08em", padding:"14px 14px 7px", textTransform:"uppercase" },
+    navItem: a => ({ display:"flex", alignItems:"center", gap:9, padding:"8px 14px 8px 22px", cursor:"pointer", fontWeight:a?700:500, fontSize:13, color:a?"#0f2744":"#475569", background:a?"#eff6ff":"transparent", borderLeft:a?"3px solid #0f2744":"3px solid transparent", transition:"all 0.12s", border:"none", width:"100%", textAlign:"left", boxSizing:"border-box" }),
+    main: { flex:1, maxWidth:1100, margin:"0 auto", padding:"24px 16px" },
     card: { background:"#fff", borderRadius:14, padding:"20px 24px", boxShadow:"0 1px 6px rgba(0,0,0,0.06)", marginBottom:20 },
     title: { fontSize:17, fontWeight:800, color:"#0f2744", marginBottom:14, display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" },
     table: { width:"100%", borderCollapse:"collapse", fontSize:13 },
@@ -421,14 +444,59 @@ function DirectorDashboard({ profile }) {
   return (
     <div style={S.page}>
       <header style={S.header}>
-        <a href="/approval" style={{ color:"#7dd3fc", fontSize:14, textDecoration:"none" }}>← 결재</a>
-        <span style={{ fontWeight:800, fontSize:17 }}>경영현황</span>
-        <span style={{ fontSize:13, opacity:0.7, marginLeft:"auto" }}>{profile?.name} · 병원장</span>
+        {isMobile && (
+          <button onClick={()=>setSidebarOpen(o=>!o)}
+            style={{ border:"none", background:"rgba(255,255,255,0.2)", color:"#fff", borderRadius:8, padding:"6px 10px", cursor:"pointer", fontSize:20, flexShrink:0, lineHeight:1 }}>
+            ☰
+          </button>
+        )}
+        <img src="/favicon.png" style={{ width:36, height:36, objectFit:"contain", filter:"brightness(10)", flexShrink:0 }} />
+        <span style={{ fontWeight:800, fontSize: isMobile ? 14 : 17, flex:1 }}>
+          {isMobile ? "경영현황" : "이우요양병원 경영현황"}
+        </span>
+        {!isMobile && (
+          <span style={{ fontSize:13, background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"4px 12px" }}>
+            {profile?.name} · 병원장
+          </span>
+        )}
       </header>
+      <div style={S.body}>
+        {/* 모바일 오버레이 */}
+        {isMobile && sidebarOpen && (
+          <div onClick={()=>setSidebarOpen(false)}
+            style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", zIndex:499 }} />
+        )}
+        {/* 좌측 네비게이션 */}
+        <aside style={isMobile ? {
+          width:175, background:"#fff", borderRight:"1px solid #e2e8f0",
+          display:"flex", flexDirection:"column",
+          position:"fixed", top:0, left: sidebarOpen ? 0 : -179, height:"100vh",
+          overflowY:"auto", zIndex:500, transition:"left 0.25s ease",
+          boxShadow: sidebarOpen ? "4px 0 20px rgba(0,0,0,0.18)" : "none",
+        } : S.sidebar}>
+          {isMobile && (
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 12px 6px" }}>
+              <span style={{ fontWeight:800, fontSize:13, color:"#0f2744" }}>메뉴</span>
+              <button onClick={()=>setSidebarOpen(false)}
+                style={{ border:"none", background:"none", cursor:"pointer", fontSize:18, color:"#94a3b8", padding:0 }}>✕</button>
+            </div>
+          )}
+          <div style={S.navGroup}>경영현황</div>
+          {navItems.map(item => (
+            <button key={item.key} style={S.navItem(activeSection===item.key)}
+              onClick={()=>scrollToSection(item.key)}>
+              <span style={{ flex:1 }}>{item.label}</span>
+            </button>
+          ))}
+          <div style={S.navGroup}>바로가기</div>
+          <a href="/approval" style={{ ...S.navItem(false), textDecoration:"none", color:"inherit" }}>
+            <span style={{ flex:1 }}>← 전자결재</span>
+          </a>
+        </aside>
       <main style={S.main}>
 
         {/* ── 1. 매출 현황 ── */}
-        <div style={S.card}>
+        <div ref={sectionRefs.revenue} style={S.card}>
           <div style={S.title}>
             <span>📊 월별 매출 현황</span>
             <div style={S.nav}>
@@ -515,7 +583,7 @@ function DirectorDashboard({ profile }) {
         </div>
 
         {/* ── 2. 일자별 매출현황 ── */}
-        <div style={S.card}>
+        <div ref={sectionRefs.daily} style={S.card}>
           <div style={S.title}>
             <span>📅 일자별 매출현황</span>
             <div style={S.nav}>
@@ -576,7 +644,7 @@ function DirectorDashboard({ profile }) {
         </div>
 
         {/* ── 3. 치료항목 월별 현황 ── */}
-        <div style={S.card}>
+        <div ref={sectionRefs.treatment} style={S.card}>
           <div style={S.title}>
             <span>💊 치료항목 월별 현황</span>
             <div style={S.nav}>
@@ -646,6 +714,7 @@ function DirectorDashboard({ profile }) {
           )}
         </div>
       </main>
+      </div>{/* body 끝 */}
     </div>
   );
 }
