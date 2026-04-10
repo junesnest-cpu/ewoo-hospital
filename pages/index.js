@@ -1113,7 +1113,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                             {(()=>{
                               const isNextNew = nextRes && newPatientNames.has((nextRes.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase());
                               return <>
-                                <span style={{ ...S.colNextName, ...(isNextNew ? { color:"#713f12", background:"#fef08a", borderRadius:4, padding:"1px 3px", fontWeight:800 } : {}) }}>{nextRes?.name||""}</span>
+                                <span style={S.colNextName}>{isNextNew ? <span style={{ color:"#713f12", background:"#fef08a", borderRadius:3, padding:"1px 4px", fontWeight:800 }}>{nextRes.name}</span> : (nextRes?.name||"")}</span>
                                 <span style={S.colNextDate}>{nextRes?.admitDate||""}</span>
                               </>;
                             })()}
@@ -1130,7 +1130,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                             <span style={{ ...S.patientName, color:"#cbd5e1" }}>—</span>
                             <span style={S.colDischarge}></span>
                             <span style={S.colDday}></span>
-                            <span style={{ ...S.colNextName, ...(isNextNew ? { color:"#713f12", background:"#fef08a", borderRadius:4, padding:"1px 3px", fontWeight:800 } : {}) }}>{nextRes?.name||""}</span>
+                            <span style={S.colNextName}>{isNextNew ? <span style={{ color:"#713f12", background:"#fef08a", borderRadius:3, padding:"1px 4px", fontWeight:800 }}>{nextRes.name}</span> : (nextRes?.name||"")}</span>
                             <span style={S.colNextDate}>{nextRes?.admitDate||""}</span>
                             <span style={S.colExtra}></span>
                           </div>
