@@ -351,6 +351,9 @@ export default function WardTimeline() {
   const [tlSearchResults,  setTlSearchResults]  = useState([]);
   const [tlSearchFocused,  setTlSearchFocused]  = useState(false);
   const [highlightKey,     setHighlightKey]     = useState(null); // { slotKey }
+  const [nameHL,           setNameHL]           = useState("");   // 이름 하이라이트 (사이드바 검색용)
+  const [nameHLVisible,    setNameHLVisible]    = useState(true);
+  const nameHLTimer        = useRef(null);
   const [resHighlight,     setResHighlight]     = useState(null); // { slotKey, resIndex } 예약 바 하이라이트
   const resHighlightCursor = useRef({});  // { [slotKey]: number } 순환 커서
   const resHighlightTimer  = useRef(null);
@@ -596,26 +599,48 @@ export default function WardTimeline() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.query.openRes]);
 
-  // 사이드바 검색 이벤트 처리 (stale closure 방지)
+  const isNameHLMatch = (name) => nameHL && nameHLVisible && name && name.includes(nameHL);
+
+  // 사이드바 검색 이벤트 처리
   const sidebarSearchRef = useRef(null);
   sidebarSearchRef.current = (q) => {
     doTlSearch(q);
+    const qt = q.trim();
+    // 이름 하이라이트 점멸 시작
+    setNameHL(qt);
+    setNameHLVisible(true);
+    if (nameHLTimer.current) clearInterval(nameHLTimer.current);
+    let tick = 0;
+    nameHLTimer.current = setInterval(() => {
+      tick++;
+      if (tick >= 8) { clearInterval(nameHLTimer.current); setNameHL(""); setNameHLVisible(true); return; }
+      setNameHLVisible(v => !v);
+    }, 300);
     // 첫 결과로 자동 스크롤
     const results = [];
     Object.entries(slots).forEach(([slotKey, slot]) => {
-      if (slot?.current?.name?.includes(q.trim()))
-        results.push({ slotKey });
+      if (slot?.current?.name?.includes(qt)) results.push({ slotKey });
       (slot?.reservations || []).forEach(r => {
-        if (r.name?.includes(q.trim()))
-          results.push({ slotKey });
+        if (r.name?.includes(qt)) results.push({ slotKey });
       });
     });
-    if (results.length > 0) scrollToRow(results[0].slotKey);
+    if (results.length > 0) {
+      setTimeout(() => {
+        const el = rowRefs.current[results[0].slotKey];
+        const container = timelineScrollRef.current;
+        if (el && container) {
+          const containerRect = container.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+          const relTop = elRect.top - containerRect.top + container.scrollTop;
+          container.scrollTo({ top: relTop - containerRect.height / 2 + ROW_H / 2, behavior: "smooth" });
+        }
+      }, 100);
+    }
   };
   useEffect(() => {
     const handler = (e) => { const q = e.detail?.q; if (q) sidebarSearchRef.current?.(q); };
     window.addEventListener("sidebar-search", handler);
-    return () => window.removeEventListener("sidebar-search", handler);
+    return () => { window.removeEventListener("sidebar-search", handler); if (nameHLTimer.current) clearInterval(nameHLTimer.current); };
   }, []);
 
   const scrollToRow = (slotKey) => {
@@ -1126,7 +1151,13 @@ export default function WardTimeline() {
                                 {isDragTarget && <span style={{ fontSize:11, color:"#059669", fontWeight:700 }}>← 여기에 놓기</span>}
                                 {!isDragTarget && (
                                   slot?.current?.name
-                                    ? <span style={{ fontSize:12, color:"#334155", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{slot.current.name}</span>
+                                    ? <span style={{ fontSize:12, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                                        color: isNameHLMatch(slot.current.name) ? "#fff" : "#334155",
+                                        background: isNameHLMatch(slot.current.name) ? "#ef4444" : "transparent",
+                                        borderRadius: isNameHLMatch(slot.current.name) ? 4 : 0,
+                                        padding: isNameHLMatch(slot.current.name) ? "1px 4px" : 0,
+                                        boxShadow: isNameHLMatch(slot.current.name) ? "0 0 0 2px #fca5a5" : "none",
+                                        transition: "all 0.2s" }}>{slot.current.name}</span>
                                     : <span style={{ fontSize:11, color:"#cbd5e1" }}>빈 병상</span>
                                 )}
                               </div>
@@ -1245,7 +1276,13 @@ export default function WardTimeline() {
                                       {(() => { const ad = parseDateStr(p.admitDate); return newPatientNames.has((p.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && (!ad || dateOnly(ad).getTime() >= today.getTime() - 7*24*60*60*1000); })() && (
                                         <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }}>★신</span>
                                       )}
-                                      <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
+                                      <span style={{ fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1,
+                                        color:"#fff",
+                                        background: isNameHLMatch(p.name) ? "#ef4444" : "transparent",
+                                        borderRadius: isNameHLMatch(p.name) ? 4 : 0,
+                                        padding: isNameHLMatch(p.name) ? "1px 4px" : 0,
+                                        boxShadow: isNameHLMatch(p.name) ? "0 0 0 2px #fca5a5" : "none",
+                                        transition: "all 0.2s" }}>
                                         {p.name}
                                       </span>
                                       {p.discharge && p.discharge !== "미정" && (
@@ -1284,7 +1321,13 @@ export default function WardTimeline() {
                                       {(() => { const ad = parseDateStr(p.admitDate); return newPatientNames.has((p.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && (!ad || dateOnly(ad).getTime() >= today.getTime() - 7*24*60*60*1000); })() && (
                                         <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }}>★신</span>
                                       )}
-                                      <span style={{ color:"#fff", fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1 }}>
+                                      <span style={{ fontWeight:700, fontSize:13, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", flexShrink:1,
+                                        color:"#fff",
+                                        background: isNameHLMatch(p.name) ? "#ef4444" : "transparent",
+                                        borderRadius: isNameHLMatch(p.name) ? 4 : 0,
+                                        padding: isNameHLMatch(p.name) ? "1px 4px" : 0,
+                                        boxShadow: isNameHLMatch(p.name) ? "0 0 0 2px #fca5a5" : "none",
+                                        transition: "all 0.2s" }}>
                                         {p.name}
                                       </span>
                                       {p.discharge && p.discharge !== "미정" && (
