@@ -122,6 +122,57 @@ async function main() {
     console.log(`  ${ym}: 입원=${inMt.toLocaleString()} + 외래=${outMt.toLocaleString()} = ${total.toLocaleString()}${chk(total,ym)}`);
   }
 
+  // 5. bigub 필터링 — iadd_amt에서 급여만(bigub=0) 합산
+  console.log('\n[5] Wiadd + Woadd (bigub=0 급여만)');
+  for (const ym of months) {
+    const inR = await pool.request().query(`
+      SELECT SUM(CAST(iadd_amt AS bigint)) AS amt, SUM(CAST(iadd_i_mtamt AS bigint)) AS i_mt
+      FROM Wiadd WHERE LEFT(iadd_date, 6) = '${ym}' AND iadd_bigub = 0
+    `);
+    const outR = await pool.request().query(`
+      SELECT SUM(CAST(oadd_amt AS bigint)) AS amt, SUM(CAST(oadd_i_mtamt AS bigint)) AS i_mt
+      FROM Woadd WHERE LEFT(oadd_date, 6) = '${ym}' AND oadd_bigub = 0
+    `);
+    const inAmt = Number(inR.recordset[0]?.amt||0), outAmt = Number(outR.recordset[0]?.amt||0);
+    const inMt = Number(inR.recordset[0]?.i_mt||0), outMt = Number(outR.recordset[0]?.i_mt||0);
+    console.log(`  ${ym}: 기대=${EXPECTED[ym]?.toLocaleString()}`);
+    console.log(`    amt: 입원=${inAmt.toLocaleString()} + 외래=${outAmt.toLocaleString()} = ${(inAmt+outAmt).toLocaleString()}${chk(inAmt+outAmt,ym)}`);
+    console.log(`    i_mt: 입원=${inMt.toLocaleString()} + 외래=${outMt.toLocaleString()} = ${(inMt+outMt).toLocaleString()}${chk(inMt+outMt,ym)}`);
+  }
+
+  // 6. Wiadds + Woadds의 i_mtamt
+  console.log('\n[6] Wiadds.i_mt + Woadds.i_mt');
+  for (const ym of months) {
+    const inR = await pool.request().query(`
+      SELECT SUM(CAST(iadds_i_mtamt AS bigint)) AS i_mt FROM Wiadds WHERE LEFT(iadds_date, 6) = '${ym}'
+    `);
+    let outMt = 0;
+    try {
+      const outR = await pool.request().query(`
+        SELECT SUM(CAST(oadds_i_mtamt AS bigint)) AS i_mt FROM Woadds WHERE LEFT(oadds_date, 6) = '${ym}'
+      `);
+      outMt = Number(outR.recordset[0]?.i_mt||0);
+    } catch(e) { outMt = 0; }
+    const inMt = Number(inR.recordset[0]?.i_mt||0);
+    console.log(`  ${ym}: ${inMt.toLocaleString()} + ${outMt.toLocaleString()} = ${(inMt+outMt).toLocaleString()}${chk(inMt+outMt,ym)}`);
+  }
+
+  // 7. Wiadd.i_mt + Woadd.i_mt + Wiadd.i_all + Woadd.i_all
+  console.log('\n[7] i_mt + i_all 합산');
+  for (const ym of months) {
+    const inR = await pool.request().query(`
+      SELECT SUM(CAST(iadd_i_mtamt AS bigint)) AS i_mt, SUM(CAST(iadd_i_allamt AS bigint)) AS i_all
+      FROM Wiadd WHERE LEFT(iadd_date, 6) = '${ym}'
+    `);
+    const outR = await pool.request().query(`
+      SELECT SUM(CAST(oadd_i_mtamt AS bigint)) AS i_mt, SUM(CAST(oadd_i_allamt AS bigint)) AS i_all
+      FROM Woadd WHERE LEFT(oadd_date, 6) = '${ym}'
+    `);
+    const total = Number(inR.recordset[0]?.i_mt||0) + Number(outR.recordset[0]?.i_mt||0)
+                + Number(inR.recordset[0]?.i_all||0) + Number(outR.recordset[0]?.i_all||0);
+    console.log(`  ${ym}: ${total.toLocaleString()}${chk(total,ym)}`);
+  }
+
   console.log('\n' + '═'.repeat(60));
   await sql.close();
   process.exit(0);
