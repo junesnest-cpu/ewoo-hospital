@@ -424,18 +424,18 @@ function DirectorDashboard({ profile }) {
     sidebar: { width:175, flexShrink:0, background:"#fff", borderRight:"1px solid #e2e8f0", display:"flex", flexDirection:"column", position:"sticky", top:60, height:"calc(100vh - 60px)", overflowY:"auto" },
     navGroup: { fontSize:10, fontWeight:800, color:"#94a3b8", letterSpacing:"0.08em", padding:"14px 14px 7px", textTransform:"uppercase" },
     navItem: a => ({ display:"flex", alignItems:"center", gap:9, padding:"8px 14px 8px 22px", cursor:"pointer", fontWeight:a?700:500, fontSize:13, color:a?"#0f2744":"#475569", background:a?"#eff6ff":"transparent", borderLeft:a?"3px solid #0f2744":"3px solid transparent", transition:"all 0.12s", border:"none", width:"100%", textAlign:"left", boxSizing:"border-box" }),
-    main: { flex:1, maxWidth:1100, margin:"0 auto", padding:"24px 16px" },
+    main: { flex:1, padding:"24px 24px" },
     card: { background:"#fff", borderRadius:14, padding:"20px 24px", boxShadow:"0 1px 6px rgba(0,0,0,0.06)", marginBottom:20 },
-    title: { fontSize:17, fontWeight:800, color:"#0f2744", marginBottom:14, display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" },
-    table: { width:"100%", borderCollapse:"collapse", fontSize:13 },
-    th: { background:"#0f2744", color:"#fff", padding:"9px 10px", fontWeight:700, textAlign:"center", whiteSpace:"nowrap" },
-    td: { padding:"8px 10px", borderBottom:"1px solid #f1f5f9", textAlign:"right", fontVariantNumeric:"tabular-nums" },
-    tdL: { padding:"8px 10px", borderBottom:"1px solid #f1f5f9", textAlign:"center", fontWeight:700, color:"#374151" },
+    title: { fontSize:20, fontWeight:800, color:"#0f2744", marginBottom:14, display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" },
+    table: { width:"100%", borderCollapse:"collapse", fontSize:16 },
+    th: { background:"#0f2744", color:"#fff", padding:"10px 12px", fontWeight:700, textAlign:"center", whiteSpace:"nowrap", fontSize:16 },
+    td: { padding:"9px 12px", borderBottom:"1px solid #f1f5f9", textAlign:"right", fontVariantNumeric:"tabular-nums", fontSize:16 },
+    tdL: { padding:"9px 12px", borderBottom:"1px solid #f1f5f9", textAlign:"center", fontWeight:700, color:"#374151", fontSize:16 },
     totRow: { background:"#f0f4f8", fontWeight:800 },
     nav: { display:"flex", alignItems:"center", gap:8, marginLeft:"auto" },
-    btn: { background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:7, padding:"5px 14px", cursor:"pointer", fontSize:14, fontWeight:700 },
-    sel: { border:"1px solid #e2e8f0", borderRadius:7, padding:"5px 10px", fontSize:14, fontWeight:700, outline:"none" },
-    barBg: { height:20, background:"#f1f5f9", borderRadius:4, overflow:"hidden", flex:1 },
+    btn: { background:"#f1f5f9", border:"1px solid #e2e8f0", borderRadius:7, padding:"5px 14px", cursor:"pointer", fontSize:17, fontWeight:700 },
+    sel: { border:"1px solid #e2e8f0", borderRadius:7, padding:"5px 10px", fontSize:17, fontWeight:700, outline:"none" },
+    barBg: { height:22, background:"#f1f5f9", borderRadius:4, overflow:"hidden", flex:1 },
     barFill: (pct,proj) => ({ height:"100%", background:proj?"#cbd5e1":pct>=90?"#16a34a":pct>=70?"#0ea5e9":pct>=50?"#f59e0b":"#ef4444", width:`${Math.min(pct,100)}%`, borderRadius:4 }),
   };
 
@@ -501,21 +501,21 @@ function DirectorDashboard({ profile }) {
             <span>📊 월별 매출 현황</span>
             <div style={S.nav}>
               <button style={S.btn} onClick={()=>setYear(y=>y-1)}>‹</button>
-              <span style={{fontSize:16,fontWeight:800,minWidth:60,textAlign:"center"}}>{year}년</span>
+              <span style={{fontSize:19,fontWeight:800,minWidth:60,textAlign:"center"}}>{year}년</span>
               <button style={S.btn} onClick={()=>setYear(y=>y+1)}>›</button>
             </div>
           </div>
-          {revenue?.lastSync && <div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>동기화: {new Date(revenue.lastSync).toLocaleString("ko-KR")}</div>}
+          {revenue?.lastSync && <div style={{fontSize:14,color:"#94a3b8",marginBottom:10}}>동기화: {new Date(revenue.lastSync).toLocaleString("ko-KR")}</div>}
           {loading.rev && <div style={{color:"#64748b",padding:20,textAlign:"center"}}>조회 중...</div>}
-          {error.rev && <div style={{color:"#dc2626",padding:12,background:"#fee2e2",borderRadius:8,fontSize:13,marginBottom:12}}>⚠️ {error.rev}</div>}
+          {error.rev && <div style={{color:"#dc2626",padding:12,background:"#fee2e2",borderRadius:8,fontSize:16,marginBottom:12}}>⚠️ {error.rev}</div>}
           {revenue && !loading.rev && monthlyData.every(r=>r.grandTotal===0) && (
-            <div style={{color:"#94a3b8",fontSize:14,padding:20,textAlign:"center"}}>
-              데이터 없음 — <code style={{fontSize:12}}>node scripts/syncDirectorStats.js {year}</code>
+            <div style={{color:"#94a3b8",fontSize:17,padding:20,textAlign:"center"}}>
+              데이터 없음 — <code style={{fontSize:15}}>node scripts/syncDirectorStats.js {year}</code>
             </div>
           )}
           {revenue && !loading.rev && !monthlyData.every(r=>r.grandTotal===0) && (
             <div style={{overflowX:"auto"}}>
-              <table style={{...S.table,fontSize:12}}>
+              <table style={{...S.table,fontSize:15}}>
                 <thead><tr>
                   <th style={S.th} rowSpan={2}>월</th>
                   <th style={S.th} colSpan={2}>총 진료비</th>
@@ -528,13 +528,13 @@ function DirectorDashboard({ profile }) {
                   <th style={S.th} colSpan={2}>신규입원</th>
                 </tr><tr>
                   {Array(8).fill(0).map((_,i)=><>
-                    <th key={`a${i}`} style={{...S.th,fontSize:10,padding:"3px 6px",background:"#1e3a5f"}}>금액</th>
-                    <th key={`b${i}`} style={{...S.th,fontSize:10,padding:"3px 6px",background:"#1e3a5f"}}>증감</th>
+                    <th key={`a${i}`} style={{...S.th,fontSize:13,padding:"3px 6px",background:"#1e3a5f"}}>금액</th>
+                    <th key={`b${i}`} style={{...S.th,fontSize:13,padding:"3px 6px",background:"#1e3a5f"}}>증감</th>
                   </>)}
                 </tr></thead>
                 <tbody>
                   <tr style={{...S.totRow,borderBottom:"2px solid #0f2744"}}>
-                    <td style={{...S.tdL,fontSize:13}}>합계</td>
+                    <td style={{...S.tdL,fontSize:16}}>합계</td>
                     <td style={{...S.td,fontWeight:800,color:"#dc2626"}}>{fmtAmt(yearTotals.grandTotal)}</td><td style={S.td}></td>
                     <td style={{...S.td,fontWeight:800,color:"#0369a1"}}>{fmtAmt(yearTotals.inTotal)}</td><td style={S.td}></td>
                     <td style={{...S.td,fontWeight:800,color:"#7c3aed"}}>{fmtAmt(yearTotals.outTotal)}</td><td style={S.td}></td>
@@ -554,7 +554,7 @@ function DirectorDashboard({ profile }) {
                       if (!cur || isFuture) return <td style={S.td}></td>;
                       const p = yoyPct(cur,prev);
                       const s = yoyStyle(cur,prev);
-                      return <td style={{...S.td,...s,fontSize:11}}>{p||""}</td>;
+                      return <td style={{...S.td,...s,fontSize:14}}>{p||""}</td>;
                     };
                     return(<tr key={r.month} style={{opacity:isFuture?0.3:1}}>
                       <td style={S.tdL}>{r.month}월</td>
@@ -590,12 +590,12 @@ function DirectorDashboard({ profile }) {
               <select style={S.sel} value={occMonth} onChange={e=>setOccMonth(parseInt(e.target.value))}>
                 {Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>{i+1}월</option>)}
               </select>
-              <span style={{fontSize:12,color:"#64748b"}}>총 {TOTAL_BEDS}병상</span>
+              <span style={{fontSize:15,color:"#64748b"}}>총 {TOTAL_BEDS}병상</span>
             </div>
           </div>
-          {occupancy?.lastSync&&<div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>동기화: {new Date(occupancy.lastSync).toLocaleString("ko-KR")}</div>}
+          {occupancy?.lastSync&&<div style={{fontSize:14,color:"#94a3b8",marginBottom:10}}>동기화: {new Date(occupancy.lastSync).toLocaleString("ko-KR")}</div>}
           {loading.occ&&<div style={{color:"#64748b",padding:20,textAlign:"center"}}>조회 중...</div>}
-          {error.occ&&<div style={{color:"#dc2626",padding:12,background:"#fee2e2",borderRadius:8,fontSize:13,marginBottom:12}}>⚠️ {error.occ}</div>}
+          {error.occ&&<div style={{color:"#dc2626",padding:12,background:"#fee2e2",borderRadius:8,fontSize:16,marginBottom:12}}>⚠️ {error.occ}</div>}
           {!loading.occ&&occData.rows.length>0&&(
             <div style={{overflowX:"auto"}}>
               <table style={S.table}>
@@ -611,9 +611,9 @@ function DirectorDashboard({ profile }) {
                 </tr></thead>
                 <tbody>
                   <tr style={{...S.totRow,borderBottom:"2px solid #0f2744"}}>
-                    <td style={{...S.tdL,fontSize:14,color:"#0f2744"}}>합계/평균</td>
+                    <td style={{...S.tdL,fontSize:17,color:"#0f2744"}}>합계/평균</td>
                     <td style={{...S.td,textAlign:"center",fontWeight:800}}>{occData.avgOcc}/{TOTAL_BEDS}</td>
-                    <td style={{...S.td,textAlign:"center",fontWeight:800,fontSize:15,color:occData.avgRate>=70?"#16a34a":"#d97706"}}>{occData.avgRate}%</td>
+                    <td style={{...S.td,textAlign:"center",fontWeight:800,fontSize:18,color:occData.avgRate>=70?"#16a34a":"#d97706"}}>{occData.avgRate}%</td>
                     <td style={{...S.td,fontWeight:800,color:"#0369a1"}}>{occData.sumIn?fmtAmt(occData.sumIn):"-"}</td>
                     <td style={{...S.td,fontWeight:800,color:"#7c3aed"}}>{occData.sumOut?fmtAmt(occData.sumOut):"-"}</td>
                     <td style={{...S.td,fontWeight:800,color:"#059669"}}>{occData.sumGongdan?fmtAmt(occData.sumGongdan):"-"}</td>
@@ -625,7 +625,7 @@ function DirectorDashboard({ profile }) {
                     const isToday=d.date===todayStr;
                     return(<tr key={d.date} style={{background:isToday?"#fffbeb":dow===0?"#fff5f5":dow===6?"#f0f0ff":undefined,opacity:d.projected?0.45:1}}>
                       <td style={{...S.tdL,color:isToday?"#d97706":dow===0?"#dc2626":dow===6?"#2563eb":"#374151",fontWeight:isToday?800:700}}>
-                        {occMonth}/{day}{isToday&&<span style={{fontSize:9,marginLeft:3,color:"#d97706"}}>오늘</span>}{d.projected&&<span style={{fontSize:9,marginLeft:3,color:"#94a3b8"}}>예상</span>}
+                        {occMonth}/{day}{isToday&&<span style={{fontSize:12,marginLeft:3,color:"#d97706"}}>오늘</span>}{d.projected&&<span style={{fontSize:12,marginLeft:3,color:"#94a3b8"}}>예상</span>}
                       </td>
                       <td style={{...S.td,textAlign:"center"}}>{d.occupied}/{d.total}</td>
                       <td style={{...S.td,textAlign:"center",fontWeight:700,color:d.projected?"#94a3b8":d.rate>=90?"#16a34a":d.rate>=70?"#0ea5e9":d.rate>=50?"#d97706":"#dc2626"}}>{d.rate}%</td>
@@ -640,7 +640,7 @@ function DirectorDashboard({ profile }) {
               </table>
             </div>
           )}
-          {!loading.occ&&occData.rows.length===0&&occupancy&&<div style={{color:"#94a3b8",fontSize:14,padding:20,textAlign:"center"}}>데이터 없음 — 동기화 스크립트를 재실행하세요</div>}
+          {!loading.occ&&occData.rows.length===0&&occupancy&&<div style={{color:"#94a3b8",fontSize:17,padding:20,textAlign:"center"}}>데이터 없음 — 동기화 스크립트를 재실행하세요</div>}
         </div>
 
         {/* ── 3. 치료항목 월별 현황 ── */}
@@ -660,11 +660,11 @@ function DirectorDashboard({ profile }) {
               <button style={S.btn} onClick={()=>setTreatMonth(m=>monthAdd(m,1))}>›</button>
             </div>
           </div>
-          <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>
+          <div style={{fontSize:15,color:"#64748b",marginBottom:12}}>
             비교: 전달 ({ymLabel(prevMonth)}) · 전년동월 ({ymLabel(lastYearMonth)})
           </div>
           {treatRows.length===0 ? (
-            <div style={{color:"#94a3b8",fontSize:14,padding:20,textAlign:"center"}}>해당 월 치료 데이터가 없습니다.</div>
+            <div style={{color:"#94a3b8",fontSize:17,padding:20,textAlign:"center"}}>해당 월 치료 데이터가 없습니다.</div>
           ) : (
             <div style={{overflowX:"auto"}}>
               <table style={S.table}>
@@ -672,18 +672,18 @@ function DirectorDashboard({ profile }) {
                   <th style={S.th}>치료항목</th>
                   <th style={S.th}>수량</th>
                   <th style={S.th}>매출</th>
-                  <th style={{...S.th,fontSize:11}}>전달 수량</th>
-                  <th style={{...S.th,fontSize:11}}>전달 매출</th>
-                  <th style={{...S.th,fontSize:11}}>전달 대비</th>
-                  <th style={{...S.th,fontSize:11}}>전년 수량</th>
-                  <th style={{...S.th,fontSize:11}}>전년 매출</th>
-                  <th style={{...S.th,fontSize:11}}>전년 대비</th>
+                  <th style={{...S.th,fontSize:14}}>전달 수량</th>
+                  <th style={{...S.th,fontSize:14}}>전달 매출</th>
+                  <th style={{...S.th,fontSize:14}}>전달 대비</th>
+                  <th style={{...S.th,fontSize:14}}>전년 수량</th>
+                  <th style={{...S.th,fontSize:14}}>전년 매출</th>
+                  <th style={{...S.th,fontSize:14}}>전년 대비</th>
                 </tr></thead>
                 <tbody>
                   <tr style={{...S.totRow,borderBottom:"2px solid #0f2744"}}>
-                    <td style={{...S.tdL,textAlign:"left",paddingLeft:12,fontSize:14}}>합계</td>
+                    <td style={{...S.tdL,textAlign:"left",paddingLeft:12,fontSize:17}}>합계</td>
                     <td style={S.td}></td>
-                    <td style={{...S.td,fontWeight:800,color:"#0369a1",fontSize:14}}>{fmtAmt(treatTotals.curRev)}</td>
+                    <td style={{...S.td,fontWeight:800,color:"#0369a1",fontSize:17}}>{fmtAmt(treatTotals.curRev)}</td>
                     <td style={S.td}></td>
                     <td style={{...S.td,fontWeight:800,color:"#64748b"}}>{fmtAmt(treatTotals.prevRev)}</td>
                     <td style={{...S.td,fontWeight:800,color:pctChange(treatTotals.curRev,treatTotals.prevRev).color}}>{pctChange(treatTotals.curRev,treatTotals.prevRev).txt}</td>
