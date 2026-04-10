@@ -1,17 +1,18 @@
 /**
  * EMR → Firebase 동기화 스크립트
- * 실행: node scripts/syncEMR.js
  *
- * [1] 환자 마스터: patients/{chartNo}
- *     - 이름, 생년월일, 성별, 전화번호, 주소, 최근 방문일, 담당의, 진료과, 주상병
- *     - 현재 입원 중인 환자는 currentAdmitDate(최근 입원일) 추가
- *     - 동일 전화번호 → 동일 환자, 먼저 등록된 차트번호를 대표로 사용
+ * 실행 모드:
+ *   node scripts/syncEMR.js          경량 모드 (매시간) — 병상 배치 + 현재 입원환자만
+ *   node scripts/syncEMR.js --full   전체 모드 (새벽)  — 중복정리 + 전체 환자 + 병상 + 입원이력
  *
- * [2] 병상 배치: slots/{slotKey}/current
- *     - Wbedm 기준으로 실제 입원 환자를 침대별로 동기화
- *     - slotKey = 병동번호 + "0" + 호실번호 + "-" + 침대번호 (예: 205-3)
- *     - 기존 퇴원예정일(discharge), 메모(note) 는 보존
- *     - EMR에서 퇴원 처리된 환자는 slot에서 자동 제거
+ * [경량] Phase 1L: 현재 입원환자 마스터만 동기화
+ * [경량] Phase 2:  병상 배치 동기화
+ *
+ * [전체] Phase 0:   차트번호 중복 정리
+ * [전체] Phase 0.5: 구형 슬롯 키 마이그레이션
+ * [전체] Phase 1:   전체 환자 마스터 동기화
+ * [전체] Phase 2:   병상 배치 동기화
+ * [전체] Phase 3:   과거 입원이력 동기화
  */
 
 require('dotenv').config({ path: '.env.local' });
@@ -358,24 +359,34 @@ function makeSlotKey(dong, room, bedKey) {
   return `${roomId}-${bedKey}`;
 }
 
+// ── 모드 판별 ────────────────────────────────────────────────────
+const FULL_MODE = process.argv.includes('--full');
+
 // ── 메인 ──────────────────────────────────────────────────────────
 async function main() {
+  console.log(`\n${'═'.repeat(50)}`);
+  console.log(`  EMR 동기화 [${FULL_MODE ? '전체 모드 --full' : '경량 모드'}]`);
+  console.log(`  ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`);
+  console.log('═'.repeat(50));
+
   console.log('🔌 SQL Server 연결 중... (192.168.0.253:1433)');
   const pool = await sql.connect(sqlConfig);
   console.log('✅ 연결 성공\n');
 
-  // ════════════════════════════════════════════════════════════════
-  // [0] Firebase 내 차트번호 중복 정리 (EMR 동기화 전 선행)
-  // ════════════════════════════════════════════════════════════════
-  await cleanupDuplicates(db);
+  // ── [전체 모드] Phase 0: 차트번호 중복 정리 ──
+  if (FULL_MODE) {
+    await cleanupDuplicates(db);
+  }
 
   // ════════════════════════════════════════════════════════════════
-  // [1] 환자 마스터 동기화
+  // Phase 1: 환자 마스터 동기화
+  //   경량: 현재 입원환자(Wbedm)만  /  전체: 전체 환자
   // ════════════════════════════════════════════════════════════════
   console.log('─'.repeat(50));
-  console.log('[1] 환자 마스터 동기화 시작');
+  console.log(`[1] 환자 마스터 동기화 시작 (${FULL_MODE ? '전체' : '입원환자만'})`);
 
-  const patResult = await pool.request().query(`
+  const patientQuery = FULL_MODE
+    ? `
     WITH ranked AS (
       SELECT
         chamKey, chamWhanja, chamBirth, chamSex,
@@ -420,15 +431,48 @@ async function main() {
     LEFT JOIN currentAdmit ca ON ca.chartNo  = r.chamKey
     WHERE r.rn = 1
     ORDER BY r.chamKey
-  `);
+  `
+    : `
+    SELECT
+      b.bedm_cham      AS chartNo,
+      v.chamWhanja     AS name,
+      v.chamBirth      AS birthDate,
+      v.chamSex        AS sex,
+      v.chamHphone     AS phone,
+      v.chamJuso       AS address,
+      v.jubDate        AS lastVisitDate,
+      v.dctrName       AS lastDoctor,
+      v.hyGubunName    AS lastDept,
+      md.diagCode,
+      md.diagName,
+      b.bedm_in_date   AS currentAdmitDate
+    FROM BrWonmu.dbo.Wbedm b
+    OUTER APPLY (
+      SELECT TOP 1 chamWhanja, chamBirth, chamSex, chamHphone, chamJuso,
+                   jubDate, dctrName, hyGubunName
+      FROM BrWonmu.dbo.VIEWJUBLIST
+      WHERE chamKey = b.bedm_cham
+      ORDER BY jubDate DESC
+    ) v
+    OUTER APPLY (
+      SELECT TOP 1
+        d.idis_dism                            AS diagCode,
+        COALESCE(dm.dism_h_name, d.idis_dism)  AS diagName
+      FROM BrWonmu.dbo.Widis d
+      LEFT JOIN BrWonmu.dbo.Wdism dm ON dm.dism_key = d.idis_dism
+      WHERE d.idis_cham = b.bedm_cham AND d.idis_first = 1
+      ORDER BY d.idis_in_date DESC, d.idis_cnt
+    ) md
+    WHERE b.bedm_cham IS NOT NULL AND b.bedm_cham <> ''
+  `;
 
+  const patResult = await pool.request().query(patientQuery);
   const patRows = patResult.recordset;
-  console.log(`총 ${patRows.length}명 조회됨`);
+  console.log(`  조회: ${patRows.length}명`);
 
   // patientByChartNo 인덱스 로드 (internalId 보존 및 Phase 2 patientId 설정에 사용)
   const chartIdxSnap = await db.ref('patientByChartNo').once('value');
-  // chartToId: 기존 인덱스 + 이번 동기화에서 신규 부여한 ID 포함 (가변)
-  const chartToId = Object.assign({}, chartIdxSnap.val() || {}); // { normChart → internalId }
+  const chartToId = Object.assign({}, chartIdxSnap.val() || {});
 
   // 현재 최대 internalId 계산 (신규 부여 시 충돌 방지)
   const existingIds = Object.values(chartToId).filter(id => /^P\d+$/.test(id));
@@ -446,7 +490,6 @@ async function main() {
     const phone = normalizePhone(row.phone);
     if (!phone) continue;
     if (phoneMap.has(phone)) {
-      console.log(`⚠️  중복: ${row.chartNo}(${row.name}) ← ${phoneMap.get(phone)}과 동일 전화번호 → 건너뜀`);
       skipSet.add(row.chartNo);
     } else {
       phoneMap.set(phone, row.chartNo);
@@ -479,7 +522,6 @@ async function main() {
     // internalId 보존 또는 신규 부여
     let internalId = chartToId[normChart];
     if (!internalId) {
-      // 새 internalId 생성 (P00001 형식, 충돌 방지)
       while (assignedIdSet.has(`P${String(nextIdNum).padStart(5, '0')}`)) nextIdNum++;
       internalId = `P${String(nextIdNum).padStart(5, '0')}`;
       assignedIdSet.add(internalId);
@@ -493,24 +535,19 @@ async function main() {
     patUpdates[`patients/${normChart}`] = patient;
   }
 
-  // 500건씩 나눠서 업로드
   const patEntries = Object.entries(patUpdates);
-  console.log(`\n저장 대상: ${patEntries.length}명 / 중복 건너뜀: ${skipSet.size}건`);
-  console.log('🔥 Firebase patients 저장 중...');
+  console.log(`  저장: ${patEntries.length}명 / 건너뜀: ${skipSet.size}건`);
   for (let i = 0; i < patEntries.length; i += 500) {
     await db.ref('/').update(Object.fromEntries(patEntries.slice(i, i + 500)));
-    console.log(`  ↑ ${Math.min(i + 500, patEntries.length)} / ${patEntries.length}`);
   }
-  console.log(`✅ 환자 마스터 동기화 완료 (신규 internalId 부여: ${newIdCount}명)\n`);
+  console.log(`  ✅ 환자 마스터 완료 (신규 ID: ${newIdCount}명)\n`);
 
   // ════════════════════════════════════════════════════════════════
-  // [2] 병상 배치 동기화
+  // Phase 2: 병상 배치 동기화
   // ════════════════════════════════════════════════════════════════
   console.log('─'.repeat(50));
   console.log('[2] 병상 배치 동기화 시작');
 
-  // EMR 병상 배치 조회 — INSUCLS='50'(일반/보험100) 제외
-  // INSUCLS='50'은 명일 예약 사항을 미리 등록한 것으로 실제 입원이 아님
   const bedResult = await pool.request().query(`
     WITH currentPats AS (
       SELECT CHARTNO, INSUCLS,
@@ -533,8 +570,7 @@ async function main() {
     ORDER BY b.bedm_dong, b.bedm_room, b.bedm_key
   `);
 
-  // EMR 병상 데이터를 slotKey 기준 Map으로 변환
-  const emrBedMap = new Map(); // slotKey → {name, admitDate, chartNo}
+  const emrBedMap = new Map();
   for (const b of bedResult.recordset) {
     const slotKey = makeSlotKey(b.dong, b.room, b.bedKey);
     emrBedMap.set(slotKey, {
@@ -543,29 +579,31 @@ async function main() {
       chartNo:   normalizeChartNo(b.chartNo),
     });
   }
-  console.log(`EMR 입원 병상: ${emrBedMap.size}개`);
+  console.log(`  EMR 입원 병상: ${emrBedMap.size}개`);
 
-  // Firebase 현재 slots 조회 + 구형 슬롯 키 마이그레이션
-  console.log('─'.repeat(50));
-  console.log('[0.5] 구형 슬롯 키 마이그레이션');
+  // Firebase 현재 slots 조회
   const slotsSnap = await db.ref('slots').get();
-  const fbSlots   = await migrateOldSlotKeys(db, slotsSnap.val() || {});
+  let fbSlots = slotsSnap.val() || {};
+
+  // [전체 모드] 구형 슬롯 키 마이그레이션
+  if (FULL_MODE) {
+    console.log('─'.repeat(50));
+    console.log('[0.5] 구형 슬롯 키 마이그레이션');
+    fbSlots = await migrateOldSlotKeys(db, fbSlots);
+  }
 
   const slotUpdates = {};
   let   setCount = 0, clearCount = 0;
 
-  // EMR 병상 → Firebase 업데이트
   for (const [slotKey, emrData] of emrBedMap) {
     const existing  = fbSlots[slotKey] || {};
     const fbCurrent = existing.current || {};
 
-    // note(메모)는 보존, discharge(퇴원예정일)는 미래 날짜만 보존
     const newCurrent = {
       name:      emrData.name,
       admitDate: emrData.admitDate,
       chartNo:   emrData.chartNo,
     };
-    // patientId 설정: chartToId에서 internalId 조회 (신규 부여 포함)
     const slotPatientId = chartToId[emrData.chartNo];
     if (slotPatientId) newCurrent.patientId = slotPatientId;
     if (fbCurrent.note) newCurrent.note = fbCurrent.note;
@@ -574,15 +612,12 @@ async function main() {
       const today = new Date(); today.setHours(0, 0, 0, 0);
       let dischargeDate = null;
 
-      // YYYY-MM-DD 형식
       const isoM = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (isoM) dischargeDate = new Date(parseInt(isoM[1]), parseInt(isoM[2])-1, parseInt(isoM[3]));
 
-      // M/D 형식 (예: "4/2")
       const mdM = !isoM && raw.match(/^(\d{1,2})\/(\d{1,2})$/);
       if (mdM) dischargeDate = new Date(today.getFullYear(), parseInt(mdM[1])-1, parseInt(mdM[2]));
 
-      // "미정" 등 날짜 아닌 값은 그대로 보존, 과거 날짜는 제거
       const isPast = dischargeDate && dischargeDate < today;
       if (!isPast) newCurrent.discharge = raw;
     }
@@ -591,87 +626,91 @@ async function main() {
     setCount++;
   }
 
-  // Firebase에 있지만 EMR Wbedm에 없는 슬롯 → 퇴원 처리 (current 제거)
-  // reservations(예약)과 note(메모)는 보존
   for (const [slotKey, slot] of Object.entries(fbSlots)) {
     if (!slot?.current?.name) continue;
     if (emrBedMap.has(slotKey)) continue;
-    console.log(`🚪 퇴원 처리: ${slotKey} (${slot.current.name})`);
+    console.log(`  🚪 퇴원 처리: ${slotKey} (${slot.current.name})`);
     slotUpdates[`slots/${slotKey}/current`] = null;
     clearCount++;
   }
 
-  // Firebase 반영
   if (Object.keys(slotUpdates).length > 0) {
     await db.ref('/').update(slotUpdates);
   }
-  console.log(`✅ 병상 배치 동기화 완료`);
-  console.log(`   입원 반영: ${setCount}개 / 퇴원 제거: ${clearCount}개\n`);
+  console.log(`  ✅ 병상 배치 완료 — 입원: ${setCount}개 / 퇴원: ${clearCount}개\n`);
 
   // ════════════════════════════════════════════════════════════════
-  // [3] 과거 입원이력 동기화
+  // [전체 모드] Phase 3: 과거 입원이력 동기화
   // ════════════════════════════════════════════════════════════════
-  console.log('─'.repeat(50));
-  console.log('[3] 과거 입원이력 동기화 시작');
+  let histSize = 0, histTotal = 0;
+  if (FULL_MODE) {
+    console.log('─'.repeat(50));
+    console.log('[3] 과거 입원이력 동기화 시작');
 
-  const admitHistResult = await pool.request().query(`
-    SELECT
-      CHARTNO,
-      INDAT   AS admitDate,
-      OUTDAT  AS dischargeDate,
-      INSUCLS AS insuCls
-    FROM BrWonmu.dbo.SILVER_PATIENT_INFO
-    WHERE OUTDAT IS NOT NULL AND OUTDAT <> ''
-      AND INDAT  IS NOT NULL AND INDAT  <> ''
-    ORDER BY CHARTNO, INDAT DESC
-  `);
+    const admitHistResult = await pool.request().query(`
+      SELECT
+        CHARTNO,
+        INDAT   AS admitDate,
+        OUTDAT  AS dischargeDate,
+        INSUCLS AS insuCls
+      FROM BrWonmu.dbo.SILVER_PATIENT_INFO
+      WHERE OUTDAT IS NOT NULL AND OUTDAT <> ''
+        AND INDAT  IS NOT NULL AND INDAT  <> ''
+      ORDER BY CHARTNO, INDAT DESC
+    `);
 
-  // chartNo 기준으로 그룹핑
-  const admitHistMap = new Map(); // normChart → [{admitDate, dischargeDate, insuCls?}]
-  for (const row of admitHistResult.recordset) {
-    const normChart = normalizeChartNo(row.CHARTNO);
-    if (!normChart) continue;
-    const entry = {
-      admitDate:     formatDate(row.admitDate),
-      dischargeDate: formatDate(row.dischargeDate),
-    };
-    if (!entry.admitDate) continue;
-    if (row.insuCls) entry.insuCls = String(row.insuCls).trim();
-    if (!admitHistMap.has(normChart)) admitHistMap.set(normChart, []);
-    admitHistMap.get(normChart).push(entry);
+    const admitHistMap = new Map();
+    for (const row of admitHistResult.recordset) {
+      const normChart = normalizeChartNo(row.CHARTNO);
+      if (!normChart) continue;
+      const entry = {
+        admitDate:     formatDate(row.admitDate),
+        dischargeDate: formatDate(row.dischargeDate),
+      };
+      if (!entry.admitDate) continue;
+      if (row.insuCls) entry.insuCls = String(row.insuCls).trim();
+      if (!admitHistMap.has(normChart)) admitHistMap.set(normChart, []);
+      admitHistMap.get(normChart).push(entry);
+    }
+
+    histSize  = admitHistMap.size;
+    histTotal = admitHistResult.recordset.length;
+    console.log(`  대상: ${histSize}명 / 이력: ${histTotal}건`);
+
+    const histUpdates = {};
+    for (const [normChart, history] of admitHistMap) {
+      const seen = new Set();
+      const dedup = history.filter(h => {
+        const key = `${h.admitDate}__${h.dischargeDate}`;
+        if (seen.has(key)) return false;
+        seen.add(key); return true;
+      });
+      histUpdates[`patients/${normChart}/emrAdmissions`] = dedup;
+    }
+
+    const histEntries = Object.entries(histUpdates);
+    for (let i = 0; i < histEntries.length; i += 500) {
+      await db.ref('/').update(Object.fromEntries(histEntries.slice(i, i + 500)));
+      process.stdout.write(`\r  ↑ ${Math.min(i + 500, histEntries.length)} / ${histEntries.length}`);
+    }
+    console.log(`\n  ✅ 입원이력 완료\n`);
   }
-
-  console.log(`  대상 환자: ${admitHistMap.size}명 / 총 이력: ${admitHistResult.recordset.length}건`);
-
-  const histUpdates = {};
-  for (const [normChart, history] of admitHistMap) {
-    // 중복 제거 (admitDate + dischargeDate 기준)
-    const seen = new Set();
-    const dedup = history.filter(h => {
-      const key = `${h.admitDate}__${h.dischargeDate}`;
-      if (seen.has(key)) return false;
-      seen.add(key); return true;
-    });
-    histUpdates[`patients/${normChart}/emrAdmissions`] = dedup;
-  }
-
-  const histEntries = Object.entries(histUpdates);
-  for (let i = 0; i < histEntries.length; i += 500) {
-    await db.ref('/').update(Object.fromEntries(histEntries.slice(i, i + 500)));
-    process.stdout.write(`\r  ↑ ${Math.min(i + 500, histEntries.length)} / ${histEntries.length}`);
-  }
-  console.log(`\n✅ 과거 입원이력 동기화 완료\n`);
 
   // ════════════════════════════════════════════════════════════════
   // EMR 싱크 완료 시간 기록
   await db.ref('emrSyncLog/lastSync').set(new Date().toISOString());
 
-  console.log('🎉 전체 동기화 완료!');
-  console.log(`   [0]   차트번호 중복 정리`);
-  console.log(`   [0.5] 구형 슬롯 키 마이그레이션`);
-  console.log(`   [1]   환자 마스터: ${patEntries.length}명`);
-  console.log(`   [2]   병상 입원:   ${setCount}개 / 퇴원: ${clearCount}개`);
-  console.log(`   [3]   입원이력:    ${admitHistMap.size}명 / ${admitHistResult.recordset.length}건`);
+  console.log('─'.repeat(50));
+  console.log(`🎉 ${FULL_MODE ? '전체' : '경량'} 동기화 완료!`);
+  if (FULL_MODE) {
+    console.log(`   [0]   차트번호 중복 정리`);
+    console.log(`   [0.5] 구형 슬롯 키 마이그레이션`);
+  }
+  console.log(`   [1]   환자 마스터: ${patEntries.length}명${FULL_MODE ? '' : ' (입원환자만)'}`);
+  console.log(`   [2]   병상 입원: ${setCount}개 / 퇴원: ${clearCount}개`);
+  if (FULL_MODE) {
+    console.log(`   [3]   입원이력: ${histSize}명 / ${histTotal}건`);
+  }
 
   await sql.close();
   process.exit(0);
