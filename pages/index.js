@@ -1062,7 +1062,12 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                         return (
                           <div key={i} style={{ ...S.patientChip, background:"#d1fae5", borderRadius:6, padding:"2px 6px" }}>
                             <span style={{ ...S.bedPositionBadge, background:"#10b981" }}>{i+1}</span>
-                            <span style={{ color:"#065f46", fontWeight:700, fontSize:12 }}>빈 병상</span>
+                            <span style={{ ...S.patientName, color:"#065f46" }}>빈 병상</span>
+                            <span style={S.colDischarge}></span>
+                            <span style={S.colDday}></span>
+                            <span style={S.colNextName}></span>
+                            <span style={S.colNextDate}></span>
+                            <span style={S.colExtra}></span>
                           </div>
                         );
                       }
@@ -1074,17 +1079,18 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                               .sort((a,b2) => parseDateStr(a.admitDate) - parseDateStr(b2.admitDate))
                           : [];
                         const nextRes = nextResList[0] || null;
+                        // 신환 여부
+                        const isNewPat = (()=>{ const _ad=parseDateStr(b.person.admitDate); return newPatientNames.has((b.person.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && (!_ad||dateOnly(_ad).getTime()>=todayDate().getTime()-7*24*60*60*1000); })();
+                        // 병상번호 색상: 신환=금색, 당일입원=파랑, 예약=보라, 당일퇴원=주황, 기본=남색
+                        const bedColor = isNewPat?"#b45309":isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f";
+                        // 이름 색상: 신환=금색, 당일입원=파랑, 예약=보라, 당일퇴원=주황, 기본=남색
+                        const nameColor = isNameHighlighted?"#fff":isNewPat?"#b45309":isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f";
                         return (
                           <div key={i} style={S.patientChip}>
-                            {isDischarging && <span style={{ fontSize:11 }}>🚪</span>}
-                            {isAdmitting   && <span style={{ fontSize:11 }}>🛏</span>}
-                            <span style={{ ...S.bedPositionBadge, background: isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f" }}>{posNum}</span>
-                            {(()=>{ const _ad=parseDateStr(b.person.admitDate); return newPatientNames.has((b.person.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && (!_ad||dateOnly(_ad).getTime()>=todayDate().getTime()-7*24*60*60*1000); })() && (
-                              <span style={{ fontSize:11, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"0 4px", fontWeight:800, flexShrink:0 }}>★</span>
-                            )}
+                            <span style={{ ...S.bedPositionBadge, background:bedColor }}>{posNum}</span>
                             <span
                               style={{ ...S.patientName,
-                                color: isNameHighlighted ? "#fff" : isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f",
+                                color: nameColor,
                                 background: isNameHighlighted ? "#ef4444" : "transparent",
                                 borderRadius: isNameHighlighted ? 4 : 0,
                                 padding: isNameHighlighted ? "1px 5px" : undefined,
@@ -1095,25 +1101,11 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                               {b.person.name}
                             </span>
                             {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
-                            {b.person.discharge && b.person.discharge !== "미정" && (
-                              <span style={S.dischargeDateWrap}>
-                                <span style={S.dischargeDate}>{b.person.discharge}</span>
-                                {dday && <span style={{ ...S.ddayBadge, color:dday.color, background:dday.bg }}>{dday.text}</span>}
-                              </span>
-                            )}
-                            {nextRes && (
-                              <span style={{ display:"inline-flex", alignItems:"center", gap:2,
-                                background:"#f5f3ff", borderRadius:4, padding:"0 4px", marginLeft:2, flexShrink:0 }}>
-                                <span style={{ fontSize:9, color:"#7c3aed", fontWeight:800 }}>→</span>
-                                <span style={{ fontSize:11, fontWeight:700, color:"#6d28d9" }}>{nextRes.name}</span>
-                                <span style={{ fontSize:10, color:"#a78bfa" }}>{nextRes.admitDate}</span>
-                                {nextResList.length > 1 && (
-                                  <span style={{ fontSize:9, color:"#7c3aed", background:"#ede9fe", borderRadius:3, padding:"0 3px", fontWeight:700 }}>
-                                    +{nextResList.length - 1}
-                                  </span>
-                                )}
-                              </span>
-                            )}
+                            <span style={S.colDischarge}>{b.person.discharge && b.person.discharge !== "미정" ? b.person.discharge : ""}</span>
+                            <span style={{ ...S.colDday, color:dday?.color||"transparent" }}>{dday?.text||""}</span>
+                            <span style={S.colNextName}>{nextRes?.name||""}</span>
+                            <span style={S.colNextDate}>{nextRes?.admitDate||""}</span>
+                            <span style={S.colExtra}>{nextResList.length > 1 ? `+${nextResList.length-1}` : ""}</span>
                           </div>
                         );
                       }
@@ -1122,8 +1114,12 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                         return (
                           <div key={i} style={S.patientChip}>
                             <span style={{ ...S.bedPositionBadge, background:"#7c3aed" }}>{i+1}</span>
-                            <span style={{ color:"#7c3aed", fontSize:13, fontWeight:700 }}>📅 {nextRes?.name}</span>
-                            <span style={{ fontSize:11, color:"#a78bfa" }}>{nextRes?.admitDate}</span>
+                            <span style={{ ...S.patientName, color:"#cbd5e1" }}>—</span>
+                            <span style={S.colDischarge}></span>
+                            <span style={S.colDday}></span>
+                            <span style={S.colNextName}>{nextRes?.name||""}</span>
+                            <span style={S.colNextDate}>{nextRes?.admitDate||""}</span>
+                            <span style={S.colExtra}></span>
                           </div>
                         );
                       }
@@ -1131,7 +1127,12 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                       return (
                         <div key={i} style={S.patientChip}>
                           <span style={{ ...S.bedPositionBadge, background:"#cbd5e1" }}>{i+1}</span>
-                          <span style={{ color:"#cbd5e1", fontSize:13, fontWeight:500 }}>빈 자리</span>
+                          <span style={{ ...S.patientName, color:"#cbd5e1" }}>—</span>
+                          <span style={S.colDischarge}></span>
+                          <span style={S.colDday}></span>
+                          <span style={S.colNextName}></span>
+                          <span style={S.colNextDate}></span>
+                          <span style={S.colExtra}></span>
                         </div>
                       );
                     })}
@@ -1527,9 +1528,14 @@ const S = {
   bedDot: { width:16, height:16, borderRadius:"50%" },
   roomOccupancy: { fontSize:26, fontWeight:800, marginBottom:4, display:"flex", alignItems:"center", gap:0 },
   patientList: { display:"flex", flexDirection:"column", gap:3 },
-  patientChip: { display:"flex", alignItems:"center", gap:5, fontSize:15, flexWrap:"wrap", overflow:"hidden", minWidth:0 },
+  patientChip: { display:"flex", alignItems:"center", gap:0, fontSize:15, overflow:"hidden", minWidth:0 },
   bedPositionBadge: { color:"#fff", borderRadius:4, width:22, height:22, fontSize:13, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
-  patientName: { fontWeight:700, fontSize:15 },
+  patientName: { fontWeight:700, fontSize:15, width:52, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginLeft:5 },
+  colDischarge: { width:42, flexShrink:0, textAlign:"center", fontSize:12, color:"#64748b", marginLeft:4 },
+  colDday: { width:38, flexShrink:0, textAlign:"center", fontSize:12, fontWeight:800, marginLeft:2 },
+  colNextName: { width:42, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:12, fontWeight:700, color:"#6d28d9", textAlign:"center", marginLeft:4 },
+  colNextDate: { width:36, flexShrink:0, fontSize:11, color:"#a78bfa", textAlign:"center", marginLeft:2 },
+  colExtra: { width:20, flexShrink:0, fontSize:10, color:"#7c3aed", fontWeight:700, textAlign:"center", marginLeft:2 },
   dischargeDateWrap: { display:"flex", alignItems:"center", gap:3, marginLeft:2 },
   dischargeDate: { color:"#64748b", fontSize:12, background:"#f1f5f9", borderRadius:4, padding:"1px 5px" },
   ddayBadge: { fontSize:12, fontWeight:800, borderRadius:4, padding:"1px 6px" },
