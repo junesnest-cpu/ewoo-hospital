@@ -426,7 +426,7 @@ export default function RoomPage() {
                 onClick={()=>{ if(movingPatient&&!isMovingFrom) executeMove(slotKey); }}
                 style={{ background: isMovingFrom?"#fffbeb":isMoveTarget?"#f0fdf4":isAdmitting?"#eff6ff":isDischarging?"#fffbeb":isReservedType?"#faf5ff":"#fff",
                   border:`2px ${person?"solid":"dashed"} ${borderColor}`,
-                  borderRadius:10, padding:10,
+                  borderRadius:10, padding:10, minWidth:0, overflow:"hidden",
                   cursor:movingPatient&&!isMovingFrom?"pointer":"default",
                   boxShadow:"0 1px 6px rgba(0,0,0,0.06)", transition:"all 0.2s" }}>
 
