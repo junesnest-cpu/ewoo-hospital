@@ -1091,20 +1091,21 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                         const nextRes = nextResList[0] || null;
                         // 신환 여부
                         const isNewPat = (()=>{ const _ad=parseDateStr(b.person.admitDate); return newPatientNames.has((b.person.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase()) && (!_ad||dateOnly(_ad).getTime()>=todayDate().getTime()-7*24*60*60*1000); })();
-                        // 병상번호 색상: 신환=금색, 당일입원=파랑, 예약=보라, 당일퇴원=주황, 기본=남색
-                        const bedColor = isNewPat?"#b45309":isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f";
-                        // 이름 색상: 신환=금색, 당일입원=파랑, 예약=보라, 당일퇴원=주황, 기본=남색
-                        const nameColor = isNameHighlighted?"#fff":isNewPat?"#b45309":isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f";
+                        // 병상번호 색상: 신환=노랑, 당일입원=파랑, 예약=보라, 당일퇴원=주황, 기본=남색
+                        const bedColor = isNewPat?"#a16207":isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f";
+                        // 이름 색상
+                        const nameColor = isNameHighlighted?"#fff":isAdmitting?"#2563eb":isReservedType?"#7c3aed":isDischarging?"#d97706":"#1e3a5f";
                         return (
                           <div key={i} style={S.patientChip}>
-                            <span style={{ ...S.bedPositionBadge, background:bedColor }}>{posNum}</span>
+                            <span style={{ ...S.bedPositionBadge, background: isNewPat?"#fbbf24":bedColor }}>{posNum}</span>
                             <span
                               style={{ ...S.patientName,
-                                color: nameColor,
-                                background: isNameHighlighted ? "#ef4444" : "transparent",
-                                borderRadius: isNameHighlighted ? 4 : 0,
-                                padding: isNameHighlighted ? "1px 5px" : undefined,
+                                color: isNameHighlighted ? "#fff" : isNewPat ? "#713f12" : nameColor,
+                                background: isNameHighlighted ? "#ef4444" : isNewPat ? "#fef08a" : "transparent",
+                                borderRadius: (isNameHighlighted || isNewPat) ? 4 : 0,
+                                padding: (isNameHighlighted || isNewPat) ? "1px 5px" : undefined,
                                 boxShadow: isNameHighlighted ? "0 0 0 2px #fca5a5" : "none",
+                                fontWeight: isNewPat ? 800 : 700,
                                 transition: "all 0.3s",
                                 ...((b.person.patientId || isReservedType || isAdmitting) ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
                               onClick={(b.person.patientId || isReservedType || isAdmitting) ? (e) => { e.stopPropagation(); b.person.patientId ? router.push(`/patients?id=${encodeURIComponent(b.person.patientId)}`) : router.push(`/patients?name=${encodeURIComponent(b.person.name)}`); } : undefined}>
@@ -1112,7 +1113,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                             </span>
                             {b.person.scheduleAlert && <span style={S.alertDot}>!</span>}
                             <span style={S.colDischarge}>{b.person.discharge && b.person.discharge !== "미정" ? b.person.discharge : ""}</span>
-                            <span style={{ ...S.colDday, color:dday?.color||"transparent" }}>{dday?.text||""}</span>
+                            {dday ? <span style={{ ...S.ddayBadge, color:dday.color, background:dday.bg, flexShrink:0, marginLeft:2 }}>{dday.text}</span> : <span style={S.colDday}></span>}
                             <span style={S.colNextName}>{nextRes?.name||""}</span>
                             <span style={S.colNextDate}>{nextRes?.admitDate||""}</span>
                             <span style={S.colExtra}>{nextResList.length > 1 ? `+${nextResList.length-1}` : ""}</span>
