@@ -164,6 +164,64 @@ async function main() {
     console.log(`  ${ym}: ${total.toLocaleString()}${chk(total,ym)}`);
   }
 
+  // 8. Wiadd + Woadd 전체 금액 필드 합산 (ii_mt, under 포함)
+  console.log('\n[8] Wiadd+Woadd 전체 금액 필드 합산');
+  for (const ym of months) {
+    const inR = await pool.request().query(`
+      SELECT
+        SUM(CAST(iadd_i_mtamt AS bigint)) AS i_mt,
+        SUM(CAST(iadd_ii_mtamt AS bigint)) AS ii_mt,
+        SUM(CAST(iadd_i_allamt AS bigint)) AS i_all,
+        SUM(CAST(iadd_ii_allamt AS bigint)) AS ii_all,
+        SUM(CAST(iadd_i_iramt AS bigint)) AS i_ir,
+        SUM(CAST(iadd_ii_iramt AS bigint)) AS ii_ir,
+        SUM(CAST(iadd_under_i_mramt AS bigint)) AS u_i_mr,
+        SUM(CAST(iadd_under_i_iramt AS bigint)) AS u_i_ir,
+        SUM(CAST(iadd_under_ii_mramt AS bigint)) AS u_ii_mr,
+        SUM(CAST(iadd_under_ii_iramt AS bigint)) AS u_ii_ir
+      FROM Wiadd WHERE LEFT(iadd_date, 6) = '${ym}'
+    `);
+    const outR = await pool.request().query(`
+      SELECT
+        SUM(CAST(oadd_i_mtamt AS bigint)) AS i_mt,
+        SUM(CAST(oadd_ii_mtamt AS bigint)) AS ii_mt,
+        SUM(CAST(oadd_i_allamt AS bigint)) AS i_all,
+        SUM(CAST(oadd_ii_allamt AS bigint)) AS ii_all,
+        SUM(CAST(oadd_i_iramt AS bigint)) AS i_ir,
+        SUM(CAST(oadd_ii_iramt AS bigint)) AS ii_ir,
+        SUM(CAST(oadd_under_i_mramt AS bigint)) AS u_i_mr,
+        SUM(CAST(oadd_under_i_iramt AS bigint)) AS u_i_ir,
+        SUM(CAST(oadd_under_ii_mramt AS bigint)) AS u_ii_mr,
+        SUM(CAST(oadd_under_ii_iramt AS bigint)) AS u_ii_ir
+      FROM Woadd WHERE LEFT(oadd_date, 6) = '${ym}'
+    `);
+    const i = inR.recordset[0], o = outR.recordset[0];
+    const n = v => Number(v||0);
+
+    const imt = n(i.i_mt)+n(o.i_mt), iimt = n(i.ii_mt)+n(o.ii_mt);
+    const iall = n(i.i_all)+n(o.i_all), iiall = n(i.ii_all)+n(o.ii_all);
+    const iir = n(i.i_ir)+n(o.i_ir), iiir = n(i.ii_ir)+n(o.ii_ir);
+    const uimr = n(i.u_i_mr)+n(o.u_i_mr), uiir = n(i.u_i_ir)+n(o.u_i_ir);
+    const uiimr = n(i.u_ii_mr)+n(o.u_ii_mr), uiiir = n(i.u_ii_ir)+n(o.u_ii_ir);
+
+    console.log(`  ${ym}: 기대=${EXPECTED[ym]?.toLocaleString()}`);
+    console.log(`    i_mt=${imt.toLocaleString()} ii_mt=${iimt.toLocaleString()} i_all=${iall.toLocaleString()} ii_all=${iiall.toLocaleString()}`);
+    console.log(`    i_ir=${iir.toLocaleString()} ii_ir=${iiir.toLocaleString()}`);
+    console.log(`    under: i_mr=${uimr.toLocaleString()} i_ir=${uiir.toLocaleString()} ii_mr=${uiimr.toLocaleString()} ii_ir=${uiiir.toLocaleString()}`);
+
+    // 다양한 조합 시도
+    const combos = [
+      ['i_mt+ii_mt', imt+iimt],
+      ['i_mt+ii_mt+i_all+ii_all', imt+iimt+iall+iiall],
+      ['i_mt+i_all+u_i_mr+u_i_ir', imt+iall+uimr+uiir],
+      ['i_mt+ii_mt+i_all+u_i_mr', imt+iimt+iall+uimr],
+      ['i_mt+i_ir', imt+iir],
+    ];
+    for (const [label, val] of combos) {
+      console.log(`    ${label.padEnd(35)} = ${val.toLocaleString()}${chk(val,ym)}`);
+    }
+  }
+
   console.log('\n' + '═'.repeat(60));
   await sql.close();
   process.exit(0);
