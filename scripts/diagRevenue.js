@@ -122,23 +122,14 @@ async function main() {
     console.log(`  ${ym}: 입원=${inMt.toLocaleString()} + 외래=${outMt.toLocaleString()} = ${total.toLocaleString()}${chk(total,ym)}`);
   }
 
-  // 5. bigub 필터링 — iadd_amt에서 급여만(bigub=0) 합산
-  console.log('\n[5] Wiadd + Woadd (bigub=0 급여만)');
-  for (const ym of months) {
-    const inR = await pool.request().query(`
-      SELECT SUM(CAST(iadd_amt AS bigint)) AS amt, SUM(CAST(iadd_i_mtamt AS bigint)) AS i_mt
-      FROM Wiadd WHERE LEFT(iadd_date, 6) = '${ym}' AND iadd_bigub = 0
-    `);
-    const outR = await pool.request().query(`
-      SELECT SUM(CAST(oadd_amt AS bigint)) AS amt, SUM(CAST(oadd_i_mtamt AS bigint)) AS i_mt
-      FROM Woadd WHERE LEFT(oadd_date, 6) = '${ym}' AND oadd_bigub = 0
-    `);
-    const inAmt = Number(inR.recordset[0]?.amt||0), outAmt = Number(outR.recordset[0]?.amt||0);
-    const inMt = Number(inR.recordset[0]?.i_mt||0), outMt = Number(outR.recordset[0]?.i_mt||0);
-    console.log(`  ${ym}: 기대=${EXPECTED[ym]?.toLocaleString()}`);
-    console.log(`    amt: 입원=${inAmt.toLocaleString()} + 외래=${outAmt.toLocaleString()} = ${(inAmt+outAmt).toLocaleString()}${chk(inAmt+outAmt,ym)}`);
-    console.log(`    i_mt: 입원=${inMt.toLocaleString()} + 외래=${outMt.toLocaleString()} = ${(inMt+outMt).toLocaleString()}${chk(inMt+outMt,ym)}`);
-  }
+  // 5. Wiadd / Woadd 전체 컬럼 확인
+  console.log('\n[5] Wiadd / Woadd 컬럼 확인');
+  try {
+    const inCols = await pool.request().query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Wiadd' ORDER BY ORDINAL_POSITION`);
+    console.log('  Wiadd:', inCols.recordset.map(c=>c.COLUMN_NAME).join(', '));
+    const outCols = await pool.request().query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Woadd' ORDER BY ORDINAL_POSITION`);
+    console.log('  Woadd:', outCols.recordset.map(c=>c.COLUMN_NAME).join(', '));
+  } catch(e) { console.log('  실패:', e.message); }
 
   // 6. Wiadds + Woadds의 i_mtamt
   console.log('\n[6] Wiadds.i_mt + Woadds.i_mt');
