@@ -53,8 +53,10 @@ function getAllEmptySlots(slots, getRoomStats) {
   return empty;
 }
 
-const TYPE_COLOR = { "1인실": "#6366f1", "2인실": "#0ea5e9", "4인실": "#10b981", "6인실": "#f59e0b" };
-const TYPE_BG    = { "1인실": "#eef2ff", "2인실": "#e0f2fe", "4인실": "#d1fae5", "6인실": "#fef3c7" };
+const TYPE_COLOR   = { "1인실": "#6366f1", "2인실": "#0ea5e9", "4인실": "#10b981", "6인실": "#f59e0b" };
+const TYPE_BG      = { "1인실": "#eef2ff", "2인실": "#e0f2fe", "4인실": "#d1fae5", "6인실": "#fef3c7" };
+const TYPE_CARD_BG = { "1인실": "rgba(99,102,241,0.06)", "2인실": "rgba(14,165,233,0.06)", "4인실": "rgba(16,185,129,0.06)", "6인실": "rgba(245,158,11,0.06)" };
+const TYPE_CARD_BG_FULL = { "1인실": "rgba(99,102,241,0.10)", "2인실": "rgba(14,165,233,0.10)", "4인실": "rgba(16,185,129,0.10)", "6인실": "rgba(245,158,11,0.10)" };
 
 function parseDateStr(str) {
   if (!str || str === "미정") return null;
@@ -1015,7 +1017,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                   onClick={() => onSelectRoom(room)}
                   style={{ ...S.roomCard,
                     borderTop:`3px solid ${TYPE_COLOR[room.type]}`,
-                    background: available===0 ? "#fff5f5":"#fff",
+                    background: available===0 ? (TYPE_CARD_BG_FULL[room.type]||"#fff5f5") : (TYPE_CARD_BG[room.type]||"#fff"),
                     outline: hasHighlighted ? "3px solid #10b981" : isMoveTarget ? "2px dashed #7c3aed" : "none",
                     boxShadow: hasHighlighted ? "0 0 0 4px #d1fae5, 0 1px 6px rgba(0,0,0,0.06)" : "0 1px 6px rgba(0,0,0,0.06)",
                     cursor: isMoveTarget ? "pointer" : "pointer",
