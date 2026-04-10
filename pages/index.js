@@ -175,6 +175,7 @@ export default function HospitalWardManager() {
 
   // ── 환자 검색 ────────────────────────────────────────────────────────────
   const [highlightSlotKey, setHighlightSlotKey] = useState(null);
+  const [highlightName,    setHighlightName]    = useState(null); // 검색된 환자 이름 (예약 환자 하이라이트용)
   const highlightTimer = useRef(null);
   const cardRefs = useRef({});
 
@@ -348,7 +349,7 @@ export default function HospitalWardManager() {
       if (!q) return;
       setView("ward"); setSelectedRoom(null);
       const results = doSearch(q);
-      if (results.length > 0) scrollToCard(results[0].roomId, results[0].slotKey);
+      if (results.length > 0) scrollToCard(results[0].roomId, results[0].slotKey, results[0].name);
     };
     window.addEventListener("sidebar-search", handler);
     return () => window.removeEventListener("sidebar-search", handler);
@@ -362,7 +363,7 @@ export default function HospitalWardManager() {
     if (q && Object.keys(slots).length > 0) {
       setView("ward"); setSelectedRoom(null);
       const results = doSearch(q);
-      if (results.length > 0) scrollToCard(results[0].roomId, results[0].slotKey);
+      if (results.length > 0) scrollToCard(results[0].roomId, results[0].slotKey, results[0].name);
     }
   }, [router.query.q, Object.keys(slots).length]);
 
@@ -381,7 +382,7 @@ export default function HospitalWardManager() {
     return () => window.removeEventListener("avail-goto-room", handler);
   }, []);
 
-  const scrollToCard = (roomId, slotKey) => {
+  const scrollToCard = (roomId, slotKey, name) => {
     setView("ward");
     setSelectedRoom(null);
     setTimeout(() => {
@@ -395,9 +396,10 @@ export default function HospitalWardManager() {
     const TOTAL    = 8; // on/off × 4회
     let tick = 0;
     setHighlightSlotKey(slotKey);
+    setHighlightName(name || null);
     const doBlink = () => {
       tick++;
-      if (tick >= TOTAL) { setHighlightSlotKey(null); return; }
+      if (tick >= TOTAL) { setHighlightSlotKey(null); setHighlightName(null); return; }
       setHighlightSlotKey(tick % 2 === 0 ? slotKey : null);
       highlightTimer.current = setTimeout(doBlink, BLINK_MS);
     };
@@ -896,7 +898,7 @@ export default function HospitalWardManager() {
             slots={slots} getRoomStats={getRoomStats} isPreview={isPreview} viewDate={viewDate}
             newPatientNames={newPatientNames}
             showReserved={showReserved} highlightEmpty={highlightEmpty} currentEmptySlotKey={currentEmptySlotKey}
-            highlightSlotKey={highlightSlotKey}
+            highlightSlotKey={highlightSlotKey} highlightName={highlightName}
             movingPatient={movingPatient} onMoveTarget={executeMove}
             conflictSlotKeys={new Set(overlapConflicts.map(c => c.slotKey))}
             onSelectRoom={r => {
@@ -993,7 +995,7 @@ export default function HospitalWardManager() {
 }
 
 // ── WardView ──────────────────────────────────────────────────────────────────
-function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, showReserved, highlightEmpty, currentEmptySlotKey, highlightSlotKey, movingPatient, onMoveTarget, onSelectRoom, cardRefs, conflictSlotKeys }) {
+function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, showReserved, highlightEmpty, currentEmptySlotKey, highlightSlotKey, highlightName, movingPatient, onMoveTarget, onSelectRoom, cardRefs, conflictSlotKeys }) {
   return (
     <div style={S.wardGrid}>
       {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => (
@@ -1052,7 +1054,7 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                   <div style={S.patientList}>
                     {bedList.map((b, i) => {
                       const isHighlighted     = highlightEmpty && b.slotKey === currentEmptySlotKey;
-                      const isNameHighlighted = !!highlightSlotKey && b.slotKey === highlightSlotKey;
+                      const isNameHighlighted = !!highlightSlotKey && b.slotKey === highlightSlotKey && (!highlightName || b.person?.name === highlightName);
                       // 빈 병상도 번호 배지와 함께 표시
 
                       const isDischarging = b.type === "discharging_today";
@@ -1106,8 +1108,9 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                             <span style={S.colDday}>{dday ? <span style={{ ...S.ddayBadge, color:dday.color, background:dday.bg }}>{dday.text}</span> : ""}</span>
                             {(()=>{
                               const isNextNew = nextRes && newPatientNames.has((nextRes.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase());
+                              const isResHL = !!highlightSlotKey && b.slotKey === highlightSlotKey && highlightName === nextRes?.name;
                               return <>
-                                <span style={S.colNextName}>{isNextNew ? <span style={{ color:"#713f12", background:"#fef08a", borderRadius:3, padding:"1px 4px", fontWeight:800 }}>{nextRes.name}</span> : (nextRes?.name||"")}</span>
+                                <span style={S.colNextName}>{isResHL ? <span style={{ color:"#fff", background:"#ef4444", borderRadius:4, padding:"1px 5px", boxShadow:"0 0 0 2px #fca5a5" }}>{nextRes.name}</span> : isNextNew ? <span style={{ color:"#713f12", background:"#fef08a", borderRadius:3, padding:"1px 4px", fontWeight:800 }}>{nextRes.name}</span> : (nextRes?.name||"")}</span>
                                 <span style={S.colNextDate}>{nextRes?.admitDate||""}</span>
                               </>;
                             })()}
@@ -1118,13 +1121,14 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                       if (!isPreview && b.hasReserve) {
                         const nextRes = b.slot?.reservations?.find(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) > todayDate(); });
                         const isNextNew = nextRes && newPatientNames.has((nextRes.name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase());
+                        const isResHL = !!highlightSlotKey && b.slotKey === highlightSlotKey && highlightName === nextRes?.name;
                         return (
                           <div key={i} style={S.patientChip}>
                             <span style={{ ...S.bedPositionBadge, background:"#7c3aed" }}>{i+1}</span>
                             <span style={{ ...S.patientName, color:"#cbd5e1" }}>—</span>
                             <span style={S.colDischarge}></span>
                             <span style={S.colDday}></span>
-                            <span style={S.colNextName}>{isNextNew ? <span style={{ color:"#713f12", background:"#fef08a", borderRadius:3, padding:"1px 4px", fontWeight:800 }}>{nextRes.name}</span> : (nextRes?.name||"")}</span>
+                            <span style={S.colNextName}>{isResHL ? <span style={{ color:"#fff", background:"#ef4444", borderRadius:4, padding:"1px 5px", boxShadow:"0 0 0 2px #fca5a5" }}>{nextRes.name}</span> : isNextNew ? <span style={{ color:"#713f12", background:"#fef08a", borderRadius:3, padding:"1px 4px", fontWeight:800 }}>{nextRes.name}</span> : (nextRes?.name||"")}</span>
                             <span style={S.colNextDate}>{nextRes?.admitDate||""}</span>
                             <span style={S.colExtra}></span>
                           </div>
