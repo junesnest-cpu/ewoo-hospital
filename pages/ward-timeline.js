@@ -1371,7 +1371,7 @@ export default function WardTimeline() {
               onChange={e => setLocalSingleMemo(e.target.value)}
               onBlur={e => { const t = e.target.value; if (t !== singleRoomMemoText) saveSingleRoomMemo(t); }}
               placeholder="1인실 예약 조정, 대기 현황, 특이사항 등 자유롭게 입력하세요..."
-              style={{ display:"block", width:"100%", border:"none", resize:"none", height:130, fontSize:13, padding:"6px 16px 10px", fontFamily:"inherit", color:"#1e1b4b", outline:"none", background:"transparent", boxSizing:"border-box", lineHeight:1.7 }}
+              style={{ display:"block", width:"100%", border:"none", resize:"none", height:400, fontSize:13, padding:"6px 16px 10px", fontFamily:"inherit", color:"#1e1b4b", outline:"none", background:"transparent", boxSizing:"border-box", lineHeight:1.7 }}
             />
           )}
         </div>
