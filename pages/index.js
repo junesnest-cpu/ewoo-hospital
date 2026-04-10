@@ -1025,11 +1025,10 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                   }}>
                   <div style={S.roomHeader}>
                     <span style={S.roomNo}>{room.id}호</span>
-                    {!isPreview && totalReserveCount > 0 && (
-                      <span style={{ fontSize:12, fontWeight:700, color:"#7c3aed", background:"#f5f3ff", borderRadius:4, padding:"1px 6px" }}>
-                        📅{totalReserveCount}
-                      </span>
-                    )}
+                    <span style={{ display:"flex", alignItems:"baseline", gap:0 }}>
+                      <span style={{ fontSize:34, fontWeight:800 }}>{occupied}</span>
+                      <span style={{ fontSize:26, fontWeight:800, color:"#94a3b8" }}>/{room.capacity}</span>
+                    </span>
                   </div>
                   {/* 병상 도트 */}
                   <div style={S.bedBar}>
@@ -1049,11 +1048,6 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
                           boxShadow: isHighlighted ? "0 0 6px #10b981" : "none" }} />
                       );
                     })}
-                  </div>
-                  {/* 병상 수 */}
-                  <div style={S.roomOccupancy}>
-                    <span style={{ fontWeight:700 }}>{occupied}</span>
-                    <span style={{ color:"#94a3b8" }}>/{room.capacity}</span>
                   </div>
                   {/* 환자 목록 */}
                   <div style={S.patientList}>
