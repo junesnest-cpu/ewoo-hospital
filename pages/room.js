@@ -455,11 +455,12 @@ export default function RoomPage() {
                 style={{ background: isMovingFrom?"#fffbeb":isMoveTarget?"#f0fdf4":isAdmitting?"#eff6ff":isDischarging?"#fffbeb":isReservedType?"#faf5ff":"#fff",
                   border:`2px ${person?"solid":"dashed"} ${borderColor}`,
                   borderRadius:10, padding:10, minWidth:0, overflow:"hidden",
+                  height:"calc(100vh - 110px)", display:"flex", flexDirection:"column",
                   cursor:movingPatient&&!isMovingFrom?"pointer":"default",
                   boxShadow:"0 1px 6px rgba(0,0,0,0.06)", transition:"all 0.2s" }}>
 
                 {/* 병상 번호 */}
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, flexShrink:0 }}>
                   <span style={{ background:"#1e3a5f",color:"#fff",borderRadius:5,padding:"2px 10px",fontSize:17,fontWeight:800 }}>{i+1}번</span>
                   {isMovingFrom   && <span style={{ color:"#d97706",fontWeight:700,fontSize:14 }}>📦 이동 중</span>}
                   {isMoveTarget&&!person && <span style={{ color:"#059669",fontWeight:700,fontSize:14 }}>← 여기로</span>}
@@ -468,8 +469,8 @@ export default function RoomPage() {
                   {isReservedType && <span style={{ color:"#7c3aed",fontWeight:700,fontSize:15 }}>📅 예약 입원 중</span>}
                 </div>
 
-                {/* ── 섹션1: 현재 입원 환자 (고정 높이, 버튼 하단 고정) ── */}
-                <div style={{ height:"calc(50vh - 160px)", minHeight:200, display:"flex", flexDirection:"column" }}>
+                {/* ── 섹션1: 현재 입원 환자 (flex 비율, 버튼 하단 고정) ── */}
+                <div style={{ flex:5, minHeight:0, display:"flex", flexDirection:"column", overflow:"hidden" }}>
                 {person ? (<>
                   <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4, flexShrink:0 }}>
@@ -526,8 +527,8 @@ export default function RoomPage() {
                 )}
                 </div>
 
-                {/* ── 섹션2: 입원 예약 목록 (고정 높이, 추가 버튼 하단 고정) ── */}
-                <div style={{ height:"calc(50vh - 160px)", minHeight:220, marginTop:6, borderTop:"1px solid #e2e8f0", paddingTop:6, display:"flex", flexDirection:"column" }}>
+                {/* ── 섹션2: 입원 예약 목록 (flex 비율, 추가 버튼 하단 고정) ── */}
+                <div style={{ flex:4, minHeight:0, marginTop:6, borderTop:"1px solid #e2e8f0", paddingTop:6, display:"flex", flexDirection:"column", overflow:"hidden" }}>
                   <div style={{ fontSize:14,fontWeight:700,color:"#7c3aed",marginBottom:4,flexShrink:0 }}>📅 입원 예약 ({reservations.length}건)</div>
                   <div style={{ flex:1, overflowY:"auto", minHeight:0 }}>
                     {reservations.map((r,ri)=>(
@@ -562,7 +563,9 @@ export default function RoomPage() {
                 </div>
 
                 {/* 병상 캘린더 */}
-                <BedCalendar slot={slot} year={calYear} month={calMonth}/>
+                <div style={{ flexShrink:0, marginTop:6 }}>
+                  <BedCalendar slot={slot} year={calYear} month={calMonth}/>
+                </div>
               </div>
             );
           })}
