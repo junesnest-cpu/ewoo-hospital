@@ -117,6 +117,9 @@ export default function DailyBoard() {
   const ym = useMemo(() => toYM(date), [date]);
   const dateYear = parseInt(date.slice(0,4));
 
+  // 공유 신환 플래그
+  const [newPatientFlags, setNewPatientFlags] = useState({});
+
   // ── Firebase 구독 ──
   useEffect(() => {
     const u1 = onValue(ref(db,"slots"), s => setSlots(s.val()||{}));
@@ -126,7 +129,8 @@ export default function DailyBoard() {
       setTherapists([v.therapist1||"치료사1", v.therapist2||"치료사2"]);
     });
     const u4 = onValue(ref(db,"patients"), s => setPatients(s.val()||{}));
-    return () => { u1(); u2(); u3(); u4(); };
+    const u5 = onValue(ref(db,"newPatientFlags"), s => setNewPatientFlags(s.val()||{}));
+    return () => { u1(); u2(); u3(); u4(); u5(); };
   }, []);
 
   useEffect(() => {
@@ -279,12 +283,23 @@ export default function DailyBoard() {
 
   // ── 입원/퇴원 연동 (displayData + patientInfo 보강) ──
   const syncedAdmissions = useMemo(() => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
     return (displayData.admissions||[]).map(a => {
       const info = patientInfo[normName(a.name)];
+      // 공유 신환 플래그 확인 (입원일 기준 1주일 이내)
+      let isNew = !!a.isNew;
+      const nk = normName(a.name);
+      const flag = newPatientFlags[nk];
+      if (flag) {
+        const admitD = flag.admitDate ? new Date(flag.admitDate) : null;
+        if (admitD) { admitD.setHours(0,0,0,0); isNew = (today.getTime() - admitD.getTime()) < weekMs; }
+        else isNew = true;
+      }
       return { ...a, id:a.id||uid(), room:info?.room||a.room||"",
-        doctor:info?.doctor||"", time:a.time||"", note:info?.note||a.note||"", isNew:!!a.isNew };
+        doctor:info?.doctor||"", time:a.time||"", note:info?.note||a.note||"", isNew };
     });
-  }, [displayData, patientInfo]);
+  }, [displayData, patientInfo, newPatientFlags]);
 
   const syncedDischarges = useMemo(() => {
     return (displayData.discharges||[]).map(d => {
@@ -363,6 +378,16 @@ export default function DailyBoard() {
 
   async function saveEdit() {
     setSaving(true);
+    // 신환 플래그 공유 저장소 동기화
+    for (const a of editAdm) {
+      if (!a.name) continue;
+      const nk = normName(a.name);
+      if (a.isNew && !newPatientFlags[nk]) {
+        await set(ref(db, `newPatientFlags/${nk}`), { admitDate: date, markedAt: new Date().toISOString() });
+      } else if (!a.isNew && newPatientFlags[nk]) {
+        await set(ref(db, `newPatientFlags/${nk}`), null);
+      }
+    }
     await set(ref(db, `dailyBoards/${date}`), {
       admissions: editAdm, discharges: editDis, transfers: editTrn, reservedBeds: editRes, therapy: editTherapy,
     });

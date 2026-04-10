@@ -77,6 +77,9 @@ export default function MonthlySchedule() {
   // 편집된 월간 데이터 (Firebase monthlyBoards/{YYYY-MM})
   const [boardData, setBoardData] = useState({});
 
+  // 신환 플래그 (공유 저장소: 일일현황판과 동기화)
+  const [newPatientFlags, setNewPatientFlags] = useState({});
+
   // 날짜 편집 모달
   const [editModal, setEditModal] = useState(null); // "YYYY-MM-DD" | null
   const [editAdm, setEditAdm] = useState([]);
@@ -102,7 +105,8 @@ export default function MonthlySchedule() {
   useEffect(() => {
     const u1 = onValue(ref(db,"slots"), snap => setSlots(snap.val() || {}));
     const u2 = onValue(ref(db,"consultations"), snap => setConsultations(snap.val() || {}));
-    return () => { u1(); u2(); };
+    const u3 = onValue(ref(db,"newPatientFlags"), snap => setNewPatientFlags(snap.val() || {}));
+    return () => { u1(); u2(); u3(); };
   }, []);
 
   // 일일현황판 데이터 로드 (해당 월 전체)
@@ -527,15 +531,26 @@ export default function MonthlySchedule() {
     });
   }
 
-  // 신환 이름 집합: 상담일지 + 일일현황판 (frozen 데이터에도 신환 플래그 반영용)
+  // 신환 이름 집합: 상담일지 + 공유 신환 플래그 (입원일 기준 1주일 유지)
   const newPatientNorms = useMemo(() => {
     const s = new Set();
+    const today = new Date(); today.setHours(0,0,0,0);
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
     Object.values(consultations).forEach(c => {
       if (!c?.name) return;
       const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       if (!isNew) return;
       if (c.status === "취소" || c.status === "입원완료") return;
       s.add(normName(c.name));
+    });
+    // 공유 신환 플래그: 입원일 기준 1주일 이내만 유효
+    Object.entries(newPatientFlags).forEach(([nk, flag]) => {
+      if (!flag?.admitDate) { s.add(nk); return; }
+      const admitD = parseISO(flag.admitDate) || parseDateStr(flag.admitDate, year);
+      if (!admitD) { s.add(nk); return; }
+      admitD.setHours(0,0,0,0);
+      // 입원일로부터 1주일 이내이면 유효
+      if (today.getTime() - admitD.getTime() < weekMs) s.add(nk);
     });
     // 일일현황판에서 ★ 신규 표시한 환자도 포함
     Object.values(dailyBoards).forEach(db => {
@@ -544,7 +559,7 @@ export default function MonthlySchedule() {
       });
     });
     return s;
-  }, [consultations, dailyBoards]);
+  }, [consultations, newPatientFlags, dailyBoards, year]);
 
   // 표시 데이터: calendarData 기반 + boardData 수동 추가/숨김 병합
   function getDisplayData(key) {
@@ -584,9 +599,34 @@ export default function MonthlySchedule() {
     setEditModal(key);
   }
 
+  // 신환 플래그 동기화: 편집된 입원 목록의 isNew 변경을 공유 저장소에 반영
+  async function syncNewPatientFlags(admList, dateKey) {
+    const updates = {};
+    for (const a of admList) {
+      if (!a.name) continue;
+      const nk = normName(a.name);
+      if (a.isNew) {
+        // 신환 표시: 입원일 정보와 함께 저장
+        if (!newPatientFlags[nk]) {
+          updates[`newPatientFlags/${nk}`] = { admitDate: dateKey, markedAt: new Date().toISOString() };
+        }
+      } else {
+        // 신환 해제
+        if (newPatientFlags[nk]) {
+          updates[`newPatientFlags/${nk}`] = null;
+        }
+      }
+    }
+    for (const [path, val] of Object.entries(updates)) {
+      await set(ref(db, path), val);
+    }
+  }
+
   // 편집 저장 (calendarData 기반 수동 추가/숨김만 저장)
   async function saveEdit() {
     setEditSaving(true);
+    // 신환 플래그 동기화
+    await syncNewPatientFlags(editAdm, editModal);
     const bd = boardData[editModal];
     // frozen 데이터: 전체 목록을 직접 저장
     if (bd?.frozen) {
@@ -647,6 +687,13 @@ export default function MonthlySchedule() {
 
   // 인라인 추가
   async function addEntry(dKey, type, entry) {
+    // 입원 추가 시 신환 플래그 동기화
+    if (type === "admission" && entry.isNew && entry.name) {
+      const nk = normName(entry.name);
+      if (!newPatientFlags[nk]) {
+        await set(ref(db, `newPatientFlags/${nk}`), { admitDate: dKey, markedAt: new Date().toISOString() });
+      }
+    }
     const bd = boardData[dKey] || {};
     // frozen 데이터: 직접 추가
     if (bd?.frozen) {

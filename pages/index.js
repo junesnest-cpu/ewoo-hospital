@@ -720,7 +720,19 @@ export default function HospitalWardManager() {
 
   const dischargeCurrentPatient = async (slotKey) => {
     if (!window.confirm("퇴원 처리하시겠습니까?")) return;
-    const name = slots[slotKey]?.current?.name;
+    const cur = slots[slotKey]?.current;
+    const name = cur?.name;
+    // 입원 기간이 1주일 이하이면 신환 플래그 삭제
+    if (name) {
+      const nk = (name||"").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+      const admitD = cur?.admitDate ? parseDateStr(cur.admitDate) : null;
+      if (admitD) {
+        const days = Math.round((todayDate().getTime() - dateOnly(admitD).getTime()) / (24*60*60*1000));
+        if (days <= 7) {
+          try { await set(ref(db, `newPatientFlags/${nk}`), null); } catch(e) {}
+        }
+      }
+    }
     const newSlot = { ...(slots[slotKey] || {}), current: null };
     const reservations = newSlot.reservations || [];
     const nextIdx = reservations.findIndex(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) <= todayDate(); });
