@@ -998,7 +998,6 @@ function WardView({ slots, getRoomStats, isPreview, viewDate, newPatientNames, s
     <div style={S.wardGrid}>
       {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => (
         <div key={wardNo}>
-          <div style={{ ...S.wardTitle, borderLeftColor: isPreview ? "#10b981":"#0ea5e9" }}>{ward.name}</div>
           <div style={{ ...S.roomGrid,
             gridTemplateColumns:`repeat(${ward.rooms.length},1fr)`,
             maxWidth: ward.rooms.length < 6 ? `${ward.rooms.length * (100/6)}%` : "100%" }}>
@@ -1538,13 +1537,13 @@ const S = {
   patientList: { display:"flex", flexDirection:"column", gap:3 },
   patientChip: { display:"flex", alignItems:"center", gap:0, fontSize:15, overflow:"hidden", minWidth:0 },
   bedPositionBadge: { color:"#fff", borderRadius:4, width:22, height:22, fontSize:13, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 },
-  patientName: { fontWeight:700, fontSize:15, width:68, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginLeft:5 },
-  colDischarge: { width:42, flexShrink:0, textAlign:"center", fontSize:12, color:"#64748b", marginLeft:4 },
-  colDday: { width:44, flexShrink:0, textAlign:"left", fontSize:12, fontWeight:800, marginLeft:2, display:"flex", alignItems:"center", justifyContent:"flex-start" },
-  colNextName: { width:60, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:12, fontWeight:700, color:"#6d28d9", textAlign:"left", marginLeft:4 },
-  colNextDate: { width:36, flexShrink:0, fontSize:11, color:"#a78bfa", textAlign:"center", marginLeft:2 },
-  colExtra: { width:24, flexShrink:0, textAlign:"center", marginLeft:2, display:"flex", alignItems:"center", justifyContent:"center" },
-  extraBadge: { fontSize:12, fontWeight:800, color:"#7c3aed", background:"#ede9fe", borderRadius:4, padding:"1px 5px" },
+  patientName: { fontWeight:700, fontSize:17, width:72, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginLeft:5 },
+  colDischarge: { width:46, flexShrink:0, textAlign:"center", fontSize:14, color:"#64748b", marginLeft:4 },
+  colDday: { width:46, flexShrink:0, textAlign:"left", fontSize:14, fontWeight:800, marginLeft:2, display:"flex", alignItems:"center", justifyContent:"flex-start" },
+  colNextName: { width:64, flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:14, fontWeight:700, color:"#6d28d9", textAlign:"left", marginLeft:4 },
+  colNextDate: { width:38, flexShrink:0, fontSize:13, color:"#a78bfa", textAlign:"center", marginLeft:2 },
+  colExtra: { width:26, flexShrink:0, textAlign:"center", marginLeft:2, display:"flex", alignItems:"center", justifyContent:"center" },
+  extraBadge: { fontSize:14, fontWeight:800, color:"#7c3aed", background:"#ede9fe", borderRadius:4, padding:"1px 5px" },
   dischargeDateWrap: { display:"flex", alignItems:"center", gap:3, marginLeft:2 },
   dischargeDate: { color:"#64748b", fontSize:12, background:"#f1f5f9", borderRadius:4, padding:"1px 5px" },
   ddayBadge: { fontSize:12, fontWeight:800, borderRadius:4, padding:"1px 6px" },
