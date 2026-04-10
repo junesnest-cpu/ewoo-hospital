@@ -864,9 +864,9 @@ export default function HospitalWardManager() {
         <div style={S.datebarLeft}>
           {isPreview ? <span style={S.previewBadge}>🔭 미래 미리보기 중</span> : <span style={S.todayBadge}>📅 오늘 실시간 현황</span>}
           <span style={S.activeDateLabel}>{toKoreanDate(viewDate)}</span>
-          {!isPreview && emrSyncTime && (
+          {!isPreview && (
             <span style={{ fontSize:12, color:"#94a3b8", marginLeft:8 }}>
-              EMR {emrSyncTime.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}
+              EMR {emrSyncTime ? emrSyncTime.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "미동기화"}
             </span>
           )}
         </div>
