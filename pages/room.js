@@ -542,6 +542,7 @@ export default function RoomPage() {
           mode={editingSlot?.mode||addingTo?.mode}
           isNew={!!addingTo}
           allPatients={addingTo ? allKnownPatients : []}
+          currentPatient={slots[(editingSlot?.slotKey||addingTo?.slotKey)]?.current || null}
           onClose={()=>{ setEditingSlot(null); setAddingTo(null); }}
           onSave={async(form)=>{
             const sk=editingSlot?.slotKey||addingTo?.slotKey;
@@ -592,7 +593,7 @@ export default function RoomPage() {
 const TIME_OPTIONS_RM = ["아침 후","점심 후","저녁 후"];
 
 // ── PatientModal (타임라인 EditModal과 동일 형식) ─────────────────────────────
-function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, allPatients=[] }) {
+function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, allPatients=[], currentPatient=null }) {
   const [form, setForm] = useState({
     name:          data.name          || "",
     admitDate:     data.admitDate     || "",
@@ -610,6 +611,15 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
   const [searching, setSearching] = useState(false);
   const searchTimer = useRef(null);
   const isRes = mode === "reservation";
+
+  // 자리보존 조건: 현재 입원 환자 + 퇴원 후 7일 이내 재입원 예약
+  const curDisD   = currentPatient?.discharge ? parseDateStr(currentPatient.discharge) : null;
+  const frmAdmitD = form.admitDate ? parseDateStr(form.admitDate) : null;
+  const diffDays  = (curDisD && frmAdmitD)
+    ? Math.round((dateOnly(frmAdmitD).getTime() - dateOnly(curDisD).getTime()) / 86400000)
+    : -1;
+  const showPreserveSeat = isRes && !!currentPatient?.name && diffDays >= 1 && diffDays <= 7;
+
   const inpStyle = { width:"100%", border:"1.5px solid #e2e8f0", borderRadius:8, padding:"9px 11px", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
 
   const onNameChange = (val) => {
@@ -718,6 +728,13 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
           <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>메모</label>
           <textarea style={{...inpStyle, resize:"vertical", minHeight:72, lineHeight:1.6}} value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="치료 내용, 특이사항 등" />
         </div>
+
+        {showPreserveSeat && (
+          <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14, cursor:"pointer", fontSize:13, color:"#92400e", background:"#fef3c7", borderRadius:8, padding:"10px 12px" }}>
+            <input type="checkbox" checked={form.preserveSeat} onChange={e=>setForm(p=>({...p,preserveSeat:e.target.checked}))} />
+            🛋 자리보존 서비스 — {currentPatient.name}님 퇴원 후 짐을 두고 재입원까지 병상 유지
+          </label>
+        )}
 
         <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20, cursor:"pointer", fontSize:13, color:"#64748b" }}>
           <input type="checkbox" checked={form.scheduleAlert} onChange={e=>setForm(p=>({...p,scheduleAlert:e.target.checked}))} />
