@@ -29,6 +29,7 @@ const sqlConfig = {
   database: 'BrWonmu',
   server:   '192.168.0.253',
   port:     1433,
+  requestTimeout: 120000,
   options: { encrypt: false, trustServerCertificate: true },
 };
 
