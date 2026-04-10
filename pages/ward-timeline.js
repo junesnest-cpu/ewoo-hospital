@@ -597,9 +597,23 @@ export default function WardTimeline() {
   }, [router.query.openRes]);
 
   // 사이드바 검색 이벤트 처리 (stale closure 방지)
-  useEffect(() => { doTlSearchFnRef.current = doTlSearch; });
+  const sidebarSearchRef = useRef(null);
+  sidebarSearchRef.current = (q) => {
+    doTlSearch(q);
+    // 첫 결과로 자동 스크롤
+    const results = [];
+    Object.entries(slots).forEach(([slotKey, slot]) => {
+      if (slot?.current?.name?.includes(q.trim()))
+        results.push({ slotKey });
+      (slot?.reservations || []).forEach(r => {
+        if (r.name?.includes(q.trim()))
+          results.push({ slotKey });
+      });
+    });
+    if (results.length > 0) scrollToRow(results[0].slotKey);
+  };
   useEffect(() => {
-    const handler = (e) => { const q = e.detail?.q; if (q) doTlSearchFnRef.current?.(q); };
+    const handler = (e) => { const q = e.detail?.q; if (q) sidebarSearchRef.current?.(q); };
     window.addEventListener("sidebar-search", handler);
     return () => window.removeEventListener("sidebar-search", handler);
   }, []);

@@ -94,8 +94,26 @@ export default function MonthlySchedule() {
 
   // 사이드바 환자 이름 하이라이트
   const [filterName, setFilterName] = useState("");
+  const dayCellRefs = useRef({});
+  const searchHandlerRef = useRef(null);
+  searchHandlerRef.current = (q) => {
+    setFilterName(q);
+    // 해당 이름이 있는 첫 날짜 셀로 스크롤
+    setTimeout(() => {
+      const total = daysInMonth(year, month);
+      for (let d = 1; d <= total; d++) {
+        const key = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+        const dd = getDisplayData(key);
+        const found = [...(dd.admissions||[]), ...(dd.discharges||[])].some(p => p.name?.includes(q));
+        if (found && dayCellRefs.current[key]) {
+          dayCellRefs.current[key].scrollIntoView({ behavior:"smooth", block:"center" });
+          break;
+        }
+      }
+    }, 100);
+  };
   useEffect(() => {
-    const handler = (e) => { const q = e.detail?.q; if (q) setFilterName(q); };
+    const handler = (e) => { const q = e.detail?.q; if (q) searchHandlerRef.current?.(q); };
     window.addEventListener("sidebar-search", handler);
     return () => window.removeEventListener("sidebar-search", handler);
   }, []);
@@ -891,7 +909,7 @@ export default function MonthlySchedule() {
                   const isSun = di === 0, isSat = di === 6;
 
                   return (
-                    <td key={di} style={{
+                    <td key={di} ref={el => { if (el) dayCellRefs.current[key] = el; }} style={{
                       border: isManual ? "2px solid #bae6fd" : "1px solid #e2e8f0",
                       verticalAlign:"top", padding:0,
                       background: isToday ? "#fffbeb" : "#fff",
