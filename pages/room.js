@@ -440,10 +440,10 @@ export default function RoomPage() {
                   {isReservedType && <span style={{ color:"#7c3aed",fontWeight:700,fontSize:15 }}>📅 예약 입원 중</span>}
                 </div>
 
-                {/* 환자 정보 (고정 높이) */}
-                <div style={{ height:130, overflow:"hidden" }}>
+                {/* ── 섹션1: 현재 입원 환자 (고정 높이) ── */}
+                <div style={{ height:190, overflow:"hidden", display:"flex", flexDirection:"column" }}>
                 {person ? (
-                  <div>
+                  <div style={{ flex:1, display:"flex", flexDirection:"column" }}>
                     <div
                       style={{ fontSize:20, fontWeight:800,
                         color:isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
@@ -456,6 +456,32 @@ export default function RoomPage() {
                     <div style={{ fontSize:15,color:"#64748b",marginBottom:4 }}>퇴원: {person.discharge||"미정"}</div>
                     {person.note&&<div style={{ fontSize:13,color:"#475569",background:"#f8fafc",borderRadius:6,padding:"4px 8px",marginBottom:4,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical" }}>{person.note}</div>}
                     {person.scheduleAlert&&<div style={{ background:"#fef3c7",color:"#92400e",borderRadius:6,padding:"3px 8px",fontSize:13,fontWeight:700 }}>⚠ 스케줄 확인 필요</div>}
+                    <div style={{ marginTop:"auto" }}>
+                      {!isPreview&&!movingPatient&&(type==="current"||type==="discharging_today"||type==="admitting_today")&&(
+                        <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
+                          <button style={NS.btnEdit} onClick={()=>setEditingSlot({slotKey,mode:"current",data:{...person}})}>수정</button>
+                          <button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"current",data:person,resIndex:undefined})); router.push("/"); }}>🚚 이동</button>
+                          <button style={{...NS.btnEdit,background:"#dc2626",width:"100%",marginTop:2}}
+                            onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}${person.patientId?"&patientId="+encodeURIComponent(person.patientId):""}`)}>
+                            📋 치료 일정표
+                          </button>
+                        </div>
+                      )}
+                      {!isPreview&&!movingPatient&&(type==="reserved")&&(()=>{
+                        const resIdx=(slot?.reservations||[]).findIndex(r=>r.name===person.name&&r.admitDate===person.admitDate);
+                        return (
+                          <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
+                            <button style={{...NS.btnEdit,background:"#059669"}} onClick={()=>resIdx>=0&&convertReservation(slotKey,resIdx)}>🛏 입원 전환</button>
+                            {resIdx>=0&&<button style={NS.btnEdit} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...(slot.reservations[resIdx])},resIndex:resIdx})}>수정</button>}
+                            {resIdx>=0&&<button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:slot.reservations[resIdx],resIndex:resIdx})); router.push("/"); }}>🚚 이동</button>}
+                            <button style={{...NS.btnEdit,background:"#dc2626",width:"100%",marginTop:2}}
+                              onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}${person.patientId?"&patientId="+encodeURIComponent(person.patientId):""}`)}>
+                              📋 치료 일정표
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 ) : (
                   <div style={{ display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",gap:8 }}>
@@ -468,61 +494,30 @@ export default function RoomPage() {
                 )}
                 </div>
 
-                {/* 현재 입원 환자 버튼 */}
-                {person&&!isPreview&&!movingPatient&&(type==="current"||type==="discharging_today"||type==="admitting_today")&&(
-                  <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginTop:4 }}>
-                    <button style={NS.btnEdit} onClick={()=>setEditingSlot({slotKey,mode:"current",data:{...person}})}>수정</button>
-                    <button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"current",data:person,resIndex:undefined})); router.push("/"); }}>🚚 이동</button>
-                    <button style={{...NS.btnEdit,background:"#dc2626",width:"100%",marginTop:2}}
-                      onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}${person.patientId?"&patientId="+encodeURIComponent(person.patientId):""}`)}>
-                      📋 치료 일정표
-                    </button>
-                  </div>
-                )}
-                {/* 예약 입원 중 버튼 */}
-                {person&&!isPreview&&!movingPatient&&(type==="reserved")&&(()=>{
-                  const resIdx=(slot?.reservations||[]).findIndex(r=>r.name===person.name&&r.admitDate===person.admitDate);
-                  return (
-                    <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginTop:4 }}>
-                      <button style={{...NS.btnEdit,background:"#059669"}} onClick={()=>resIdx>=0&&convertReservation(slotKey,resIdx)}>🛏 입원 전환</button>
-                      {resIdx>=0&&<button style={NS.btnEdit} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...(slot.reservations[resIdx])},resIndex:resIdx})}>수정</button>}
-                      {resIdx>=0&&<button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:slot.reservations[resIdx],resIndex:resIdx})); router.push("/"); }}>🚚 이동</button>}
-                      <button style={{...NS.btnEdit,background:"#dc2626",width:"100%",marginTop:2}}
-                        onClick={()=>router.push(`/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(person.name)}&discharge=${encodeURIComponent(person.discharge||"")}&admitDate=${encodeURIComponent(person.admitDate||"")}${person.patientId?"&patientId="+encodeURIComponent(person.patientId):""}`)}>
-                        📋 치료 일정표
-                      </button>
+                {/* ── 섹션2: 입원 예약 목록 (고정 높이) ── */}
+                <div style={{ height:240, marginTop:6, borderTop:"1px solid #e2e8f0", paddingTop:6, overflowY:"auto" }}>
+                  <div style={{ fontSize:14,fontWeight:700,color:"#7c3aed",marginBottom:4 }}>📅 입원 예약 ({reservations.length}건)</div>
+                  {reservations.map((r,ri)=>(
+                    <div key={ri} style={{ height:60, background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:8,padding:"4px 8px",marginBottom:4,overflow:"hidden",boxSizing:"border-box" }}>
+                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",gap:4 }}>
+                        <span
+                          style={{ fontWeight:700,color:"#7c3aed",fontSize:15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                            cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" }}
+                          onClick={() => r.patientId ? router.push(`/patients?id=${encodeURIComponent(r.patientId)}`) : router.push(`/patients?name=${encodeURIComponent(r.name)}`)}>
+                          {r.name}
+                        </span>
+                        {!isPreview&&!movingPatient&&<div style={{ display:"flex",gap:3,flexShrink:0 }}>
+                          <button style={{...NS.btnSmall,color:"#7c3aed",padding:"2px 6px",fontSize:12}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:r,resIndex:ri})); router.push("/"); }}>🚚</button>
+                          <button style={{...NS.btnSmall,padding:"2px 6px",fontSize:12}} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...r},resIndex:ri})}>수정</button>
+                          <button style={{...NS.btnSmall,background:"#059669",color:"#fff",borderColor:"#059669",padding:"2px 6px",fontSize:12}} onClick={()=>convertReservation(slotKey,ri)}>입원전환</button>
+                        </div>}
+                      </div>
+                      <div style={{ fontSize:12,color:"#64748b",marginTop:1 }}>입원: {r.admitDate} → 퇴원: {r.discharge||"미정"}</div>
+                      {r.note&&<div style={{ fontSize:11,color:"#94a3b8",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis" }}>{r.note}</div>}
                     </div>
-                  );
-                })()}
-
-                {/* 예약 목록 (3건분 고정 높이) */}
-                <div style={{ height:220, marginTop:10, borderTop:"1px solid #e2e8f0", paddingTop:8, overflowY:"auto" }}>
-                  {!isPreview&&reservations.length>0&&(
-                    <div>
-                      <div style={{ fontSize:15,fontWeight:700,color:"#7c3aed",marginBottom:6 }}>📅 입원 예약 ({reservations.length}건)</div>
-                      {reservations.map((r,ri)=>(
-                        <div key={ri} style={{ background:"#faf5ff",border:"1px solid #e9d5ff",borderRadius:8,padding:"6px 10px",marginBottom:5 }}>
-                          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4 }}>
-                            <span
-                              style={{ fontWeight:700,color:"#7c3aed",fontSize:16,
-                                cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" }}
-                              onClick={() => r.patientId ? router.push(`/patients?id=${encodeURIComponent(r.patientId)}`) : router.push(`/patients?name=${encodeURIComponent(r.name)}`)}>
-                              {r.name}
-                            </span>
-                            <div style={{ display:"flex",gap:4 }}>
-                              <button style={{...NS.btnSmall,color:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:r,resIndex:ri})); router.push("/"); }}>🚚</button>
-                              <button style={NS.btnSmall} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...r},resIndex:ri})}>수정</button>
-                              <button style={{...NS.btnSmall,background:"#059669",color:"#fff",borderColor:"#059669"}} onClick={()=>convertReservation(slotKey,ri)}>🛏 입원전환</button>
-                            </div>
-                          </div>
-                          <div style={{ fontSize:13,color:"#64748b",marginTop:2 }}>입원: {r.admitDate} → 퇴원: {r.discharge||"미정"}</div>
-                          {r.note&&<div style={{ fontSize:12,color:"#94a3b8",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis" }}>{r.note}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  ))}
                   {!isPreview&&!movingPatient&&(
-                    <button style={{...NS.btnAdmit,background:"#f5f3ff",color:"#7c3aed",marginTop:4,width:"100%"}}
+                    <button style={{...NS.btnAdmit,background:"#f5f3ff",color:"#7c3aed",marginTop:2,width:"100%",padding:"5px 10px",fontSize:13}}
                       onClick={()=>setAddingTo({slotKey,mode:"reservation"})}>📅 예약 입원 추가</button>
                   )}
                 </div>
