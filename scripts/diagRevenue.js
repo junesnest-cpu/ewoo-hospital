@@ -95,6 +95,33 @@ async function main() {
     } catch(e) { console.log(`  ${ym}: 실패 ${e.message}`); }
   }
 
+  // 4. 핵심 검증: Wiadd.i_mtamt + Woadd.i_mtamt = 급여총액?
+  console.log('\n[4] Wiadd.i_mt + Woadd.i_mt = 급여총액?');
+  for (const ym of months) {
+    const inR = await pool.request().query(`
+      SELECT SUM(CAST(iadd_i_mtamt AS bigint)) AS i_mt
+      FROM Wiadd WHERE LEFT(iadd_date, 6) = '${ym}'
+    `);
+    let outMt = 0;
+    try {
+      const outR = await pool.request().query(`
+        SELECT SUM(CAST(oadd_i_mtamt AS bigint)) AS i_mt
+        FROM Woadd WHERE LEFT(oadd_date, 6) = '${ym}'
+      `);
+      outMt = Number(outR.recordset[0]?.i_mt || 0);
+    } catch(e) {
+      // oadd_i_mtamt 없으면 컬럼 확인
+      const cols = await pool.request().query(`
+        SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = 'Woadd' AND COLUMN_NAME LIKE '%mt%'
+      `);
+      console.log(`  Woadd mt 컬럼: ${cols.recordset.map(c=>c.COLUMN_NAME).join(', ')}`);
+    }
+    const inMt = Number(inR.recordset[0]?.i_mt || 0);
+    const total = inMt + outMt;
+    console.log(`  ${ym}: 입원=${inMt.toLocaleString()} + 외래=${outMt.toLocaleString()} = ${total.toLocaleString()}${chk(total,ym)}`);
+  }
+
   console.log('\n' + '═'.repeat(60));
   await sql.close();
   process.exit(0);
