@@ -829,6 +829,83 @@ async function main() {
   console.log(`✅ 상담일지 연결 완료 (${conLinkCount}건 매칭)\n`);
 
   // ════════════════════════════════════════════════════════════════
+  // [2.6] 신규 입원 환자 consultation 상태 업데이트
+  //   입원 감지된 환자의 consultation을 "입원완료"로 변경
+  //   consultation이 없는 신규환자는 자동 생성
+  // ════════════════════════════════════════════════════════════════
+  console.log('─'.repeat(50));
+  console.log('[2.6] 입원 환자 상담 상태 업데이트');
+
+  // 최신 consultations 로드 (Phase 2.5에서 갱신되었을 수 있음)
+  const conSnap3 = await db.ref('consultations').get();
+  const conLatest = conSnap3.val() || {};
+
+  // 현재 EMR에 입원 중인 전체 환자의 chartNo 세트
+  const admittedChartNos = new Set();
+  for (const [, emrData] of emrBedMap) {
+    if (emrData.chartNo) admittedChartNos.add(emrData.chartNo);
+  }
+
+  // consultation을 chartNo/patientId/이름으로 인덱스
+  const conByChartNo = {};   // chartNo → { key, data }
+  const conByPatientId = {}; // patientId → { key, data }
+  const conByName = {};      // name → { key, data }
+  Object.entries(conLatest).forEach(([k, c]) => {
+    if (!c?.name) return;
+    if (c.chartNo) conByChartNo[c.chartNo] = { key: k, data: c };
+    if (c.patientId) conByPatientId[c.patientId] = { key: k, data: c };
+    // 이름 매칭은 가장 최근 상담을 우선
+    if (!conByName[c.name] || (c.createdAt || '') > (conByName[c.name].data.createdAt || '')) {
+      conByName[c.name] = { key: k, data: c };
+    }
+  });
+
+  const admitUpdates = {};
+  let statusUpdateCount = 0, autoCreateCount = 0;
+
+  for (const [slotKey, emrData] of emrBedMap) {
+    const chartNo = emrData.chartNo;
+    const patientId = chartToId[chartNo];
+
+    // 매칭 consultation 찾기: chartNo → patientId → 이름 순
+    let matched = conByChartNo[chartNo] || null;
+    if (!matched && patientId) matched = conByPatientId[patientId] || null;
+    if (!matched) matched = conByName[emrData.name] || null;
+
+    if (matched) {
+      // 이미 "입원완료"면 건너뜀
+      if (matched.data.status === '입원완료') continue;
+      // 취소된 상담은 건너뜀
+      if (matched.data.status === '취소') continue;
+      admitUpdates[`consultations/${matched.key}/status`] = '입원완료';
+      statusUpdateCount++;
+      console.log(`  ✏️ ${emrData.name}: ${matched.data.status || '상태없음'} → 입원완료`);
+    } else {
+      // consultation이 없는 환자 → 자동 생성 (신규환자만)
+      // 재입원 환자(patientId 있음)는 건너뜀
+      if (patientId) continue;
+
+      const newKey = db.ref('consultations').push().key;
+      admitUpdates[`consultations/${newKey}`] = {
+        name: emrData.name,
+        admitDate: emrData.admitDate || '',
+        status: '입원완료',
+        isNewPatient: true,
+        chartNo: chartNo || '',
+        createdAt: emrData.admitDate || new Date().toISOString().slice(0, 10),
+        source: 'EMR자동',
+      };
+      autoCreateCount++;
+      console.log(`  🆕 ${emrData.name}: consultation 자동 생성 (신규환자)`);
+    }
+  }
+
+  if (Object.keys(admitUpdates).length > 0) {
+    await db.ref('/').update(admitUpdates);
+  }
+  console.log(`  ✅ 상태 업데이트: ${statusUpdateCount}건 / 자동 생성: ${autoCreateCount}건\n`);
+
+  // ════════════════════════════════════════════════════════════════
   // [전체 모드] Phase 3: 과거 입원이력 동기화
   // ════════════════════════════════════════════════════════════════
   let histSize = 0, histTotal = 0;
@@ -898,6 +975,7 @@ async function main() {
   console.log(`   [1]   환자 마스터: ${patEntries.length}명${FULL_MODE ? '' : ' (입원환자만)'}`);
   console.log(`   [2]   병상 입원: ${setCount}개 / 퇴원: ${clearCount}개`);
   console.log(`   [2.5] 상담연결: ${conLinkCount}건`);
+  console.log(`   [2.6] 입원상태: 업데이트 ${statusUpdateCount}건 / 자동생성 ${autoCreateCount}건`);
   if (FULL_MODE) {
     console.log(`   [3]   입원이력: ${histSize}명 / ${histTotal}건`);
   }
