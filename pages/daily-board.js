@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, set } from "firebase/database";
+import { ref, onValue, set, update } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 
@@ -19,7 +19,7 @@ function todayStr() {
 }
 function uid() { return Math.random().toString(36).slice(2,9); }
 function toYM(dateStr) { return dateStr.slice(0,7); }
-function normName(n) { return (n||"").replace(/^신\)/,"").replace(/\d+$/,"").trim().toLowerCase(); }
+function normName(n) { return (n||"").replace(/^신\)\s*/,"").trim().toLowerCase(); }
 function getWeekKey(dateStr) {
   const d = new Date(dateStr), dow = d.getDay();
   const monday = new Date(d); monday.setDate(d.getDate()+(dow===0?-6:1-dow)); monday.setHours(0,0,0,0);
@@ -217,20 +217,20 @@ export default function DailyBoard() {
       if (cur?.name) {
         const aKey = parseMD(cur.admitDate, year);
         const dKey = parseMD(cur.discharge, year);
-        if (aKey === date) adm.push({ id:uid(), name:cur.name, room:sk, note:cur.note||"", isNew:false, isReserved:false, time:cur.admitTime||"" });
-        if (dKey === date) dis.push({ id:uid(), name:cur.name, room:sk, note:"", time:cur.dischargeTime||"" });
+        if (aKey === date) adm.push({ id:uid(), name:cur.name, room:sk, note:cur.note||"", isNew:false, isReserved:false, time:cur.admitTime||"", _slotKey:sk, _consultationId:cur.consultationId||"" });
+        if (dKey === date) dis.push({ id:uid(), name:cur.name, room:sk, note:"", time:cur.dischargeTime||"", _slotKey:sk });
       }
       (slot?.reservations||[]).forEach(r => {
         if (!r?.name) return;
         const aKey = parseMD(r.admitDate, year);
         const dKey = parseMD(r.discharge, year);
-        if (aKey === date) adm.push({ id:uid(), name:r.name, room:sk, note:r.note||"", isNew:false, isReserved:true, time:r.admitTime||"" });
-        if (dKey === date) dis.push({ id:uid(), name:r.name, room:sk, note:"", time:r.dischargeTime||"" });
+        if (aKey === date) adm.push({ id:uid(), name:r.name, room:sk, note:r.note||"", isNew:false, isReserved:true, time:r.admitTime||"", _slotKey:sk, _consultationId:r.consultationId||"" });
+        if (dKey === date) dis.push({ id:uid(), name:r.name, room:sk, note:"", time:r.dischargeTime||"", _slotKey:sk });
       });
     });
 
     // consultations → 신환 병합
-    Object.values(consultations).forEach(c => {
+    Object.entries(consultations).forEach(([cid, c]) => {
       if (!c?.name || !c.admitDate) return;
       const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       if (!cIsNew) return;
@@ -248,7 +248,7 @@ export default function DailyBoard() {
       if (existIdx >= 0) {
         adm[existIdx] = { ...adm[existIdx], isNew: true, note: cNote || adm[existIdx].note };
       } else {
-        adm.push({ id:uid(), name:c.name, room:actualRoom, note:cNote, isNew:true, isReserved:false });
+        adm.push({ id:uid(), name:c.name, room:actualRoom, note:cNote, isNew:true, isReserved:false, _consultationId:cid });
       }
     });
 
@@ -378,6 +378,31 @@ export default function DailyBoard() {
 
   async function saveEdit() {
     setSaving(true);
+    // 이름 변경 시 consultation/slots 연동
+    const origAdm = calendarData.admissions || [];
+    const origDis = calendarData.discharges || [];
+    const fbUpdates = {};
+    for (const edited of [...editAdm, ...editDis]) {
+      if (!edited.name) continue;
+      const orig = [...origAdm, ...origDis].find(o => o.id === edited.id);
+      if (!orig || orig.name === edited.name) continue;
+      if (edited._consultationId) {
+        fbUpdates[`consultations/${edited._consultationId}/name`] = edited.name;
+      }
+      if (edited._slotKey) {
+        const slot = slots[edited._slotKey];
+        if (slot?.current?.name === orig.name) {
+          fbUpdates[`slots/${edited._slotKey}/current/name`] = edited.name;
+        } else {
+          const resList = slot?.reservations || [];
+          const ri = resList.findIndex(r => r.name === orig.name);
+          if (ri >= 0) fbUpdates[`slots/${edited._slotKey}/reservations/${ri}/name`] = edited.name;
+        }
+      }
+    }
+    if (Object.keys(fbUpdates).length > 0) {
+      await update(ref(db), fbUpdates);
+    }
     // 신환 플래그 공유 저장소 동기화
     for (const a of editAdm) {
       if (!a.name) continue;
@@ -388,8 +413,10 @@ export default function DailyBoard() {
         await set(ref(db, `newPatientFlags/${nk}`), null);
       }
     }
+    // _slotKey, _consultationId 메타데이터 제거 후 저장
+    const cleanList = (list) => (list || []).map(({_slotKey, _consultationId, ...rest}) => rest);
     await set(ref(db, `dailyBoards/${date}`), {
-      admissions: editAdm, discharges: editDis, transfers: editTrn, reservedBeds: editRes, therapy: editTherapy,
+      admissions: cleanList(editAdm), discharges: cleanList(editDis), transfers: editTrn, reservedBeds: editRes, therapy: editTherapy,
     });
     setSaving(false);
     setEditMode(false);

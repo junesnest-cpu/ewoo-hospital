@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, set } from "firebase/database";
+import { ref, onValue, set, update } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 
@@ -40,9 +40,9 @@ function dateKey(d) {
   if (!d) return null;
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
-// 이름 정규화: "신)박은정" → "박은정", "이난영2" → "이난영" 등 비교용
+// 이름 정규화: "신)박은정" → "박은정" 등 비교용 (동명이인 숫자는 보존)
 function normName(name) {
-  return (name || "").replace(/^신\)/, "").replace(/\d+$/, "").trim().toLowerCase();
+  return (name || "").replace(/^신\)\s*/, "").trim().toLowerCase();
 }
 function uid() { return Math.random().toString(36).slice(2,9); }
 function parseDateStr(str, contextYear) {
@@ -246,8 +246,8 @@ export default function MonthlySchedule() {
         // 현재 입원 환자: consultationId 직접 연결 또는 이름 매칭으로 신환 판별
         const curIsNew = cur.consultationId ? !!consultNewById[cur.consultationId]
           : consultNewByName.has(normName(cur.name));
-        if (aKey) { ensure(aKey); data[aKey].admissions.push({ id:uid(), name:cur.name, room:roomLabel, note:cur.note||"", isNew:curIsNew, isReserved:false, time:cur.admitTime||"" }); }
-        if (dKey) { ensure(dKey); data[dKey].discharges.push({ id:uid(), name:cur.name, room:roomLabel, note:cur.discharge||"", time:cur.dischargeTime||"" }); }
+        if (aKey) { ensure(aKey); data[aKey].admissions.push({ id:uid(), name:cur.name, room:roomLabel, note:cur.note||"", isNew:curIsNew, isReserved:false, time:cur.admitTime||"", _slotKey:slotKey, _consultationId:cur.consultationId||"" }); }
+        if (dKey) { ensure(dKey); data[dKey].discharges.push({ id:uid(), name:cur.name, room:roomLabel, note:cur.discharge||"", time:cur.dischargeTime||"", _slotKey:slotKey }); }
       }
       (slot?.reservations || []).forEach(r => {
         if (!r?.name) return;
@@ -256,8 +256,8 @@ export default function MonthlySchedule() {
         // 예약 환자: consultationId 직접 연결 또는 이름 매칭으로 신환 판별
         const rIsNew = r.consultationId ? !!consultNewById[r.consultationId]
           : consultNewByName.has(normName(r.name));
-        if (aKey) { ensure(aKey); data[aKey].admissions.push({ id:uid(), name:r.name, room:roomLabel, note:r.note||"", isNew:rIsNew, isReserved:true, time:r.admitTime||"" }); }
-        if (dKey) { ensure(dKey); data[dKey].discharges.push({ id:uid(), name:r.name, room:roomLabel, note:r.discharge||"", time:r.dischargeTime||"" }); }
+        if (aKey) { ensure(aKey); data[aKey].admissions.push({ id:uid(), name:r.name, room:roomLabel, note:r.note||"", isNew:rIsNew, isReserved:true, time:r.admitTime||"", _slotKey:slotKey, _consultationId:r.consultationId||"" }); }
+        if (dKey) { ensure(dKey); data[dKey].discharges.push({ id:uid(), name:r.name, room:roomLabel, note:r.discharge||"", time:r.dischargeTime||"", _slotKey:slotKey }); }
       });
     });
 
@@ -271,7 +271,7 @@ export default function MonthlySchedule() {
     });
 
     // consultations: 슬롯에 미배정된 신환만 추가 (슬롯 배정된 환자는 이미 위에서 신환 플래그 처리됨)
-    Object.values(consultations).forEach(c => {
+    Object.entries(consultations).forEach(([cid, c]) => {
       if (!c?.name || !c.admitDate) return;
       const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       if (!cIsNew) return;                                    // 재입원 → 제외
@@ -325,6 +325,7 @@ export default function MonthlySchedule() {
             note: cNote,
             isNew: true,
             isReserved: false,
+            _consultationId: cid,
           });
         }
       }
@@ -640,32 +641,65 @@ export default function MonthlySchedule() {
     }
   }
 
+  // 이름 변경 시 consultation/slots 연동 업데이트
+  async function propagateNameChanges(editList, origList) {
+    const fbUpdates = {};
+    for (const edited of editList) {
+      if (!edited.name) continue;
+      // 원본 항목 찾기 (id 기반)
+      const orig = origList.find(o => o.id === edited.id);
+      if (!orig || orig.name === edited.name) continue;
+      // 이름이 변경된 경우: consultation과 slots 업데이트
+      if (edited._consultationId) {
+        fbUpdates[`consultations/${edited._consultationId}/name`] = edited.name;
+      }
+      if (edited._slotKey) {
+        const slot = slots[edited._slotKey];
+        if (slot?.current?.name === orig.name) {
+          fbUpdates[`slots/${edited._slotKey}/current/name`] = edited.name;
+        } else {
+          // reservations에서 매칭
+          const resList = slot?.reservations || [];
+          const ri = resList.findIndex(r => r.name === orig.name);
+          if (ri >= 0) fbUpdates[`slots/${edited._slotKey}/reservations/${ri}/name`] = edited.name;
+        }
+      }
+    }
+    if (Object.keys(fbUpdates).length > 0) {
+      await update(ref(db), fbUpdates);
+    }
+  }
+
   // 편집 저장 (calendarData 기반 수동 추가/숨김만 저장)
   async function saveEdit() {
     setEditSaving(true);
+    // 이름 변경 시 consultation/slots 연동
+    const cd = calendarData[editModal] || { admissions:[], discharges:[] };
+    await propagateNameChanges(editAdm, cd.admissions || []);
+    await propagateNameChanges(editDis, cd.discharges || []);
     // 신환 플래그 동기화
     await syncNewPatientFlags(editAdm, editModal);
     const bd = boardData[editModal];
-    // frozen 데이터: 전체 목록을 직접 저장
+    // frozen 데이터: 전체 목록을 직접 저장 (_slotKey, _consultationId 메타 제거)
+    const cleanList = (list) => (list || []).map(({_slotKey, _consultationId, ...rest}) => rest);
     if (bd?.frozen) {
       await set(ref(db, `monthlyBoards/${toYM(year, month)}/${editModal}`), {
         frozen: true,
-        admissions: editAdm,
-        discharges: editDis,
+        admissions: cleanList(editAdm),
+        discharges: cleanList(editDis),
       });
       setEditSaving(false);
       setEditModal(null);
       return;
     }
-    const cd = calendarData[editModal] || { admissions:[], discharges:[] };
     const cdAdmNorms = new Set((cd.admissions || []).map(a => normName(a.name)));
     const cdDisNorms = new Set((cd.discharges || []).map(d => normName(d.name)));
     const savedAdmNorms = new Set(editAdm.map(a => normName(a.name)));
     const savedDisNorms = new Set(editDis.map(d => normName(d.name)));
     const hiddenAdmissions = (cd.admissions || []).filter(a => !savedAdmNorms.has(normName(a.name))).map(a => normName(a.name));
     const hiddenDischarges = (cd.discharges || []).filter(d => !savedDisNorms.has(normName(d.name))).map(d => normName(d.name));
-    const manualAdmissions = editAdm.filter(a => !cdAdmNorms.has(normName(a.name)));
-    const manualDischarges = editDis.filter(d => !cdDisNorms.has(normName(d.name)));
+    const manualAdmissions = cleanList(editAdm.filter(a => !cdAdmNorms.has(normName(a.name))));
+    const manualDischarges = cleanList(editDis.filter(d => !cdDisNorms.has(normName(d.name))));
     const hasAny = manualAdmissions.length || manualDischarges.length || hiddenAdmissions.length || hiddenDischarges.length;
     await set(ref(db, `monthlyBoards/${toYM(year, month)}/${editModal}`),
       hasAny ? { admissions: manualAdmissions, discharges: manualDischarges, hiddenAdmissions, hiddenDischarges } : null);

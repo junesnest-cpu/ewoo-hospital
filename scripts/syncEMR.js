@@ -640,6 +640,101 @@ async function main() {
   console.log(`  ✅ 병상 배치 완료 — 입원: ${setCount}개 / 퇴원: ${clearCount}개\n`);
 
   // ════════════════════════════════════════════════════════════════
+  // [2.5] 상담일지(consultations) 자동 연결
+  //   EMR 환자와 전화번호/생년으로 매칭하여 이름·chartNo·patientId 갱신
+  // ════════════════════════════════════════════════════════════════
+  console.log('─'.repeat(50));
+  console.log('[2.5] 상담일지 자동 연결 시작');
+
+  // 최신 consultations 다시 로드 (Phase 0에서 patientId가 갱신되었을 수 있음)
+  const conSnap2 = await db.ref('consultations').once('value');
+  const conAll   = conSnap2.val() || {};
+
+  // EMR patients를 전화번호/생년 기준으로 인덱스
+  const patByPhone = new Map(); // normalizedPhone → patient
+  const patByBirth = new Map(); // birthYear → [patient, ...]
+  for (const row of patRows) {
+    if (skipSet.has(row.chartNo)) continue;
+    const normChart = normalizeChartNo(row.chartNo);
+    const phone     = normalizePhone(row.phone);
+    const birth     = formatDate(row.birthDate);
+    const pat = {
+      chartNo:    normChart,
+      name:       String(row.name || '').trim(),
+      phone,
+      birthYear:  birth ? birth.slice(0, 4) : '',
+      internalId: chartToId[normChart] || '',
+    };
+    if (phone) patByPhone.set(phone, pat);
+    if (pat.birthYear) {
+      if (!patByBirth.has(pat.birthYear)) patByBirth.set(pat.birthYear, []);
+      patByBirth.get(pat.birthYear).push(pat);
+    }
+  }
+
+  const conUpdates = {};
+  let conLinkCount = 0;
+
+  for (const [conId, c] of Object.entries(conAll)) {
+    if (!c?.name) continue;
+    // 이미 chartNo가 설정되어 있고, 이름도 일치하면 건너뜀
+    if (c.chartNo && c.name === (patByPhone.get(normalizePhone(c.phone))?.name || '')) continue;
+
+    let matched = null;
+
+    // 1순위: 전화번호 매칭
+    const cPhone = normalizePhone(c.phone);
+    const cPhone2 = normalizePhone(c.phone2);
+    if (cPhone && patByPhone.has(cPhone)) {
+      matched = patByPhone.get(cPhone);
+    } else if (cPhone2 && patByPhone.has(cPhone2)) {
+      matched = patByPhone.get(cPhone2);
+    }
+
+    // 2순위: 생년 + 이름 유사 매칭 (전화번호 없을 때)
+    if (!matched && c.birthYear) {
+      const candidates = patByBirth.get(c.birthYear) || [];
+      const cBase = (c.name || '').replace(/\d+$/, '').trim();
+      for (const p of candidates) {
+        const pBase = (p.name || '').replace(/\d+$/, '').trim();
+        if (cBase === pBase) {
+          matched = p;
+          break;
+        }
+      }
+    }
+
+    if (!matched) continue;
+
+    // 이름 또는 식별자가 다를 때만 업데이트
+    const needsUpdate = c.name !== matched.name
+                     || c.chartNo !== matched.chartNo
+                     || c.patientId !== matched.internalId;
+    if (!needsUpdate) continue;
+
+    if (c.name !== matched.name) {
+      conUpdates[`consultations/${conId}/name`] = matched.name;
+    }
+    if (matched.chartNo && c.chartNo !== matched.chartNo) {
+      conUpdates[`consultations/${conId}/chartNo`] = matched.chartNo;
+    }
+    if (matched.internalId && c.patientId !== matched.internalId) {
+      conUpdates[`consultations/${conId}/patientId`] = matched.internalId;
+      conUpdates[`consultations/${conId}/isNewPatient`] = false;
+    }
+    conLinkCount++;
+    console.log(`  🔗 ${c.name} → ${matched.name} (chartNo: ${matched.chartNo})`);
+  }
+
+  if (Object.keys(conUpdates).length > 0) {
+    const conEntries = Object.entries(conUpdates);
+    for (let i = 0; i < conEntries.length; i += 500) {
+      await db.ref('/').update(Object.fromEntries(conEntries.slice(i, i + 500)));
+    }
+  }
+  console.log(`✅ 상담일지 연결 완료 (${conLinkCount}건 매칭)\n`);
+
+  // ════════════════════════════════════════════════════════════════
   // [전체 모드] Phase 3: 과거 입원이력 동기화
   // ════════════════════════════════════════════════════════════════
   let histSize = 0, histTotal = 0;
@@ -708,6 +803,7 @@ async function main() {
   }
   console.log(`   [1]   환자 마스터: ${patEntries.length}명${FULL_MODE ? '' : ' (입원환자만)'}`);
   console.log(`   [2]   병상 입원: ${setCount}개 / 퇴원: ${clearCount}개`);
+  console.log(`   [2.5] 상담연결: ${conLinkCount}건`);
   if (FULL_MODE) {
     console.log(`   [3]   입원이력: ${histSize}명 / ${histTotal}건`);
   }

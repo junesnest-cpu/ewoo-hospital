@@ -65,6 +65,12 @@ export default function PatientsPage() {
   const [diagFixing,   setDiagFixing]   = useState(false);
   const [diagFixMsg,   setDiagFixMsg]   = useState("");
 
+  // 수동 연결 모달 상태
+  const [linkModal,    setLinkModal]    = useState(null); // { conKey, conName, conPhone }
+  const [linkQuery,    setLinkQuery]    = useState("");
+  const [linkResults,  setLinkResults]  = useState(null);
+  const [linkSearching,setLinkSearching]= useState(false);
+
   // URL에서 patientId 또는 이름 로드
   useEffect(() => {
     const { id, name } = router.query;
@@ -242,15 +248,17 @@ export default function PatientsPage() {
       });
 
       // ⑤ 상담 연결 문제
-      const conNameOnly  = [];
-      const conNoPatient = [];
+      const conNameOnly  = [];  // patientId 없지만 이름 매칭 가능
+      const conNoPatient = [];  // patientId가 있지만 환자DB에 없음
+      const conUnlinked  = [];  // patientId 없고 이름 매칭도 불가
       allCons.forEach(c => {
         if (!c.name) return;
         if (c.patientId) {
-          if (!pById[c.patientId]) conNoPatient.push({ key: c._key, name: c.name, patientId: c.patientId });
+          if (!pById[c.patientId]) conNoPatient.push({ key: c._key, name: c.name, patientId: c.patientId, phone: c.phone||"", birthYear: c.birthYear||"" });
         } else {
           const found = pByName[c.name];
-          if (found) conNameOnly.push({ key: c._key, name: c.name, suggestId: found.internalId });
+          if (found) conNameOnly.push({ key: c._key, name: c.name, suggestId: found.internalId, phone: c.phone||"", birthYear: c.birthYear||"" });
+          else conUnlinked.push({ key: c._key, name: c.name, phone: c.phone||"", birthYear: c.birthYear||"", admitDate: c.admitDate||"", status: c.status||"" });
         }
       });
 
@@ -260,7 +268,7 @@ export default function PatientsPage() {
         phoneMismatch, chartMismatch,
         duplicates, dupPhones,
         slotNoPatient, slotNameOnly, slotLinked,
-        conNameOnly, conNoPatient,
+        conNameOnly, conNoPatient, conUnlinked,
         allPatients, pById, pByName,
       });
     } catch(e) {
@@ -433,6 +441,42 @@ export default function PatientsPage() {
       await runDiagnosis();
     } catch(e) { setDiagFixMsg(`❌ 통합 오류: ${e.message}`); }
     setDiagFixing(false);
+  };
+
+  // 수동 연결: 환자 검색
+  const linkSearch = async (q) => {
+    const trimmed = (q || "").trim();
+    if (!trimmed || trimmed.length < 2) { setLinkResults(null); return; }
+    setLinkSearching(true);
+    try {
+      let found;
+      const digitsOnly = trimmed.replace(/\D/g, "");
+      if (/^\d+$/.test(trimmed) && trimmed.length < 9) {
+        const p = await findPatientByChartNo(trimmed);
+        found = p ? [p] : [];
+      } else if (/\d/.test(trimmed)) {
+        const p = await findPatientByPhone(trimmed);
+        found = p ? [p] : [];
+      } else {
+        found = await searchPatientsByName(trimmed);
+      }
+      setLinkResults(found);
+    } catch(e) { setLinkResults([]); }
+    setLinkSearching(false);
+  };
+
+  // 수동 연결: 선택한 환자로 상담 연결
+  const linkConsultToPatient = async (patient) => {
+    if (!linkModal?.conKey || !patient?.internalId) return;
+    const updates = {};
+    updates[`consultations/${linkModal.conKey}/patientId`] = patient.internalId;
+    if (patient.chartNo) updates[`consultations/${linkModal.conKey}/chartNo`] = patient.chartNo;
+    updates[`consultations/${linkModal.conKey}/name`] = patient.name;
+    updates[`consultations/${linkModal.conKey}/isNewPatient`] = false;
+    await update(ref(db), updates);
+    setLinkModal(null); setLinkQuery(""); setLinkResults(null);
+    setDiagFixMsg(`✅ "${linkModal.conName}" → "${patient.name}" (${patient.internalId}) 연결 완료`);
+    await runDiagnosis();
   };
 
   const phoneDisplay = (p) => {
@@ -827,11 +871,54 @@ export default function PatientsPage() {
                   </DiagSection>
 
                   <DiagSection title="⑩ 상담에 patientId 없음 (이름으로 환자 존재)" count={d.conNameOnly.length} color="#d97706" bg="#fef3c7">
-                    <Row items={d.conNameOnly.map(c => `${c.name} → ${c.suggestId}`)} />
+                    <div style={{ display:"flex", flexDirection:"column", gap:4, marginLeft:8 }}>
+                      {d.conNameOnly.slice(0,30).map((c, i) => (
+                        <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, flexWrap:"wrap" }}>
+                          <span style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:6, padding:"2px 8px" }}>
+                            {c.name}{c.phone ? ` (${c.phone})` : ""} → {c.suggestId}
+                          </span>
+                          <button onClick={() => { setLinkModal({ conKey:c.key, conName:c.name, conPhone:c.phone }); setLinkQuery(c.name); linkSearch(c.name); }}
+                            style={{ background:"#7c3aed", color:"#fff", border:"none", borderRadius:5, padding:"2px 8px", fontSize:11, fontWeight:700, cursor:"pointer", flexShrink:0 }}>
+                            수동 연결
+                          </button>
+                        </div>
+                      ))}
+                      {d.conNameOnly.length > 30 && <span style={{ fontSize:12, color:"#94a3b8", marginLeft:8 }}>... 외 {d.conNameOnly.length-30}건</span>}
+                    </div>
                   </DiagSection>
 
                   <DiagSection title="⑪ 상담 patientId가 환자에 없음" count={d.conNoPatient.length} color="#dc2626" bg="#fee2e2">
-                    <Row items={d.conNoPatient.map(c => `${c.name} patientId:${c.patientId}`)} />
+                    <div style={{ display:"flex", flexDirection:"column", gap:4, marginLeft:8 }}>
+                      {d.conNoPatient.slice(0,30).map((c, i) => (
+                        <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, flexWrap:"wrap" }}>
+                          <span style={{ background:"#f8fafc", border:"1px solid #fca5a5", borderRadius:6, padding:"2px 8px" }}>
+                            {c.name}{c.phone ? ` (${c.phone})` : ""} patientId:{c.patientId}
+                          </span>
+                          <button onClick={() => { setLinkModal({ conKey:c.key, conName:c.name, conPhone:c.phone }); setLinkQuery(c.name); linkSearch(c.name); }}
+                            style={{ background:"#dc2626", color:"#fff", border:"none", borderRadius:5, padding:"2px 8px", fontSize:11, fontWeight:700, cursor:"pointer", flexShrink:0 }}>
+                            수동 연결
+                          </button>
+                        </div>
+                      ))}
+                      {d.conNoPatient.length > 30 && <span style={{ fontSize:12, color:"#94a3b8", marginLeft:8 }}>... 외 {d.conNoPatient.length-30}건</span>}
+                    </div>
+                  </DiagSection>
+
+                  <DiagSection title="⑫ 미연결 상담 (환자 매칭 불가)" count={d.conUnlinked.length} color="#64748b" bg="#f1f5f9">
+                    <div style={{ display:"flex", flexDirection:"column", gap:4, marginLeft:8 }}>
+                      {d.conUnlinked.slice(0,30).map((c, i) => (
+                        <div key={i} style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, flexWrap:"wrap" }}>
+                          <span style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:6, padding:"2px 8px" }}>
+                            {c.name}{c.birthYear ? ` ${c.birthYear}년생` : ""}{c.phone ? ` (${c.phone})` : ""}{c.status ? ` [${c.status}]` : ""}
+                          </span>
+                          <button onClick={() => { setLinkModal({ conKey:c.key, conName:c.name, conPhone:c.phone }); setLinkQuery(c.name); linkSearch(c.name); }}
+                            style={{ background:"#475569", color:"#fff", border:"none", borderRadius:5, padding:"2px 8px", fontSize:11, fontWeight:700, cursor:"pointer", flexShrink:0 }}>
+                            수동 연결
+                          </button>
+                        </div>
+                      ))}
+                      {d.conUnlinked.length > 30 && <span style={{ fontSize:12, color:"#94a3b8", marginLeft:8 }}>... 외 {d.conUnlinked.length-30}건</span>}
+                    </div>
                   </DiagSection>
 
                   {/* 차트번호별 환자 목록 */}
@@ -881,6 +968,63 @@ export default function PatientsPage() {
           </div>
         )}
       </div>
+
+      {/* 수동 연결 모달 */}
+      {linkModal && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.5)", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setLinkModal(null); setLinkQuery(""); setLinkResults(null); } }}>
+          <div style={{ background:"#fff", borderRadius:16, padding:"20px 24px", width:"100%", maxWidth:520, maxHeight:"80vh", overflow:"auto", boxShadow:"0 8px 32px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontSize:15, fontWeight:800, color:"#0f2744", marginBottom:4 }}>수동 환자 연결</div>
+            <div style={{ fontSize:13, color:"#64748b", marginBottom:12 }}>
+              상담: <strong>{linkModal.conName}</strong>{linkModal.conPhone ? ` (${linkModal.conPhone})` : ""}
+            </div>
+            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+              <input style={{ ...S.input, flex:1 }}
+                placeholder="이름, 전화번호, 또는 차트번호"
+                value={linkQuery}
+                onChange={e => { setLinkQuery(e.target.value); }}
+                onKeyDown={e => e.key === "Enter" && linkSearch(linkQuery)}
+                autoFocus />
+              <button onClick={() => linkSearch(linkQuery)}
+                style={{ background:"#0f2744", color:"#fff", border:"none", borderRadius:8, padding:"8px 16px", fontSize:13, fontWeight:700, cursor:"pointer", flexShrink:0 }}>
+                {linkSearching ? "..." : "검색"}
+              </button>
+            </div>
+            {linkResults && linkResults.length === 0 && (
+              <div style={{ fontSize:13, color:"#94a3b8", textAlign:"center", padding:16 }}>검색 결과가 없습니다</div>
+            )}
+            {linkResults && linkResults.length > 0 && (
+              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                {linkResults.slice(0,20).map((p, i) => (
+                  <div key={i}
+                    onClick={() => {
+                      if (window.confirm(`"${linkModal.conName}" 상담을 "${p.name}" (${p.internalId}, 차트:${p.chartNo||"없음"}) 환자에게 연결하시겠습니까?\n\n상담의 이름도 "${p.name}"(으)로 변경됩니다.`)) {
+                        linkConsultToPatient(p);
+                      }
+                    }}
+                    style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, cursor:"pointer", transition:"background 0.15s" }}
+                    onMouseEnter={e => e.currentTarget.style.background="#f0f9ff"}
+                    onMouseLeave={e => e.currentTarget.style.background="#f8fafc"}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:14, fontWeight:700 }}>{p.name}</div>
+                      <div style={{ fontSize:12, color:"#64748b" }}>
+                        {[p.internalId, p.chartNo ? `차트:${p.chartNo}` : null, p.phone, p.birthDate ? `${p.birthDate.slice(0,4)}년생` : null].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    <span style={{ background:"#059669", color:"#fff", borderRadius:6, padding:"4px 10px", fontSize:12, fontWeight:700, flexShrink:0 }}>연결</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display:"flex", justifyContent:"flex-end", marginTop:12 }}>
+              <button onClick={() => { setLinkModal(null); setLinkQuery(""); setLinkResults(null); }}
+                style={{ background:"#f1f5f9", border:"none", borderRadius:8, padding:"8px 16px", fontSize:13, fontWeight:700, cursor:"pointer", color:"#64748b" }}>
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
