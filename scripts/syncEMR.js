@@ -626,18 +626,112 @@ async function main() {
     setCount++;
   }
 
+  // 퇴원 감지: Firebase에 있지만 EMR에 없는 환자
+  const dischargedPatients = []; // { name, room, admitDate, ... }
   for (const [slotKey, slot] of Object.entries(fbSlots)) {
     if (!slot?.current?.name) continue;
     if (emrBedMap.has(slotKey)) continue;
-    console.log(`  🚪 퇴원 처리: ${slotKey} (${slot.current.name})`);
+    const cur = slot.current;
+    dischargedPatients.push({
+      name: cur.name, room: slotKey.split('-')[0],
+      admitDate: cur.admitDate || '', discharge: cur.discharge || '',
+      note: cur.note || '', chartNo: cur.chartNo || '',
+    });
+    console.log(`  🚪 퇴원 처리: ${slotKey} (${cur.name})`);
     slotUpdates[`slots/${slotKey}/current`] = null;
     clearCount++;
+  }
+
+  // 신규 입원 감지: EMR에 있지만 Firebase에 없거나 다른 환자가 있는 슬롯
+  const newAdmissions = [];
+  for (const [slotKey, emrData] of emrBedMap) {
+    const fbCurrent = (fbSlots[slotKey] || {}).current;
+    // 신규 입원: 기존에 비어있거나 다른 환자였던 경우
+    if (!fbCurrent?.name || fbCurrent.chartNo !== emrData.chartNo) {
+      newAdmissions.push({
+        name: emrData.name, room: slotKey.split('-')[0],
+        admitDate: emrData.admitDate, chartNo: emrData.chartNo,
+      });
+    }
   }
 
   if (Object.keys(slotUpdates).length > 0) {
     await db.ref('/').update(slotUpdates);
   }
   console.log(`  ✅ 병상 배치 완료 — 입원: ${setCount}개 / 퇴원: ${clearCount}개\n`);
+
+  // ────────────────────────────────────────────────────────────────
+  // 입퇴원 이벤트를 monthlyBoards에 영구 기록
+  // ────────────────────────────────────────────────────────────────
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+  // 날짜 문자열 → YYYY-MM-DD 변환 헬퍼
+  const toDateKey = (dateStr) => {
+    if (!dateStr || dateStr === '미정') return null;
+    const s = String(dateStr).trim();
+    // YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    // M/D 형식
+    const md = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (md) return `${today.getFullYear()}-${md[1].padStart(2,'0')}-${md[2].padStart(2,'0')}`;
+    // YYYYMMDD
+    if (/^\d{8}$/.test(s)) return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;
+    return null;
+  };
+
+  // 날짜별로 이벤트 수집
+  const eventsByDate = new Map(); // dateKey → { admissions: [], discharges: [] }
+  const ensureDate = (dk) => { if (!eventsByDate.has(dk)) eventsByDate.set(dk, { admissions: [], discharges: [] }); };
+
+  // 퇴원 환자: 퇴원일(오늘)에 퇴원 기록 + 입원일에 입원 기록
+  for (const p of dischargedPatients) {
+    // 퇴원 기록 (오늘)
+    ensureDate(todayKey);
+    eventsByDate.get(todayKey).discharges.push({ name: p.name, room: p.room, note: p.note });
+    // 입원 기록 (입원일)
+    const admKey = toDateKey(p.admitDate);
+    if (admKey) {
+      ensureDate(admKey);
+      eventsByDate.get(admKey).admissions.push({ name: p.name, room: p.room, note: p.note });
+    }
+  }
+
+  // 신규 입원 환자: 입원일에 입원 기록
+  for (const p of newAdmissions) {
+    const admKey = toDateKey(p.admitDate);
+    if (admKey) {
+      ensureDate(admKey);
+      eventsByDate.get(admKey).admissions.push({ name: p.name, room: p.room });
+    }
+  }
+
+  // monthlyBoards에 누적 병합 (기존 기록 보존, 새 항목만 추가)
+  let boardUpdateCount = 0;
+  for (const [dateKey, events] of eventsByDate) {
+    const ym = dateKey.slice(0, 7);
+    const snap = await db.ref(`monthlyBoards/${ym}/${dateKey}`).get();
+    const existing = snap.val() || {};
+    const exAdm = existing.admissions || [];
+    const exDis = existing.discharges || [];
+    const exAdmNames = new Set(exAdm.map(a => (a.name||'').trim().toLowerCase()));
+    const exDisNames = new Set(exDis.map(d => (d.name||'').trim().toLowerCase()));
+
+    const newAdm = events.admissions.filter(a => !exAdmNames.has((a.name||'').trim().toLowerCase()));
+    const newDis = events.discharges.filter(d => !exDisNames.has((d.name||'').trim().toLowerCase()));
+
+    if (newAdm.length || newDis.length) {
+      await db.ref(`monthlyBoards/${ym}/${dateKey}`).set({
+        frozen: true,
+        admissions: [...exAdm, ...newAdm],
+        discharges: [...exDis, ...newDis],
+      });
+      boardUpdateCount++;
+      console.log(`  📋 ${dateKey}: 입원 +${newAdm.length} (총 ${exAdm.length + newAdm.length}), 퇴원 +${newDis.length} (총 ${exDis.length + newDis.length})`);
+    }
+  }
+  if (boardUpdateCount) console.log(`  ✅ 입퇴원 기록 저장: ${boardUpdateCount}건`);
+  else console.log(`  ✅ 입퇴원 변동 없음`);
 
   // ════════════════════════════════════════════════════════════════
   // [2.5] 상담일지(consultations) 자동 연결

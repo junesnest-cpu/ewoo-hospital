@@ -333,17 +333,22 @@ export default function MonthlySchedule() {
     return data;
   }, [slots, consultations, dailyBoards, year, month]);
 
-  // 당일 이전 날짜 자동 스냅샷 + 당일은 누적 병합: 슬롯 데이터가 변해도 기록 유지
+  // 당일 누적 병합: 슬롯/상담에서 새로 감지된 입퇴원을 frozen 스냅샷에 추가
+  // (과거 날짜는 syncEMR이 이벤트 기반으로 기록하므로 프론트엔드에서 건드리지 않음)
   useEffect(() => {
     if (!Object.keys(slots).length) return;
     const today = new Date(); today.setHours(0,0,0,0);
-    const total = daysInMonth(year, month);
     const ym = toYM(year, month);
 
-    // calendarData + boardData 병합 헬퍼
-    const mergeCdBd = (key) => {
-      const cd = calendarData[key] || { admissions:[], discharges:[] };
-      const bd = boardData[key];
+    // 당월이 아니면 건너뜀
+    if (year !== today.getFullYear() || month !== (today.getMonth()+1)) return;
+
+    const key = `${year}-${String(month).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+    const bd = boardData[key];
+    const cd = calendarData[key] || { admissions:[], discharges:[] };
+
+    // live 데이터: calendarData + boardData(수동 추가분) 병합
+    const mergeCdBd = () => {
       if (!bd || bd.frozen) return { admissions: cd.admissions || [], discharges: cd.discharges || [] };
       const hiddenAdm = new Set(bd.hiddenAdmissions || []);
       const hiddenDis = new Set(bd.hiddenDischarges || []);
@@ -356,49 +361,27 @@ export default function MonthlySchedule() {
       return { admissions: [...baseAdm, ...manualAdm], discharges: [...baseDis, ...manualDis] };
     };
 
-    // 이름 기준 병합: 기존 frozen 항목 + 새 항목 (기존 항목은 유지, 새 항목만 추가)
-    const mergeKeepExisting = (frozen, live) => {
-      const existingNorms = new Set((frozen || []).map(a => normName(a.name)));
-      const newItems = (live || []).filter(a => a.name && !existingNorms.has(normName(a.name)));
-      return [...(frozen || []), ...newItems];
-    };
+    const live = mergeCdBd();
 
-    for (let d = 1; d <= total; d++) {
-      const key = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-      const dayDate = new Date(year, month - 1, d);
-      if (dayDate > today) continue; // 미래 날짜만 건너뜀 (당일 포함)
-
-      const isToday = dayDate.getTime() === today.getTime();
-      const bd = boardData[key];
-
-      if (isToday) {
-        // 당일: frozen이 있으면 새 항목만 누적 병합, 없으면 최초 스냅샷 생성
-        const live = mergeCdBd(key);
-        if (bd?.frozen) {
-          const merged = {
-            frozen: true,
-            admissions: mergeKeepExisting(bd.admissions, live.admissions),
-            discharges: mergeKeepExisting(bd.discharges, live.discharges),
-          };
-          // 새로 추가된 항목이 있을 때만 저장
-          if (merged.admissions.length > (bd.admissions||[]).length || merged.discharges.length > (bd.discharges||[]).length) {
-            set(ref(db, `monthlyBoards/${ym}/${key}`), merged);
-          }
-        } else {
-          if (frozenKeysRef.current.has(key)) continue;
-          if (!live.admissions.length && !live.discharges.length) continue;
-          frozenKeysRef.current.add(key);
-          set(ref(db, `monthlyBoards/${ym}/${key}`), { frozen: true, admissions: live.admissions, discharges: live.discharges });
-        }
-      } else {
-        // 과거 날짜: 한번 frozen되면 다시 건드리지 않음
-        if (bd?.frozen) continue;
-        if (frozenKeysRef.current.has(key)) continue;
-        const live = mergeCdBd(key);
-        if (!live.admissions.length && !live.discharges.length) { frozenKeysRef.current.add(key); continue; }
-        frozenKeysRef.current.add(key);
-        set(ref(db, `monthlyBoards/${ym}/${key}`), { frozen: true, admissions: live.admissions, discharges: live.discharges });
+    if (bd?.frozen) {
+      // 기존 frozen에 새 항목만 추가 (기존 항목은 절대 삭제하지 않음)
+      const existAdmNorms = new Set((bd.admissions || []).map(a => normName(a.name)));
+      const existDisNorms = new Set((bd.discharges || []).map(d => normName(d.name)));
+      const newAdm = (live.admissions || []).filter(a => a.name && !existAdmNorms.has(normName(a.name)));
+      const newDis = (live.discharges || []).filter(d => d.name && !existDisNorms.has(normName(d.name)));
+      if (newAdm.length || newDis.length) {
+        set(ref(db, `monthlyBoards/${ym}/${key}`), {
+          frozen: true,
+          admissions: [...(bd.admissions || []), ...newAdm],
+          discharges: [...(bd.discharges || []), ...newDis],
+        });
       }
+    } else {
+      // 최초 frozen 생성 (당일에 처음 monthly 방문 시)
+      if (frozenKeysRef.current.has(key)) return;
+      if (!live.admissions.length && !live.discharges.length) return;
+      frozenKeysRef.current.add(key);
+      set(ref(db, `monthlyBoards/${ym}/${key}`), { frozen: true, admissions: live.admissions, discharges: live.discharges });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendarData, boardData, year, month, slots]);
