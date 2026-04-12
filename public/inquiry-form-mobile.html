@@ -145,7 +145,8 @@ function submitEwooInquiryM() {
   .then(function(res) {
     if (res.ok) {
       msg.className = 'msg ok';
-      msg.textContent = '문의가 접수되었습니다. 빠른 시일 내에 연락드리겠습니다.';
+      msg.innerHTML = '문의가 접수되었습니다.<br>빠른 시일 내에 연락드리겠습니다.';
+      setTimeout(function(){ window.top.location.href = 'https://www.ewoohospital.com'; }, 2000);
       document.getElementById('ewooNameM').value = '';
       document.getElementById('ewooPhoneM').value = '';
       document.getElementById('ewooContentM').value = '';
