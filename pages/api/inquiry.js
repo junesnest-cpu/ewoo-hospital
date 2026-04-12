@@ -72,9 +72,9 @@ export default async function handler(req, res) {
       memo,
       createdAt,
       status: '상담중',
-      recontact: inquiryType === 'admission',
-      recontactDate: inquiryType === 'admission' ? createdAt.slice(0, 10) : '',
-      recontactMemo: inquiryType === 'admission' ? '홈페이지 입퇴원문의' : '',
+      recontact: true,
+      recontactDate: createdAt.slice(0, 10),
+      recontactMemo: `홈페이지 ${typeLabel}`,
       isNewPatient: true,
       source: 'website',
     };
