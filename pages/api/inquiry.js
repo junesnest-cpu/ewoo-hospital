@@ -29,9 +29,11 @@ const TYPE_LABELS = {
 export default async function handler(req, res) {
   // CORS — 아임웹 도메인 허용
   const origin = req.headers.origin || '';
-  const allowed = ['https://www.ewoohospital.com', 'https://ewoohospital.com'];
-  if (allowed.some(o => origin.startsWith(o))) {
+  const allowed = ['https://www.ewoohospital.com', 'https://ewoohospital.com', 'https://ewoo-hospital.vercel.app'];
+  if (allowed.some(o => origin.startsWith(o)) || origin.includes('imweb')) {
     res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
   }
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -70,7 +72,9 @@ export default async function handler(req, res) {
       memo,
       createdAt,
       status: '상담중',
-      recontact: false, recontactDate: '', recontactMemo: '',
+      recontact: inquiryType === 'admission',
+      recontactDate: inquiryType === 'admission' ? createdAt.slice(0, 10) : '',
+      recontactMemo: inquiryType === 'admission' ? '홈페이지 입퇴원문의' : '',
       isNewPatient: true,
       source: 'website',
     };
