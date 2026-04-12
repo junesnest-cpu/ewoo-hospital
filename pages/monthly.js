@@ -566,14 +566,31 @@ export default function MonthlySchedule() {
   // 표시 데이터: calendarData 기반 + boardData 수동 추가/숨김 병합
   function getDisplayData(key) {
     const bd = boardData[key];
-    // frozen(스냅샷) 데이터: 과거 날짜는 저장된 데이터를 그대로 사용
+    // frozen(스냅샷) 데이터: 저장된 데이터 + calendarData 보완 (누락 방지)
     if (bd?.frozen) {
       // frozen이어도 상담일지의 신환 플래그는 반영
       const admissions = dedupList(bd.admissions || []).map(a => {
         if (!a.isNew && newPatientNorms.has(normName(a.name))) return { ...a, isNew: true };
         return a;
       });
-      return { admissions, discharges: dedupList(bd.discharges || []), isManual: true };
+      const discharges = dedupList(bd.discharges || []);
+      // frozen에 없지만 calendarData에 있는 항목 보완 (숨김 제외)
+      const cd = calendarData[key] || { admissions:[], discharges:[] };
+      const hiddenAdm = new Set((bd.hiddenAdmissions || []).map(n => typeof n === 'string' ? n : normName(n)));
+      const hiddenDis = new Set((bd.hiddenDischarges || []).map(n => typeof n === 'string' ? n : normName(n)));
+      const frozenAdmNorms = new Set(admissions.map(a => normName(a.name)));
+      const frozenDisNorms = new Set(discharges.map(d => normName(d.name)));
+      const extraAdm = (cd.admissions || []).filter(a =>
+        a.name && !frozenAdmNorms.has(normName(a.name)) && !hiddenAdm.has(normName(a.name))
+      );
+      const extraDis = (cd.discharges || []).filter(d =>
+        d.name && !frozenDisNorms.has(normName(d.name)) && !hiddenDis.has(normName(d.name))
+      );
+      return {
+        admissions: dedupList([...admissions, ...extraAdm]),
+        discharges: dedupList([...discharges, ...extraDis]),
+        isManual: true,
+      };
     }
     const cd = calendarData[key] || { admissions:[], discharges:[] };
     if (!bd) return { admissions: dedupList(cd.admissions), discharges: dedupList(cd.discharges), isManual: false };
@@ -666,11 +683,20 @@ export default function MonthlySchedule() {
     // frozen 데이터: 전체 목록을 직접 저장 (_slotKey, _consultationId 메타 제거)
     const cleanList = (list) => (list || []).map(({_slotKey, _consultationId, ...rest}) => rest);
     if (bd?.frozen) {
-      await set(ref(db, `monthlyBoards/${toYM(year, month)}/${editModal}`), {
-        frozen: true,
-        admissions: cleanList(editAdm),
-        discharges: cleanList(editDis),
-      });
+      const savedAdmNorms = new Set(editAdm.map(a => normName(a.name)));
+      const savedDisNorms = new Set(editDis.map(d => normName(d.name)));
+      // calendarData에 있지만 편집 목록에서 제거된 항목 → hidden 처리 (되살아남 방지)
+      const cd = calendarData[editModal] || { admissions:[], discharges:[] };
+      const hiddenAdmissions = (cd.admissions || [])
+        .filter(a => a.name && !savedAdmNorms.has(normName(a.name)))
+        .map(a => normName(a.name));
+      const hiddenDischarges = (cd.discharges || [])
+        .filter(d => d.name && !savedDisNorms.has(normName(d.name)))
+        .map(d => normName(d.name));
+      const payload = { frozen: true, admissions: cleanList(editAdm), discharges: cleanList(editDis) };
+      if (hiddenAdmissions.length) payload.hiddenAdmissions = hiddenAdmissions;
+      if (hiddenDischarges.length) payload.hiddenDischarges = hiddenDischarges;
+      await set(ref(db, `monthlyBoards/${toYM(year, month)}/${editModal}`), payload);
       setEditSaving(false);
       setEditModal(null);
       return;
@@ -693,11 +719,27 @@ export default function MonthlySchedule() {
   // 인라인 삭제
   async function deleteEntry(dKey, type, entryId) {
     const bd = boardData[dKey];
-    // frozen 데이터: 직접 필터
+    // frozen 데이터: 직접 필터 + calendarData 항목은 hidden 처리
     if (bd?.frozen) {
+      const all = type === "admission" ? [...(bd.admissions || [])] : [...(bd.discharges || [])];
+      const deleted = all.find(e => (e.id || "") === entryId);
       const newBd = { frozen: true, admissions: [...(bd.admissions || [])], discharges: [...(bd.discharges || [])] };
+      if (bd.hiddenAdmissions?.length) newBd.hiddenAdmissions = [...bd.hiddenAdmissions];
+      if (bd.hiddenDischarges?.length) newBd.hiddenDischarges = [...bd.hiddenDischarges];
       if (type === "admission") newBd.admissions = newBd.admissions.filter(a => a.id !== entryId);
       else newBd.discharges = newBd.discharges.filter(d => d.id !== entryId);
+      // calendarData에 있는 항목이면 hidden 목록에 추가 (삭제 후 되살아남 방지)
+      if (deleted?.name) {
+        const dn = normName(deleted.name);
+        const cd = calendarData[dKey] || { admissions:[], discharges:[] };
+        const inCd = type === "admission"
+          ? (cd.admissions || []).some(a => normName(a.name) === dn)
+          : (cd.discharges || []).some(d => normName(d.name) === dn);
+        if (inCd) {
+          const hKey = type === "admission" ? "hiddenAdmissions" : "hiddenDischarges";
+          newBd[hKey] = [...new Set([...(newBd[hKey] || []), dn])];
+        }
+      }
       await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), newBd);
       return;
     }

@@ -721,11 +721,15 @@ async function main() {
     const newDis = events.discharges.filter(d => !exDisNames.has((d.name||'').trim().toLowerCase()));
 
     if (newAdm.length || newDis.length) {
-      await db.ref(`monthlyBoards/${ym}/${dateKey}`).set({
+      const payload = {
         frozen: true,
         admissions: [...exAdm, ...newAdm],
         discharges: [...exDis, ...newDis],
-      });
+      };
+      // 기존 숨김 목록 보존 (사용자가 수동으로 삭제한 항목이 되살아나지 않도록)
+      if (existing.hiddenAdmissions?.length) payload.hiddenAdmissions = existing.hiddenAdmissions;
+      if (existing.hiddenDischarges?.length) payload.hiddenDischarges = existing.hiddenDischarges;
+      await db.ref(`monthlyBoards/${ym}/${dateKey}`).set(payload);
       boardUpdateCount++;
       console.log(`  📋 ${dateKey}: 입원 +${newAdm.length} (총 ${exAdm.length + newAdm.length}), 퇴원 +${newDis.length} (총 ${exDis.length + newDis.length})`);
     }
