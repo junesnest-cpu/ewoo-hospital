@@ -53,9 +53,9 @@ async function parseMessageWithClaude(text) {
     "slotKey": "305-2 형식 또는 null",
     "name": "환자명 또는 null (※ '님' 제외한 이름만, 예: '천유영님' → '천유영')",
     "dischargeDate": "M/D 형식 퇴원예정일 또는 null",
-    "dischargeTime": "퇴원시간 또는 null — 아침 후 | 점심 후 | 저녁 후 중 하나 (이 3개에 해당하지 않으면 원문 그대로, 예: '14시', '5pm')",
+    "dischargeTime": "퇴원시간 — 반드시 아래 정규화 규칙에 따라 '아침 후' | '점심 후' | '저녁 후' 중 하나로 변환. 해당 없으면 원문 그대로 (예: '14시'). 시간 없으면 null",
     "admitDate": "M/D 형식 입원예정일 또는 null",
-    "admitTime": "입원시간 또는 null — 아침 후 | 점심 | 저녁 중 하나 (이 3개에 해당하지 않으면 원문 그대로)",
+    "admitTime": "입원시간 — 반드시 아래 정규화 규칙에 따라 '아침 후' | '점심 후' | '저녁 후' 중 하나로 변환. 해당 없으면 원문 그대로. 시간 없으면 null",
     "transferToRoom": "전실할 병실번호 또는 null (예: \"301\" 또는 병상 지정 시 \"301-2\")",
     "treatments": [],
     "weeklySchedule": "반복 요일 치료: 요일은 쉼표 없이 붙여쓰기 (예: 고주파 주3회, 자닥신 월목, 이스카도 목토월)",
@@ -81,13 +81,16 @@ specificDates 형식:
 - "오늘 퇴원" → dischargeDate: "${month}/${day}"
 - "내일 퇴원" → dischargeDate: 오늘 기준 다음날 M/D 형식
 - "다음주 입원" → admitDate: 오늘(${month}/${day})로부터 7일 후 M/D 형식 계산
-- "아침후 퇴원" / "아침 후 퇴원" → dischargeTime: "아침 후"
-- "점심후 퇴원" / "점심 후 퇴원" → dischargeTime: "점심 후"
-- "저녁후 퇴원" / "저녁 후 퇴원" → dischargeTime: "저녁 후"
-- "오전 퇴원" → dischargeTime: "오전"
-- "점심 재입원" / "점심식사 재입원" → admitTime: "점심"
-- "저녁 재입원" / "저녁식사 재입원" / "저녁먹으러 재입원" → admitTime: "저녁"
-- "오전입원" / "오전 입원" → admitTime: "오전"
+- 시간 정규화 규칙 (모든 변형을 3가지로 통일):
+  "아침 후" ← 아침후/아침 후/아침식사 후/오전/오전중/AM/아침밥 후/아침먹고/조식 후
+  "점심 후" ← 점심후/점심 후/점심식사 후/오후/낮/PM/점심밥 후/점심먹고/중식 후/점심때
+  "저녁 후" ← 저녁후/저녁 후/저녁식사 후/저녁때/저녁먹고/석식 후/저녁밥 후/야간/밤
+- "아침후 퇴원" / "오전 퇴원" → dischargeTime: "아침 후"
+- "점심후 퇴원" / "오후 퇴원" / "낮에 퇴원" → dischargeTime: "점심 후"
+- "저녁후 퇴원" / "저녁때 퇴원" → dischargeTime: "저녁 후"
+- "점심 재입원" / "점심식사 재입원" / "오후 입원" → admitTime: "점심 후"
+- "저녁 재입원" / "저녁식사 재입원" / "저녁먹으러 재입원" → admitTime: "저녁 후"
+- "오전입원" / "오전 입원" / "아침 입원" → admitTime: "아침 후"
 - "퇴원 후 재입원" → 퇴원(discharge_update) + 재입원(admit_plan) 2개 항목
 - "전실/이동/자리이동/병실이동" → action: "transfer"
 - "305-2 류미경 301호로 전실" → action:"transfer", slotKey:"305-2", name:"류미경", transferToRoom:"301", admitDate: null (오늘)
