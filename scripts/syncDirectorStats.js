@@ -266,7 +266,36 @@ async function syncYear(pool, year, updates) {
     } catch (e) { console.log(`    ${m}월 일별매출 실패: ${e.message}`); }
   }
 
-  // 6. 치료항목
+  // 6. 신규입원 (첫 입원 환자 — 일별/월별)
+  console.log('  [신규입원]');
+  try {
+    const newAdmR = await pool.request().query(`
+      SELECT p.INDAT AS dt, COUNT(*) AS cnt
+      FROM SILVER_PATIENT_INFO p
+      WHERE p.INDAT >= '${yearStart}' AND p.INDAT < '${yearEnd}'
+        AND p.INSUCLS NOT IN ('50','100')
+        AND NOT EXISTS (
+          SELECT 1 FROM SILVER_PATIENT_INFO p2
+          WHERE p2.CHARTNO = p.CHARTNO
+            AND p2.INDAT < p.INDAT
+            AND p2.INDAT IS NOT NULL AND p2.INDAT <> ''
+        )
+      GROUP BY p.INDAT ORDER BY p.INDAT
+    `);
+    const byMonth = {};
+    for (const r of newAdmR.recordset) {
+      const ym = r.dt.slice(0, 6);
+      if (!byMonth[ym]) byMonth[ym] = {};
+      byMonth[ym][r.dt] = r.cnt;
+    }
+    for (const [ym, daily] of Object.entries(byMonth)) {
+      updates[`directorStats/${year}/newAdmissions/${ym}`] = daily;
+      const total = Object.values(daily).reduce((s, v) => s + v, 0);
+      console.log(`    ${ym}: ${total}건 (${Object.keys(daily).length}일)`);
+    }
+  } catch(e) { console.log(`    신규입원 실패: ${e.message}`); }
+
+  // 7. 치료항목
   console.log('  [치료항목]');
   try {
     const treatResult = await pool.request().query(`
@@ -470,6 +499,31 @@ async function syncMonth(pool, year, month, updates) {
       console.log(`  일별매출: ${Object.keys(dailyRev).length}일`);
     }
   } catch(e) { console.log(`  일별매출 실패: ${e.message}`); }
+
+  // 신규입원 (첫 입원 환자 — 해당 CHARTNO의 이전 입원 기록이 없는 환자)
+  try {
+    const newAdmR = await pool.request().query(`
+      SELECT p.INDAT AS dt, COUNT(*) AS cnt
+      FROM SILVER_PATIENT_INFO p
+      WHERE p.INDAT >= '${ymStart}' AND p.INDAT < '${nextYm}'
+        AND p.INSUCLS NOT IN ('50','100')
+        AND NOT EXISTS (
+          SELECT 1 FROM SILVER_PATIENT_INFO p2
+          WHERE p2.CHARTNO = p.CHARTNO
+            AND p2.INDAT < p.INDAT
+            AND p2.INDAT IS NOT NULL AND p2.INDAT <> ''
+        )
+      GROUP BY p.INDAT ORDER BY p.INDAT
+    `);
+    const dailyNewAdm = {};
+    let monthTotal = 0;
+    for (const r of newAdmR.recordset) {
+      dailyNewAdm[r.dt] = r.cnt;
+      monthTotal += r.cnt;
+    }
+    updates[`directorStats/${year}/newAdmissions/${ym}`] = dailyNewAdm;
+    console.log(`  신규입원: ${monthTotal}건 (${Object.keys(dailyNewAdm).length}일)`);
+  } catch(e) { console.log(`  신규입원 실패: ${e.message}`); }
 
   // 치료항목
   try {
