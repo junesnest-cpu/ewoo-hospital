@@ -452,6 +452,10 @@ export default function ConsultationPage() {
   // M/D 형식 → Date 변환 (슬롯 날짜 비교용)
   const parseMD = (str) => {
     if (!str || str === "미정") return null;
+    // YYYY-MM-DD 형식 (syncEMR이 설정하는 형식)
+    const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) { const d = new Date(parseInt(iso[1]), parseInt(iso[2])-1, parseInt(iso[3])); d.setHours(0,0,0,0); return d; }
+    // M/D 형식 (UI에서 설정하는 형식)
     const m = str.match(/(\d{1,2})\/(\d{1,2})/);
     if (!m) return null;
     const d = new Date(); d.setHours(0,0,0,0);

@@ -16,6 +16,10 @@ const WARD_ROOMS = [
 
 function parseMD(str, year, month) {
   if (!str || str === "미정") return null;
+  // YYYY-MM-DD 형식 (syncEMR이 설정하는 형식)
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3]));
+  // M/D 형식 (UI에서 설정하는 형식)
   const m = str.match(/(\d{1,2})\/(\d{1,2})/);
   if (!m) return null;
   return new Date(year, parseInt(m[1]) - 1, parseInt(m[2]));
@@ -76,6 +80,7 @@ export default function MonthlySchedule() {
 
   // 편집된 월간 데이터 (Firebase monthlyBoards/{YYYY-MM})
   const [boardData, setBoardData] = useState({});
+  const [boardDataLoaded, setBoardDataLoaded] = useState(false);
 
   // 신환 플래그 (공유 저장소: 일일현황판과 동기화)
   const [newPatientFlags, setNewPatientFlags] = useState({});
@@ -190,8 +195,10 @@ export default function MonthlySchedule() {
 
   // 월간 보드 데이터 로드
   useEffect(() => {
+    setBoardDataLoaded(false);
     const u = onValue(ref(db, `monthlyBoards/${toYM(year, month)}`), snap => {
       setBoardData(snap.val() || {});
+      setBoardDataLoaded(true);
     });
     return () => u();
   }, [year, month]);
@@ -337,6 +344,8 @@ export default function MonthlySchedule() {
   // (과거 날짜는 syncEMR이 이벤트 기반으로 기록하므로 프론트엔드에서 건드리지 않음)
   useEffect(() => {
     if (!Object.keys(slots).length) return;
+    // boardData가 Firebase에서 로드되기 전에는 freeze하지 않음 (syncEMR 데이터 덮어쓰기 방지)
+    if (!boardDataLoaded) return;
     const today = new Date(); today.setHours(0,0,0,0);
     const ym = toYM(year, month);
 
@@ -370,11 +379,14 @@ export default function MonthlySchedule() {
       const newAdm = (live.admissions || []).filter(a => a.name && !existAdmNorms.has(normName(a.name)));
       const newDis = (live.discharges || []).filter(d => d.name && !existDisNorms.has(normName(d.name)));
       if (newAdm.length || newDis.length) {
-        set(ref(db, `monthlyBoards/${ym}/${key}`), {
+        const updated = {
           frozen: true,
           admissions: [...(bd.admissions || []), ...newAdm],
           discharges: [...(bd.discharges || []), ...newDis],
-        });
+        };
+        if (bd.hiddenAdmissions?.length) updated.hiddenAdmissions = bd.hiddenAdmissions;
+        if (bd.hiddenDischarges?.length) updated.hiddenDischarges = bd.hiddenDischarges;
+        set(ref(db, `monthlyBoards/${ym}/${key}`), updated);
       }
     } else {
       // 최초 frozen 생성 (당일에 처음 monthly 방문 시)
@@ -384,7 +396,7 @@ export default function MonthlySchedule() {
       set(ref(db, `monthlyBoards/${ym}/${key}`), { frozen: true, admissions: live.admissions, discharges: live.discharges });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calendarData, boardData, year, month, slots]);
+  }, [calendarData, boardData, boardDataLoaded, year, month, slots]);
 
   // 월 변경 시 스냅샷 추적 초기화
   useEffect(() => { frozenKeysRef.current = new Set(); }, [year, month]);

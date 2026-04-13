@@ -28,6 +28,10 @@ function getWeekKey(dateStr) {
 function getDayIdx(dateStr) { const dow = new Date(dateStr).getDay(); return dow===0?6:dow-1; }
 function parseMD(str, year) {
   if (!str||str==="미정") return null;
+  // YYYY-MM-DD 형식 (syncEMR이 설정하는 형식)
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  // M/D 형식 (UI에서 설정하는 형식)
   const m = str.match(/(\d{1,2})\/(\d{1,2})/);
   if (!m) return null;
   return `${year}-${String(parseInt(m[1])).padStart(2,"0")}-${String(parseInt(m[2])).padStart(2,"0")}`;
@@ -235,7 +239,8 @@ export default function DailyBoard() {
       const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       if (!cIsNew) return;
       if (c.status === "취소" || c.status === "입원완료") return;
-      if (c.admitDate !== date) return;
+      const cAdmitDate = parseMD(c.admitDate, dateYear);
+      if (cAdmitDate !== date) return;
       const nc = normName(c.name);
       const actualRoom = nameToRoom[nc] || c.roomTypes?.join("/") || "";
       const noteFields = [c.diagnosis, c.hospital].filter(Boolean);
