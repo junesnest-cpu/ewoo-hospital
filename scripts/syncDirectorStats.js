@@ -222,6 +222,17 @@ async function syncYear(pool, year, updates) {
         daily[r.dt] = { occupied: r.occupied, total: TOTAL_BEDS, rate };
         totalOcc += r.occupied;
       }
+      // 현재 월이면 미래 날짜는 monthlyCensus 예상치로 채움
+      if (isCurrentYear && m === today.getMonth() + 1) {
+        const censusCounts = await readCensusFromFirebase(year, m);
+        let futureCount = 0;
+        for (const [dt, occupied] of Object.entries(censusCounts)) {
+          if (daily[dt]) continue;
+          daily[dt] = { occupied, total: TOTAL_BEDS, rate: Math.round((occupied / TOTAL_BEDS) * 1000) / 10, forecast: true };
+          futureCount++;
+        }
+        if (futureCount > 0) console.log(`    ${m}월 예상: ${futureCount}일 (monthlyCensus)`);
+      }
       updates[`directorStats/${year}/occupancy/${ym}`] = daily;
       const avg = result.recordset.length > 0 ? Math.round((totalOcc / result.recordset.length / TOTAL_BEDS) * 1000) / 10 : 0;
       console.log(`    ${m}월: 평균 ${avg}% (${result.recordset.length}일)`);
