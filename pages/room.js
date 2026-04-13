@@ -220,8 +220,8 @@ export default function RoomPage() {
         const dischargeD = parseDateStr(r.discharge);
         // 퇴원 예정일이 어제 이전인 예약 → 자동 삭제
         if (dischargeD && dateOnly(dischargeD) < today) { changed = true; return; }
-        // 입원일 도달 + current 빈 자리 → 자동 입원 전환
-        if (!promoted && admitD && dateOnly(admitD) <= today && !newSlots[slotKey].current?.name) {
+        // 입원일이 과거 + current 빈 자리 → 자동 입원 전환 (당일 예약은 예약 상태 유지)
+        if (!promoted && admitD && dateOnly(admitD) < today && !newSlots[slotKey].current?.name) {
           newSlots[slotKey].current = { ...r };
           promoted = true;
           changed = true;
