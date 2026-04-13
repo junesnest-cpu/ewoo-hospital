@@ -401,111 +401,6 @@ export default function MonthlySchedule() {
   // 월 변경 시 스냅샷 추적 초기화
   useEffect(() => { frozenKeysRef.current = new Set(); }, [year, month]);
 
-  // 날짜별 재원 환자 수: 오늘 실제 재원 수 기준으로 입/퇴원 이벤트 누적
-  const censusData = useMemo(() => {
-    const counts = {};
-    const total = daysInMonth(year, month);
-    const now = new Date();
-    const nowYear = now.getFullYear();
-    const nowMonth = now.getMonth() + 1;
-    const nowDay = now.getDate();
-
-    // 이름 기준 중복 제거 (전실 등으로 동일 환자가 여러 슬롯에 있을 경우 대비)
-    const dedupByName = (list) => {
-      const seen = new Set();
-      return (list || []).filter(a => {
-        const n = normName(a.name);
-        if (!n || seen.has(n)) return false;
-        seen.add(n);
-        return true;
-      });
-    };
-
-    // 날짜별 입/퇴원 건수 계산 (getDisplayData와 동일 로직으로 일관성 유지)
-    const getAdmDis = (d) => {
-      const k = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-      const dd = getDisplayData(k);
-      const allAdm = dedupByName(dd.admissions || []);
-      const allDis = dedupByName(dd.discharges || []);
-      return {
-        adm: allAdm.length,
-        admActual: allAdm.filter(a => !a.isReserved).length,
-        dis: allDis.length,
-      };
-    };
-
-    if (year === nowYear && month === nowMonth) {
-      // 현재 달: 오늘 실제 재원 수를 기준점으로 (index.js와 동일 병상 범위 + 동일 로직)
-      const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      let todayCensus = 0;
-      WARD_ROOMS.forEach(({ id, cap }) => {
-        for (let i = 1; i <= cap; i++) {
-          const s = slots[`${id}-${i}`];
-          if (!s?.current?.name) continue;
-          const dis = parseDateStr(s.current.discharge, now.getFullYear());
-          if (dis) {
-            const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
-            if (disD <= todayDateOnly) continue;
-          }
-          todayCensus++;
-        }
-      });
-      const todayKey = `${year}-${String(month).padStart(2,"0")}-${String(nowDay).padStart(2,"0")}`;
-      counts[todayKey] = todayCensus;
-      // 오늘 이후 → 앞으로 누적
-      let cur = todayCensus;
-      for (let d = nowDay + 1; d <= total; d++) {
-        const { adm, dis } = getAdmDis(d);
-        cur = Math.max(0, cur + adm - dis);
-        counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
-      }
-      // 오늘 이전 → 역방향 누적 (census[d] = census[d+1] - admActual[d+1] + dis[d+1])
-      cur = todayCensus;
-      for (let d = nowDay - 1; d >= 1; d--) {
-        const { admActual, dis } = getAdmDis(d + 1);
-        cur = Math.max(0, cur - admActual + dis);
-        counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
-      }
-    } else {
-      // 다른 달: 슬롯에서 해당 월 시작 전에 입원 중인 환자 수(이월 재원)를 계산해 시작값으로 사용
-      const monthFirstDay = new Date(year, month - 1, 1);
-      const seenCarry = new Set();
-      let carryOver = 0;
-      WARD_ROOMS.forEach(({ id, cap }) => {
-        for (let i = 1; i <= cap; i++) {
-          const slot = slots[`${id}-${i}`];
-          if (!slot) continue;
-          const checkPatient = (p) => {
-            if (!p?.name) return;
-            const n = normName(p.name);
-            if (!n || seenCarry.has(n)) return;
-            const admit = parseDateStr(p.admitDate, year);
-            if (!admit) return;
-            const admitDay = new Date(admit.getFullYear(), admit.getMonth(), admit.getDate());
-            if (admitDay >= monthFirstDay) return;
-            const discharge = parseDateStr(p.discharge, year);
-            if (discharge) {
-              const disDay = new Date(discharge.getFullYear(), discharge.getMonth(), discharge.getDate());
-              if (disDay < monthFirstDay) return;
-            }
-            seenCarry.add(n);
-            carryOver++;
-          };
-          checkPatient(slot.current);
-          (slot.reservations || []).forEach(r => checkPatient(r));
-        }
-      });
-      // 이월 재원 수를 시작값으로 순방향 누적
-      let cur = carryOver;
-      for (let d = 1; d <= total; d++) {
-        const { adm, dis } = getAdmDis(d);
-        cur = Math.max(0, cur + adm - dis);
-        counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
-      }
-    }
-    return counts;
-  }, [slots, calendarData, boardData, year, month]);
-
   // 이름 기준 중복 제거 (boardData에 이미 저장된 중복도 처리)
   function dedupList(list) {
     const seen = new Set();
@@ -601,6 +496,105 @@ export default function MonthlySchedule() {
     setEditDis((merged.discharges || []).map(d => ({ ...d, id: d.id || uid() })));
     setEditModal(key);
   }
+
+  // 날짜별 재원 환자 수: 오늘 실제 재원 수 기준으로 입/퇴원 이벤트 누적
+  const censusData = useMemo(() => {
+    const counts = {};
+    const total = daysInMonth(year, month);
+    const now = new Date();
+    const nowYear = now.getFullYear();
+    const nowMonth = now.getMonth() + 1;
+    const nowDay = now.getDate();
+
+    const dedupByName = (list) => {
+      const seen = new Set();
+      return (list || []).filter(a => {
+        const n = normName(a.name);
+        if (!n || seen.has(n)) return false;
+        seen.add(n);
+        return true;
+      });
+    };
+
+    const getAdmDis = (d) => {
+      const k = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      const dd = getDisplayData(k);
+      const allAdm = dedupByName(dd.admissions || []);
+      const allDis = dedupByName(dd.discharges || []);
+      return {
+        adm: allAdm.length,
+        admActual: allAdm.filter(a => !a.isReserved).length,
+        dis: allDis.length,
+      };
+    };
+
+    if (year === nowYear && month === nowMonth) {
+      const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      let todayCensus = 0;
+      WARD_ROOMS.forEach(({ id, cap }) => {
+        for (let i = 1; i <= cap; i++) {
+          const s = slots[`${id}-${i}`];
+          if (!s?.current?.name) continue;
+          const dis = parseDateStr(s.current.discharge, now.getFullYear());
+          if (dis) {
+            const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
+            if (disD <= todayDateOnly) continue;
+          }
+          todayCensus++;
+        }
+      });
+      const todayKey = `${year}-${String(month).padStart(2,"0")}-${String(nowDay).padStart(2,"0")}`;
+      counts[todayKey] = todayCensus;
+      let cur = todayCensus;
+      for (let d = nowDay + 1; d <= total; d++) {
+        const { adm, dis } = getAdmDis(d);
+        cur = Math.max(0, cur + adm - dis);
+        counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
+      }
+      cur = todayCensus;
+      for (let d = nowDay - 1; d >= 1; d--) {
+        const { admActual, dis } = getAdmDis(d + 1);
+        cur = Math.max(0, cur - admActual + dis);
+        counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
+      }
+    } else {
+      const monthFirstDay = new Date(year, month - 1, 1);
+      const seenCarry = new Set();
+      let carryOver = 0;
+      WARD_ROOMS.forEach(({ id, cap }) => {
+        for (let i = 1; i <= cap; i++) {
+          const slot = slots[`${id}-${i}`];
+          if (!slot) continue;
+          const checkPatient = (p) => {
+            if (!p?.name) return;
+            const n = normName(p.name);
+            if (!n || seenCarry.has(n)) return;
+            const admit = parseDateStr(p.admitDate, year);
+            if (!admit) return;
+            const admitDay = new Date(admit.getFullYear(), admit.getMonth(), admit.getDate());
+            if (admitDay >= monthFirstDay) return;
+            const discharge = parseDateStr(p.discharge, year);
+            if (discharge) {
+              const disDay = new Date(discharge.getFullYear(), discharge.getMonth(), discharge.getDate());
+              if (disDay < monthFirstDay) return;
+            }
+            seenCarry.add(n);
+            carryOver++;
+          };
+          checkPatient(slot.current);
+          (slot.reservations || []).forEach(r => checkPatient(r));
+        }
+      });
+      let cur = carryOver;
+      for (let d = 1; d <= total; d++) {
+        const { adm, dis } = getAdmDis(d);
+        cur = Math.max(0, cur + adm - dis);
+        counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
+      }
+    }
+    return counts;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slots, calendarData, boardData, newPatientNorms, year, month]);
 
   // 신환 플래그 동기화: 편집된 입원 목록의 isNew 변경을 공유 저장소에 반영
   async function syncNewPatientFlags(admList, dateKey) {
