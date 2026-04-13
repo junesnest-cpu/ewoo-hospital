@@ -497,7 +497,9 @@ export default function MonthlySchedule() {
     setEditModal(key);
   }
 
-  // 날짜별 재원 환자 수: 오늘 실제 재원 수 기준으로 입/퇴원 이벤트 누적
+  // 날짜별 재원 환자 수 (하루 종료 시점 예상 인원)
+  // 오늘 기준점: current 환자 - 오늘 퇴원 예정 + 오늘 입원 예약(미도착)
+  // 미래/과거: 기준점에서 입퇴원 이벤트 누적
   const censusData = useMemo(() => {
     const counts = {};
     const total = daysInMonth(year, month);
@@ -521,44 +523,76 @@ export default function MonthlySchedule() {
       const dd = getDisplayData(k);
       const allAdm = dedupByName(dd.admissions || []);
       const allDis = dedupByName(dd.discharges || []);
-      return {
-        adm: allAdm.length,
-        admActual: allAdm.filter(a => !a.isReserved).length,
-        dis: allDis.length,
-      };
+      return { adm: allAdm.length, dis: allDis.length };
     };
 
     if (year === nowYear && month === nowMonth) {
-      const todayDateOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const todayDateOnly = new Date(nowYear, nowMonth - 1, nowDay);
       let todayCensus = 0;
+      const countedNames = new Set();
+
       WARD_ROOMS.forEach(({ id, cap }) => {
         for (let i = 1; i <= cap; i++) {
           const s = slots[`${id}-${i}`];
-          if (!s?.current?.name) continue;
-          const dis = parseDateStr(s.current.discharge, now.getFullYear());
-          if (dis) {
-            const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
-            // 퇴원일이 오늘 이전(과거)인 경우만 제외 — 오늘 퇴원 예정자는 아직 재원 중
-            if (disD < todayDateOnly) continue;
+          if (!s) continue;
+
+          // 1) current 환자 카운트
+          if (s.current?.name) {
+            const n = normName(s.current.name);
+            if (!countedNames.has(n)) {
+              const dis = parseDateStr(s.current.discharge, nowYear);
+              if (dis) {
+                const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
+                if (disD < todayDateOnly) {
+                  // 과거 퇴원 (유령 데이터) → 제외
+                  continue;
+                }
+                if (disD.getTime() === todayDateOnly.getTime()) {
+                  // 오늘 퇴원 예정 → 하루 끝에는 없을 사람, 카운트 안 함
+                  countedNames.add(n);
+                  continue;
+                }
+              }
+              // 퇴원일 없거나 미래 퇴원 → 재원 중
+              countedNames.add(n);
+              todayCensus++;
+            }
           }
-          todayCensus++;
+
+          // 2) 오늘 입원 예약인데 아직 current에 없는 환자 (미도착)
+          (s.reservations || []).forEach(r => {
+            if (!r?.name) return;
+            const n = normName(r.name);
+            if (countedNames.has(n)) return;
+            const admitD = parseDateStr(r.admitDate, nowYear);
+            if (!admitD) return;
+            const admitDOnly = new Date(admitD.getFullYear(), admitD.getMonth(), admitD.getDate());
+            if (admitDOnly.getTime() !== todayDateOnly.getTime()) return;
+            countedNames.add(n);
+            todayCensus++;
+          });
         }
       });
+
       const todayKey = `${year}-${String(month).padStart(2,"0")}-${String(nowDay).padStart(2,"0")}`;
       counts[todayKey] = todayCensus;
+
+      // 오늘 이후 → 순방향 누적
       let cur = todayCensus;
       for (let d = nowDay + 1; d <= total; d++) {
         const { adm, dis } = getAdmDis(d);
         cur = Math.max(0, cur + adm - dis);
         counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
       }
+      // 오늘 이전 → 역방향 누적
       cur = todayCensus;
       for (let d = nowDay - 1; d >= 1; d--) {
-        const { admActual, dis } = getAdmDis(d + 1);
-        cur = Math.max(0, cur - admActual + dis);
+        const { adm, dis } = getAdmDis(d + 1);
+        cur = Math.max(0, cur - adm + dis);
         counts[`${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`] = cur;
       }
     } else {
+      // 다른 달: 이월 재원 수 계산 후 순방향 누적
       const monthFirstDay = new Date(year, month - 1, 1);
       const seenCarry = new Set();
       let carryOver = 0;
