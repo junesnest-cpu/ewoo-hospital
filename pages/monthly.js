@@ -631,6 +631,18 @@ export default function MonthlySchedule() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slots, calendarData, boardData, newPatientNorms, year, month]);
 
+  // censusData를 Firebase에 저장 (경영현황 페이지에서 동일한 수치 사용)
+  useEffect(() => {
+    if (!Object.keys(censusData).length) return;
+    const ym = toYM(year, month);
+    const payload = {};
+    Object.entries(censusData).forEach(([dateKey, occupied]) => {
+      const dt = dateKey.replace(/-/g, '');
+      payload[dt] = occupied;
+    });
+    set(ref(db, `monthlyCensus/${ym}`), payload).catch(() => {});
+  }, [censusData, year, month]);
+
   // 신환 플래그 동기화: 편집된 입원 목록의 isNew 변경을 공유 저장소에 반영
   async function syncNewPatientFlags(admList, dateKey) {
     const updates = {};
