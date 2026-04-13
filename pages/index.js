@@ -119,12 +119,12 @@ function getSlotOccupant(slot, viewDate) {
 
 function hasUpcomingReservation(slot) {
   if (!slot?.reservations?.length) return false;
-  return slot.reservations.some(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) > todayDate(); });
+  return slot.reservations.some(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) >= todayDate(); });
 }
 
 function countUpcomingReservations(slot) {
   if (!slot?.reservations?.length) return 0;
-  return slot.reservations.filter(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) > todayDate(); }).length;
+  return slot.reservations.filter(r => { const d = parseDateStr(r.admitDate); return d && dateOnly(d) >= todayDate(); }).length;
 }
 
 const INIT_SLOTS = {
@@ -263,10 +263,9 @@ export default function HospitalWardManager() {
         const dischargeD = parseDateStr(r.discharge);
         // 퇴원 예정일이 어제 이전인 예약 → 자동 삭제
         if (dischargeD && dateOnly(dischargeD) < today) { changed = true; return; }
-        // 입원일 도달 + current 빈 자리 → 자동 입원 전환
+        // 입원일 도달 + current 빈 자리 → 자동 입원 전환 (admitDate 보존)
         if (!promoted && admitD && dateOnly(admitD) <= today && !newSlots[slotKey].current?.name) {
-          const { admitDate, ...rest } = r;
-          newSlots[slotKey].current = rest;
+          newSlots[slotKey].current = { ...r };
           promoted = true;
           changed = true;
           return;

@@ -628,10 +628,37 @@ async function main() {
 
   // 퇴원 감지: Firebase에 있지만 EMR에 없는 환자
   const dischargedPatients = []; // { name, room, admitDate, ... }
+  const todayForAdmit = new Date(); todayForAdmit.setHours(0, 0, 0, 0);
   for (const [slotKey, slot] of Object.entries(fbSlots)) {
     if (!slot?.current?.name) continue;
     if (emrBedMap.has(slotKey)) continue;
     const cur = slot.current;
+
+    // 오늘 이후 입원 예정인 환자는 퇴원 처리하지 않음 (예약→current 자동 승격된 환자 보호)
+    // chartNo가 없으면 EMR 미등록 상태 = 아직 물리적 입원 전
+    const admitStr = cur.admitDate || '';
+    let admitDate = null;
+    const isoM = admitStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoM) admitDate = new Date(parseInt(isoM[1]), parseInt(isoM[2])-1, parseInt(isoM[3]));
+    const mdM = !isoM && admitStr.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (mdM) admitDate = new Date(todayForAdmit.getFullYear(), parseInt(mdM[1])-1, parseInt(mdM[2]));
+    if (admitDate) admitDate.setHours(0, 0, 0, 0);
+
+    if (admitDate && admitDate >= todayForAdmit && !cur.chartNo) {
+      // 오늘/미래 입원 예정 + EMR 미등록 → current를 reservation으로 복원
+      const restoredRes = { name: cur.name, admitDate: cur.admitDate };
+      if (cur.discharge) restoredRes.discharge = cur.discharge;
+      if (cur.note) restoredRes.note = cur.note;
+      if (cur.admitTime) restoredRes.admitTime = cur.admitTime;
+      if (cur.consultationId) restoredRes.consultationId = cur.consultationId;
+      if (cur.patientId) restoredRes.patientId = cur.patientId;
+      const existingRes = slot.reservations || [];
+      slotUpdates[`slots/${slotKey}/current`] = null;
+      slotUpdates[`slots/${slotKey}/reservations`] = [...existingRes, restoredRes];
+      console.log(`  🔄 예약 복원: ${slotKey} (${cur.name}) — EMR 미등록, 입원 예정 ${admitStr}`);
+      continue;
+    }
+
     dischargedPatients.push({
       name: cur.name, room: slotKey.split('-')[0],
       admitDate: cur.admitDate || '', discharge: cur.discharge || '',
