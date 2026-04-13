@@ -91,6 +91,19 @@ specificDates 형식:
 - "점심 재입원" / "점심식사 재입원" / "오후 입원" → admitTime: "점심 후"
 - "저녁 재입원" / "저녁식사 재입원" / "저녁먹으러 재입원" → admitTime: "저녁 후"
 - "오전입원" / "오전 입원" / "아침 입원" → admitTime: "아침 후"
+- ★ 퇴원+재입원이 같은 메시지에 있으면 반드시 2개 항목으로 분리하고, 각각의 시간을 독립적으로 기록:
+  "아침후 퇴원 저녁 재입원" → [
+    { action:"discharge_update", dischargeTime:"아침 후", dischargeDate:"${month}/${day}" },
+    { action:"admit_plan", admitTime:"저녁 후", admitDate:"${month}/${day}" }
+  ]
+  "15일 점심후 퇴원 20일 오전 재입원" → [
+    { action:"discharge_update", dischargeTime:"점심 후", dischargeDate:"${month}/15" },
+    { action:"admit_plan", admitTime:"아침 후", admitDate:"${month}/20" }
+  ]
+  "퇴원 후 재입원" (시간 미기재) → [
+    { action:"discharge_update", dischargeDate:"${month}/${day}" },
+    { action:"admit_plan", admitDate:"${month}/${day}" }
+  ]
 - "퇴원 후 재입원" → 퇴원(discharge_update) + 재입원(admit_plan) 2개 항목
 - "전실/이동/자리이동/병실이동" → action: "transfer"
 - "305-2 류미경 301호로 전실" → action:"transfer", slotKey:"305-2", name:"류미경", transferToRoom:"301", admitDate: null (오늘)
