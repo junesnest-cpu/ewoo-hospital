@@ -421,40 +421,12 @@ export default function MonthlySchedule() {
       });
     };
 
-    // 날짜별 입/퇴원 건수 계산 (frozen 스냅샷 우선, 이름 중복 제거)
+    // 날짜별 입/퇴원 건수 계산 (getDisplayData와 동일 로직으로 일관성 유지)
     const getAdmDis = (d) => {
       const k = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-      const cd = calendarData[k] || { admissions:[], discharges:[] };
-      const bd = boardData[k];
-      // frozen 스냅샷이 있으면 그 데이터를 기준으로 사용
-      if (bd?.frozen) {
-        const allAdm = dedupByName(bd.admissions || []);
-        const allDis = dedupByName(bd.discharges || []);
-        return {
-          adm: allAdm.length,
-          admActual: allAdm.filter(a => !a.isReserved).length,
-          dis: allDis.length,
-        };
-      }
-      if (!bd) {
-        const allAdm = dedupByName(cd.admissions || []);
-        const allDis = dedupByName(cd.discharges || []);
-        return {
-          adm: allAdm.length,
-          admActual: allAdm.filter(a => !a.isReserved).length,
-          dis: allDis.length,
-        };
-      }
-      const hiddenAdm = new Set(bd.hiddenAdmissions || []);
-      const hiddenDis = new Set(bd.hiddenDischarges || []);
-      const baseAdm = (cd.admissions||[]).filter(a => !hiddenAdm.has(normName(a.name)));
-      const baseDis = (cd.discharges||[]).filter(d2 => !hiddenDis.has(normName(d2.name)));
-      const cdAdmNorms = new Set((cd.admissions||[]).map(a => normName(a.name)));
-      const cdDisNorms = new Set((cd.discharges||[]).map(d2 => normName(d2.name)));
-      const manualAdm = (bd.admissions||[]).filter(a => !cdAdmNorms.has(normName(a.name)));
-      const manualDis = (bd.discharges||[]).filter(d2 => !cdDisNorms.has(normName(d2.name)));
-      const allAdm = dedupByName([...baseAdm, ...manualAdm]);
-      const allDis = dedupByName([...baseDis, ...manualDis]);
+      const dd = getDisplayData(k);
+      const allAdm = dedupByName(dd.admissions || []);
+      const allDis = dedupByName(dd.discharges || []);
       return {
         adm: allAdm.length,
         admActual: allAdm.filter(a => !a.isReserved).length,
