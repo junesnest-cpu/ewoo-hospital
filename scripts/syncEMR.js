@@ -622,6 +622,26 @@ async function main() {
       if (!isPast) newCurrent.discharge = raw;
     }
 
+    // 예약에서 입원된 환자의 reservation 데이터 병합 후 정리
+    const resList = existing.reservations || [];
+    if (resList.length > 0) {
+      const emrNorm = (emrData.name || '').trim().toLowerCase();
+      const matchIdx = resList.findIndex(r => (r.name || '').trim().toLowerCase() === emrNorm);
+      if (matchIdx >= 0) {
+        const matched = resList[matchIdx];
+        // 예약에 있던 퇴원일·비고·시간 등을 current에 보존
+        if (matched.discharge && !newCurrent.discharge) newCurrent.discharge = matched.discharge;
+        if (matched.note && !newCurrent.note) newCurrent.note = matched.note;
+        if (matched.admitTime) newCurrent.admitTime = matched.admitTime;
+        if (matched.dischargeTime) newCurrent.dischargeTime = matched.dischargeTime;
+        if (matched.consultationId) newCurrent.consultationId = matched.consultationId;
+        // 해당 예약 제거
+        const updatedRes = resList.filter((_, i) => i !== matchIdx);
+        slotUpdates[`slots/${slotKey}/reservations`] = updatedRes;
+        console.log(`  📋 예약→입원 전환: ${slotKey} (${emrData.name}) — 예약 데이터 병합 후 제거`);
+      }
+    }
+
     slotUpdates[`slots/${slotKey}/current`] = newCurrent;
     setCount++;
   }
