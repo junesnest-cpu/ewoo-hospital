@@ -400,22 +400,41 @@ async function syncMonth(pool, year, month, updates) {
     console.log(`  입원일수: ${bdR.recordset[0]?.bedDays || 0}일`);
   } catch(e) {}
 
-  // 병상가동률 (monthly.js가 Firebase에 저장한 monthlyCensus 사용)
+  // 병상가동률: 과거~오늘은 EMR 직접 조회, 미래는 monthlyCensus 예상치
   try {
-    const censusCounts = await readCensusFromFirebase(year, month);
+    const lastDay = isCurrentMonth ? today.getDate() : daysInMonth;
+    const occResult = await pool.request().query(`
+      SELECT d.dt, COUNT(p.CHARTNO) AS occupied FROM (
+        SELECT '${ym}' + RIGHT('0' + CAST(n AS VARCHAR), 2) AS dt
+        FROM (SELECT TOP ${lastDay} ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n FROM sys.objects) nums
+      ) d LEFT JOIN SILVER_PATIENT_INFO p
+        ON p.INDAT <= d.dt AND (p.OUTDAT > d.dt OR p.OUTDAT IS NULL OR p.OUTDAT = '')
+        AND p.INSUCLS NOT IN ('50','100')
+      GROUP BY d.dt ORDER BY d.dt
+    `);
     const daily = {};
-    let totalOcc = 0, dayCount = 0;
-    for (const [dt, occupied] of Object.entries(censusCounts)) {
-      daily[dt] = { occupied, total: TOTAL_BEDS, rate: Math.round((occupied/TOTAL_BEDS)*1000)/10 };
-      totalOcc += occupied;
-      dayCount++;
+    let totalOcc = 0;
+    for (const r of occResult.recordset) {
+      const rate = Math.round((r.occupied / TOTAL_BEDS) * 1000) / 10;
+      daily[r.dt] = { occupied: r.occupied, total: TOTAL_BEDS, rate };
+      totalOcc += r.occupied;
     }
-    if (dayCount > 0) {
+    // 현재 월이면 미래 날짜는 monthlyCensus 예상치로 채움
+    if (isCurrentMonth) {
+      const censusCounts = await readCensusFromFirebase(year, month);
+      let futureCount = 0;
+      for (const [dt, occupied] of Object.entries(censusCounts)) {
+        if (daily[dt]) continue; // EMR 데이터가 있는 날짜는 건너뜀
+        daily[dt] = { occupied, total: TOTAL_BEDS, rate: Math.round((occupied / TOTAL_BEDS) * 1000) / 10, forecast: true };
+        futureCount++;
+      }
+      if (futureCount > 0) console.log(`  가동률(예상): ${futureCount}일 (monthlyCensus)`);
+    }
+    const emrDays = occResult.recordset.length;
+    if (Object.keys(daily).length > 0) {
       updates[`directorStats/${year}/occupancy/${ym}`] = daily;
-      const avg = Math.round((totalOcc/dayCount/TOTAL_BEDS)*1000)/10;
-      console.log(`  가동률: 평균 ${avg}% (monthlyCensus, ${dayCount}일)`);
-    } else {
-      console.log(`  가동률: monthlyCensus 데이터 없음 (월간예정표를 먼저 열어주세요)`);
+      const avg = emrDays > 0 ? Math.round((totalOcc / emrDays / TOTAL_BEDS) * 1000) / 10 : 0;
+      console.log(`  가동률(실적): 평균 ${avg}% (EMR, ${emrDays}일)`);
     }
   } catch(e) { console.log(`  가동률 실패: ${e.message}`); }
 
