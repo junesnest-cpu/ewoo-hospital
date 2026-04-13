@@ -538,7 +538,8 @@ export default function MonthlySchedule() {
           const dis = parseDateStr(s.current.discharge, now.getFullYear());
           if (dis) {
             const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
-            if (disD <= todayDateOnly) continue;
+            // 퇴원일이 오늘 이전(과거)인 경우만 제외 — 오늘 퇴원 예정자는 아직 재원 중
+            if (disD < todayDateOnly) continue;
           }
           todayCensus++;
         }
