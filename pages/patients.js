@@ -370,10 +370,11 @@ export default function PatientsPage() {
   // 날짜 파싱 + 일수 계산
   const parseAnyDate = (s) => {
     if (!s || s === "미정") return null;
+    // M/D 형식을 먼저 체크 (new Date("4/13")이 V8에서 2001년으로 해석되는 문제 방지)
+    const md = String(s).match(/^(\d{1,2})[\/\.](\d{1,2})$/);
+    if (md) { const d = new Date(new Date().getFullYear(), parseInt(md[1])-1, parseInt(md[2])); return isNaN(d.getTime()) ? null : d; }
     let d = new Date(s);
     if (!isNaN(d.getTime())) return d;
-    const md = String(s).match(/^(\d{1,2})[\/\.](\d{1,2})$/);
-    if (md) { d = new Date(new Date().getFullYear(), parseInt(md[1])-1, parseInt(md[2])); return isNaN(d.getTime()) ? null : d; }
     return null;
   };
   const daysBetween = (start, end) => {
