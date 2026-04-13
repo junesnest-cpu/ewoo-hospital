@@ -613,7 +613,14 @@ export default function RoomPage() {
             const sk=editingSlot.slotKey;
             const newSlots=JSON.parse(JSON.stringify(slots));
             if(editingSlot.mode==="current") newSlots[sk].current=null;
-            else newSlots[sk].reservations=newSlots[sk].reservations.filter((_,i)=>i!==editingSlot.resIndex);
+            else {
+              const delName = (editingSlot.data.name||'').trim().toLowerCase();
+              newSlots[sk].reservations=newSlots[sk].reservations.filter((r,i)=> {
+                if (i === editingSlot.resIndex) return false;
+                if (delName && (r.name||'').trim().toLowerCase() === delName) return false;
+                return true;
+              });
+            }
             await saveSlots(newSlots);
             await addLog({action:"삭제",slotKey:sk,name:editingSlot.data.name});
             // 예약 삭제 시 상담일지 연동

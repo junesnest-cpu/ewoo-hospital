@@ -769,7 +769,12 @@ export default function HospitalWardManager() {
     if (!window.confirm("예약을 취소하시겠습니까?")) return;
     const oldSlot = slots[slotKey] || { current: null, reservations: [] };
     const name = oldSlot.reservations?.[resIndex]?.name;
-    const reservations = (oldSlot.reservations || []).filter((_, i) => i !== resIndex);
+    const delName = (name||'').trim().toLowerCase();
+    const reservations = (oldSlot.reservations || []).filter((r, i) => {
+      if (i === resIndex) return false;
+      if (delName && (r.name||'').trim().toLowerCase() === delName) return false;
+      return true;
+    });
     await saveSlots({ ...slots, [slotKey]: { ...oldSlot, reservations } });
     await addLog({ type: "reserve", msg: `${slotKey} ${name} 예약 취소` });
     setEditingSlot(null);

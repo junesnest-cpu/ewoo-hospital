@@ -319,46 +319,41 @@ export default function ConsultationPage() {
   // 예약 등록: consultation → slots reservation
   const doRegisterReservation = async () => {
     if (!reserveSlot) { alert("병상을 선택해 주세요."); return; }
-    const c = reserveModal.consultation;
-    const existing = slots[reserveSlot] || { current: null, reservations: [] };
-    const reservations = [...(existing.reservations||[]), {
-      name: c.name,
-      admitDate: c.admitDate ? fmtDate(c.admitDate) : "",
-      discharge: c.dischargeDate ? fmtDate(c.dischargeDate) : "미정",
-      note: [c.diagnosis, c.hospital, c.memo].filter(Boolean).join(" / "),
+    const consult = reserveModal.consultation;
+    const admitDateFmt = consult.admitDate ? fmtDate(consult.admitDate) : "";
+
+    // 상담 상태 → 예약완료
+    await set(ref(db,`consultations/${reserveModal.id}`), {...consult, status:"예약완료", reservedSlot: reserveSlot});
+
+    // 슬롯에 예약 추가 (1회만, 중복 방지)
+    const slotSnap = await new Promise(res=>{ const u=onValue(ref(db,`slots/${reserveSlot}`),s=>{u();res(s.val());},{onlyOnce:true}); });
+    const slotData = slotSnap || { current:null, reservations:[] };
+    const existingRes = [...(slotData.reservations||[])];
+    // 중복 방지: 같은 이름의 예약이 이미 있으면 교체
+    const dupIdx = existingRes.findIndex(r => (r.name||'').trim().toLowerCase() === (consult.name||'').trim().toLowerCase());
+    const newRes = {
+      name: consult.name,
+      admitDate: admitDateFmt,
+      admitTime: consult.admitTime || "",
+      discharge: consult.dischargeDate ? fmtDate(consult.dischargeDate) : (consult.discharge || "미정"),
+      dischargeTime: consult.dischargeTime || "",
+      note: consult.diagnosis || "",
+      consultationId: reserveModal.id,
       scheduleAlert: false,
-      bedPosition: parseInt(reserveSlot.split("-")[1]),
-    }];
-    reservations.sort((a,b) => {
+    };
+    if (dupIdx >= 0) existingRes[dupIdx] = newRes;
+    else existingRes.push(newRes);
+    // 입원일 순 정렬
+    existingRes.sort((a,b) => {
       const pa = a.admitDate?.match(/(\d+)\/(\d+)/);
       const pb = b.admitDate?.match(/(\d+)\/(\d+)/);
       if (!pa) return 1; if (!pb) return -1;
       return (parseInt(pa[1])*31+parseInt(pa[2])) - (parseInt(pb[1])*31+parseInt(pb[2]));
     });
-    await set(ref(db,`slots/${reserveSlot}`), {...existing, reservations});
-    // 상담 상태 -> 예약완료 + slots에 예약 자동 등록
-    const consult = reserveModal.consultation;
-    await set(ref(db,`consultations/${reserveModal.id}`), {...consult, status:"예약완료", reservedSlot: reserveSlot});
-    // slots에도 예약 추가
-    const slotSnap = await new Promise(res=>{ const u=onValue(ref(db,`slots/${reserveSlot}`),s=>{u();res(s.val());},{onlyOnce:true}); });
-    const slotData = slotSnap || { current:null, reservations:[] };
-    const newReservations = [...(slotData.reservations||[])];
-    // 중복 방지: 같은 이름+날짜 예약이 없을 때만 추가
-    const dup = newReservations.find(r=>r.name===consult.name && r.admitDate===consult.admitDate);
-    if (!dup) {
-      newReservations.push({
-        name: consult.name,
-        admitDate: consult.admitDate ? fmtDate(consult.admitDate) : "",
-        admitTime: consult.admitTime || "",
-        discharge: consult.dischargeDate ? fmtDate(consult.dischargeDate) : (consult.discharge || "미정"),
-        dischargeTime: consult.dischargeTime || "",
-        note: consult.diagnosis || "",
-        consultationId: reserveModal.id,
-      });
-      await set(ref(db,`slots/${reserveSlot}`), {...slotData, reservations: newReservations});
-    }
+    await set(ref(db,`slots/${reserveSlot}`), {...slotData, reservations: existingRes});
+
     setReserveModal(null); setReserveSlot("");
-    alert(`${c.name}님 ${reserveSlot} 예약 등록 완료`);
+    alert(`${consult.name}님 ${reserveSlot} 예약 등록 완료`);
   };
 
   // 필터링된 목록
