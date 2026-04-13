@@ -505,7 +505,6 @@ export default function RoomPage() {
                       const resIdx=(slot?.reservations||[]).findIndex(r=>r.name===person.name&&r.admitDate===person.admitDate);
                       return (
                         <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
-                          <button style={{...NS.btnEdit,background:"#059669"}} onClick={()=>resIdx>=0&&convertReservation(slotKey,resIdx)}>🛏 입원 전환</button>
                           {resIdx>=0&&<button style={NS.btnEdit} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...(slot.reservations[resIdx])},resIndex:resIdx})}>수정</button>}
                           {resIdx>=0&&<button style={{...NS.btnEdit,background:"#7c3aed"}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:slot.reservations[resIdx],resIndex:resIdx})); router.push("/"); }}>🚚 이동</button>}
                           <button style={{...NS.btnEdit,background:"#dc2626",width:"100%",marginTop:2}}
@@ -548,7 +547,6 @@ export default function RoomPage() {
                           {!isPreview&&!movingPatient&&<div style={{ display:"flex",gap:3,flexShrink:0 }}>
                             <button style={{...NS.btnSmall,color:"#7c3aed",padding:"2px 6px",fontSize:12}} onClick={()=>{ sessionStorage.setItem("pendingMove",JSON.stringify({slotKey,mode:"reservation",data:r,resIndex:ri})); router.push("/"); }}>🚚</button>
                             <button style={{...NS.btnSmall,padding:"2px 6px",fontSize:12}} onClick={()=>setEditingSlot({slotKey,mode:"reservation",data:{...r},resIndex:ri})}>수정</button>
-                            <button style={{...NS.btnSmall,background:"#059669",color:"#fff",borderColor:"#059669",padding:"2px 6px",fontSize:12}} onClick={()=>convertReservation(slotKey,ri)}>입원전환</button>
                           </div>}
                         </div>
                         <div style={{ fontSize:12,color:"#64748b",marginTop:2 }}>입원: {r.admitDate} → 퇴원: {r.discharge||"미정"}</div>

@@ -915,7 +915,6 @@ export default function HospitalWardManager() {
             onEditReservation={(sk, data, idx) => setEditingSlot({ slotKey: sk, mode: "reservation", data, resIndex: idx })}
             onAddCurrent={sk => setPatientPickFor({ slotKey: sk, mode: "current" })}
             onAddReservation={sk => setPatientPickFor({ slotKey: sk, mode: "reservation" })}
-            onConvertReservation={convertReservation}
             onBack={() => setView("ward")} />
         )}
         {view === "log" && <LogView logs={logs} />}
@@ -1244,16 +1243,11 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, newPat
                       </button>
                     </div>
                   )}
-                  {/* 예약 입원 중(reserved/admitting_today): 입원 전환 + 수정 + 이동 + 치료일정 */}
+                  {/* 예약 입원 중(reserved/admitting_today): 수정 + 이동 + 치료일정 (입원전환은 EMR 싱크로 자동 처리) */}
                   {!isPreview && !movingPatient && (b.type==="reserved"||b.type==="admitting_today") && (() => {
-                    // reservations에서 해당 예약 인덱스 찾기
                     const resIdx = (slot?.reservations||[]).findIndex(r => r.name === b.person.name && r.admitDate === b.person.admitDate);
                     return (
                       <div style={{ display:"flex", gap:6, marginTop:4, flexWrap:"wrap" }}>
-                        <button style={{ ...S.btnEdit, background:"#059669" }}
-                          onClick={() => resIdx>=0 && onConvertReservation(slotKey, resIdx)}>
-                          🛏 입원 전환
-                        </button>
                         {resIdx>=0 && <button style={S.btnEdit}
                           onClick={() => onEditReservation(slotKey, { ...(slot.reservations[resIdx]) }, resIdx)}>수정</button>}
                         {resIdx>=0 && <button style={{ ...S.btnEdit, background:"#7c3aed" }}
@@ -1287,8 +1281,6 @@ function RoomDetailView({ room, slots, getRoomStats, isPreview, viewDate, newPat
                         <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
                           {!movingPatient && <button style={{ ...S.btnEditSmall, color:"#7c3aed" }} onClick={() => onStartMove(slotKey, "reservation", r, ri)}>🚚</button>}
                           {!movingPatient && <button style={S.btnEditSmall} onClick={() => onEditReservation(slotKey, { ...r }, ri)}>수정</button>}
-                          {!movingPatient && <button style={{ ...S.btnEditSmall, background:"#059669", color:"#fff", borderColor:"#059669" }}
-                            onClick={() => onConvertReservation(slotKey, ri)}>🛏 입원 전환</button>}
                         </div>
                       </div>
                       <div style={{ fontSize:11, color:"#64748b" }}>입원: {r.admitDate} → 퇴원: {r.discharge}</div>
