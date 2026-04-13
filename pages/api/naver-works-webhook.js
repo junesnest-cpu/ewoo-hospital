@@ -426,22 +426,32 @@ export default async function handler(req, res) {
       });
       savedIds.push(itemId);
 
-      // ── 월간 입퇴원 예정표 자동 기록 ──────────────────────────────────
+      // ── 월간 입퇴원 예정표 + slots 자동 반영 ──────────────────────────
       if (item?.name) {
         const roomLabel = suggestedSlotKey || item.room || "";
         try {
-          // 퇴원 기록
+          // 퇴원 기록 + slots 퇴원일/시간 반영
           if (item.action === 'discharge_update' && item.dischargeDate) {
             const dKey = parseMDtoDateKey(item.dischargeDate, year);
             if (dKey) {
-              const ym = dKey.slice(0, 7); // "YYYY-MM"
+              const ym = dKey.slice(0, 7);
               await upsertMonthlyEntry(db, ym, dKey, 'discharges', {
                 name: item.name, room: roomLabel, note: item.note || "",
                 time: item.dischargeTime || "",
               });
             }
+            // slots에 퇴원일/시간 반영
+            if (suggestedSlotKey && slots[suggestedSlotKey]?.current?.name) {
+              const curNorm = normalizeName(slots[suggestedSlotKey].current.name);
+              const itemNorm = normalizeName(item.name);
+              if (curNorm === itemNorm || curNorm.includes(itemNorm) || itemNorm.includes(curNorm)) {
+                const slotUpdates = { [`slots/${suggestedSlotKey}/current/discharge`]: item.dischargeDate };
+                if (item.dischargeTime) slotUpdates[`slots/${suggestedSlotKey}/current/dischargeTime`] = item.dischargeTime;
+                await db.ref('/').update(slotUpdates);
+              }
+            }
           }
-          // 입원 기록
+          // 입원/재입원 기록 + slots 예약 시간 반영
           if (item.action === 'admit_plan' && item.admitDate) {
             const aKey = parseMDtoDateKey(item.admitDate, year);
             if (aKey) {
@@ -452,9 +462,32 @@ export default async function handler(req, res) {
                 time: item.admitTime || "",
               });
             }
+            // slots에 예약 입원시간 반영 (현재 환자 또는 예약에서 이름 매칭)
+            if (suggestedSlotKey) {
+              const slot = slots[suggestedSlotKey];
+              if (slot) {
+                const itemNorm = normalizeName(item.name);
+                // current에서 매칭
+                if (slot.current?.name && normalizeName(slot.current.name) === itemNorm) {
+                  const updates = {};
+                  if (item.admitDate) updates[`slots/${suggestedSlotKey}/current/admitDate`] = item.admitDate;
+                  if (item.admitTime) updates[`slots/${suggestedSlotKey}/current/admitTime`] = item.admitTime;
+                  if (Object.keys(updates).length) await db.ref('/').update(updates);
+                } else {
+                  // reservations에서 매칭
+                  const resList = slot.reservations || [];
+                  const resIdx = resList.findIndex(r => normalizeName(r.name) === itemNorm);
+                  if (resIdx >= 0) {
+                    const updates = {};
+                    if (item.admitTime) updates[`slots/${suggestedSlotKey}/reservations/${resIdx}/admitTime`] = item.admitTime;
+                    if (Object.keys(updates).length) await db.ref('/').update(updates);
+                  }
+                }
+              }
+            }
           }
         } catch (mbErr) {
-          console.error('[webhook] monthlyBoards 기록 실패:', mbErr.message);
+          console.error('[webhook] monthlyBoards/slots 반영 실패:', mbErr.message);
         }
       }
     }
