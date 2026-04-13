@@ -36,6 +36,177 @@ const sqlConfig = {
 
 const TOTAL_BEDS = 78;
 
+// 유효한 병상 목록 (monthly.js와 동일)
+const WARD_ROOMS = [
+  {id:"201",cap:4},{id:"202",cap:1},{id:"203",cap:4},{id:"204",cap:2},{id:"205",cap:6},{id:"206",cap:6},
+  {id:"301",cap:4},{id:"302",cap:1},{id:"303",cap:4},{id:"304",cap:2},{id:"305",cap:2},{id:"306",cap:6},
+  {id:"501",cap:4},{id:"502",cap:1},{id:"503",cap:4},{id:"504",cap:2},{id:"505",cap:6},{id:"506",cap:6},
+  {id:"601",cap:6},{id:"602",cap:1},{id:"603",cap:6},
+];
+
+function normName(n) { return (n||"").replace(/^신\)\s*/,"").trim().toLowerCase(); }
+
+// 날짜 문자열 → Date (M/D 또는 YYYY-MM-DD)
+function parseDateAny(str, contextYear) {
+  if (!str || str === "미정") return null;
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2])-1, parseInt(iso[3]));
+  const md = str.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (md) return new Date(contextYear, parseInt(md[1])-1, parseInt(md[2]));
+  return null;
+}
+
+// Firebase slots + monthlyBoards 기반 재원 계산 (monthly.js censusData와 동일 로직)
+async function calcCensusFromFirebase(year, month) {
+  const daysInMo = new Date(year, month, 0).getDate();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const nowYear = today.getFullYear(), nowMonth = today.getMonth()+1, nowDay = today.getDate();
+  const isCurrentMonth = (year === nowYear && month === nowMonth);
+
+  const slotsSnap = await db.ref('slots').get();
+  const slots = slotsSnap.val() || {};
+  const ym = `${year}-${String(month).padStart(2,'0')}`;
+  const mbSnap = await db.ref(`monthlyBoards/${ym}`).get();
+  const boardData = mbSnap.val() || {};
+
+  // getDisplayData 간소화: frozen 우선, 없으면 slots 기반 calendarData
+  const getAdmDisCount = (day) => {
+    const k = `${ym}-${String(day).padStart(2,'0')}`;
+    const bd = boardData[k];
+
+    // frozen이 있으면 그 데이터 사용
+    if (bd?.frozen) {
+      const admNames = new Set(), disNames = new Set();
+      (bd.admissions||[]).forEach(a => { const n = normName(a.name); if (n) admNames.add(n); });
+      (bd.discharges||[]).forEach(d => { const n = normName(d.name); if (n) disNames.add(n); });
+      return { adm: admNames.size, dis: disNames.size };
+    }
+
+    // frozen 없으면 slots 기반 계산
+    let admCount = 0, disCount = 0;
+    const admSeen = new Set(), disSeen = new Set();
+    Object.entries(slots).forEach(([slotKey, slot]) => {
+      const checkEntry = (entry) => {
+        if (!entry?.name) return;
+        const admitD = parseDateAny(entry.admitDate, year);
+        const dischargeD = parseDateAny(entry.discharge, year);
+        if (admitD) {
+          const aKey = `${admitD.getFullYear()}-${String(admitD.getMonth()+1).padStart(2,'0')}-${String(admitD.getDate()).padStart(2,'0')}`;
+          if (aKey === k) { const n = normName(entry.name); if (!admSeen.has(n)) { admSeen.add(n); admCount++; } }
+        }
+        if (dischargeD) {
+          const dKey = `${dischargeD.getFullYear()}-${String(dischargeD.getMonth()+1).padStart(2,'0')}-${String(dischargeD.getDate()).padStart(2,'0')}`;
+          if (dKey === k) { const n = normName(entry.name); if (!disSeen.has(n)) { disSeen.add(n); disCount++; } }
+        }
+      };
+      if (slot?.current) checkEntry(slot.current);
+      (slot?.reservations||[]).forEach(r => checkEntry(r));
+    });
+
+    // boardData 수동 추가분 병합
+    if (bd) {
+      const hiddenAdm = new Set((bd.hiddenAdmissions||[]).map(n => typeof n === 'string' ? n : normName(n)));
+      const hiddenDis = new Set((bd.hiddenDischarges||[]).map(n => typeof n === 'string' ? n : normName(n)));
+      hiddenAdm.forEach(n => { if (admSeen.has(n)) { admSeen.delete(n); admCount--; } });
+      hiddenDis.forEach(n => { if (disSeen.has(n)) { disSeen.delete(n); disCount--; } });
+      (bd.admissions||[]).forEach(a => { const n = normName(a.name); if (n && !admSeen.has(n)) { admSeen.add(n); admCount++; } });
+      (bd.discharges||[]).forEach(d => { const n = normName(d.name); if (n && !disSeen.has(n)) { disSeen.add(n); disCount++; } });
+    }
+
+    return { adm: Math.max(0, admCount), dis: Math.max(0, disCount) };
+  };
+
+  const counts = {}; // YYYYMMDD → occupied
+
+  if (isCurrentMonth) {
+    // 오늘 기준점: slots에서 직접 계산
+    const todayDateOnly = new Date(nowYear, nowMonth-1, nowDay);
+    let todayCensus = 0;
+    const countedNames = new Set();
+
+    WARD_ROOMS.forEach(({ id, cap }) => {
+      for (let i = 1; i <= cap; i++) {
+        const s = slots[`${id}-${i}`];
+        if (!s) continue;
+        if (s.current?.name) {
+          const n = normName(s.current.name);
+          if (!countedNames.has(n)) {
+            const dis = parseDateAny(s.current.discharge, nowYear);
+            if (dis) {
+              const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
+              if (disD < todayDateOnly) continue;
+              if (disD.getTime() === todayDateOnly.getTime()) { countedNames.add(n); continue; }
+            }
+            countedNames.add(n);
+            todayCensus++;
+          }
+        }
+        (s.reservations||[]).forEach(r => {
+          if (!r?.name) return;
+          const n = normName(r.name);
+          if (countedNames.has(n)) return;
+          const admitD = parseDateAny(r.admitDate, nowYear);
+          if (!admitD) return;
+          const admitDOnly = new Date(admitD.getFullYear(), admitD.getMonth(), admitD.getDate());
+          if (admitDOnly.getTime() !== todayDateOnly.getTime()) return;
+          countedNames.add(n);
+          todayCensus++;
+        });
+      }
+    });
+
+    const todayDt = `${ym.replace('-','')}${String(nowDay).padStart(2,'0')}`;
+    counts[todayDt] = todayCensus;
+
+    // 오늘 이후 순방향
+    let cur = todayCensus;
+    for (let d = nowDay+1; d <= daysInMo; d++) {
+      const { adm, dis } = getAdmDisCount(d);
+      cur = Math.max(0, cur + adm - dis);
+      counts[`${ym.replace('-','')}${String(d).padStart(2,'0')}`] = cur;
+    }
+    // 오늘 이전 역방향
+    cur = todayCensus;
+    for (let d = nowDay-1; d >= 1; d--) {
+      const { adm, dis } = getAdmDisCount(d+1);
+      cur = Math.max(0, cur - adm + dis);
+      counts[`${ym.replace('-','')}${String(d).padStart(2,'0')}`] = cur;
+    }
+  } else {
+    // 과거/미래 월: 이월 재원 계산
+    const monthFirstDay = new Date(year, month-1, 1);
+    const seenCarry = new Set();
+    let carryOver = 0;
+    WARD_ROOMS.forEach(({ id, cap }) => {
+      for (let i = 1; i <= cap; i++) {
+        const slot = slots[`${id}-${i}`];
+        if (!slot) continue;
+        const checkPatient = (p) => {
+          if (!p?.name) return;
+          const n = normName(p.name);
+          if (seenCarry.has(n)) return;
+          const admit = parseDateAny(p.admitDate, year);
+          if (!admit || admit >= monthFirstDay) return;
+          const discharge = parseDateAny(p.discharge, year);
+          if (discharge && discharge < monthFirstDay) return;
+          seenCarry.add(n);
+          carryOver++;
+        };
+        checkPatient(slot.current);
+        (slot.reservations||[]).forEach(r => checkPatient(r));
+      }
+    });
+    let cur = carryOver;
+    for (let d = 1; d <= daysInMo; d++) {
+      const { adm, dis } = getAdmDisCount(d);
+      cur = Math.max(0, cur + adm - dis);
+      counts[`${ym.replace('-','')}${String(d).padStart(2,'0')}`] = cur;
+    }
+  }
+
+  return counts;
+}
+
 // ── EMR 코드 → 치료항목 매핑 ──
 const EMR_TO_PLAN = {
   'HZ272':       { id: 'hyperthermia', qtyField: 'times' },
@@ -393,26 +564,20 @@ async function syncMonth(pool, year, month, updates) {
     console.log(`  입원일수: ${bdR.recordset[0]?.bedDays || 0}일`);
   } catch(e) {}
 
-  // 병상가동률
-  const lastDay = isCurrentMonth ? today.getDate() : daysInMonth;
+  // 병상가동률 (Firebase slots + monthlyBoards 기반, monthly.js와 동일 로직)
   try {
-    const occR = await pool.request().query(`
-      SELECT d.dt, COUNT(p.CHARTNO) AS occupied FROM (
-        SELECT '${ym}' + RIGHT('0'+CAST(n AS VARCHAR),2) AS dt
-        FROM (SELECT TOP ${lastDay} ROW_NUMBER() OVER(ORDER BY(SELECT NULL)) AS n FROM sys.objects) nums
-      ) d LEFT JOIN SILVER_PATIENT_INFO p
-        ON p.INDAT <= d.dt AND (p.OUTDAT > d.dt OR p.OUTDAT IS NULL OR p.OUTDAT = '')
-        AND p.INSUCLS NOT IN ('50','100')
-      GROUP BY d.dt ORDER BY d.dt
-    `);
+    const censusCounts = await calcCensusFromFirebase(year, month);
     const daily = {};
-    for (const r of occR.recordset) {
-      daily[r.dt] = { occupied: r.occupied, total: TOTAL_BEDS, rate: Math.round((r.occupied/TOTAL_BEDS)*1000)/10 };
+    let totalOcc = 0, dayCount = 0;
+    for (const [dt, occupied] of Object.entries(censusCounts)) {
+      daily[dt] = { occupied, total: TOTAL_BEDS, rate: Math.round((occupied/TOTAL_BEDS)*1000)/10 };
+      totalOcc += occupied;
+      dayCount++;
     }
     updates[`directorStats/${year}/occupancy/${ym}`] = daily;
-    const avg = occR.recordset.length > 0 ? Math.round(occR.recordset.reduce((s,r)=>s+r.occupied,0)/occR.recordset.length/TOTAL_BEDS*1000)/10 : 0;
-    console.log(`  가동률: 평균 ${avg}%`);
-  } catch(e) {}
+    const avg = dayCount > 0 ? Math.round((totalOcc/dayCount/TOTAL_BEDS)*1000)/10 : 0;
+    console.log(`  가동률: 평균 ${avg}% (Firebase 기반, ${dayCount}일)`);
+  } catch(e) { console.log(`  가동률 실패: ${e.message}`); }
 
   // 치료항목
   try {
