@@ -8,6 +8,7 @@ import { ref, onValue, set } from "firebase/database";
 import AppSidebar from "../components/AppSidebar";
 import AvailPanel from "../components/AvailPanel";
 import useIsMobile from "../lib/useismobile";
+import { WardDataProvider } from "../lib/WardDataContext";
 
 function LoginScreen() {
   const [name,     setName]     = useState("");
@@ -200,7 +201,7 @@ export default function App({ Component, pageProps }) {
     </>
   );
 
-  return (
+  const content = (
     <>
       <Head>
         <title>{pageTitle}</title>
@@ -260,4 +261,6 @@ export default function App({ Component, pageProps }) {
       )}
     </>
   );
+
+  return <WardDataProvider>{content}</WardDataProvider>;
 }

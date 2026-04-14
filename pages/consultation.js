@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set, push, remove, query, orderByChild, startAt, endAt } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
+import { useWardData, normName } from "../lib/WardDataContext";
 
 const ROOM_TYPES = ["1인실","2인실","4인실","6인실"];
 const ADMIT_TIME_OPTIONS = ["아침","점심","저녁"];
@@ -93,9 +94,8 @@ export default function ConsultationPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
 
+  const { slots, patients, consultations: allConsultationsCtx } = useWardData();
   const [consultations, setConsultations] = useState({});
-  const [slots, setSlots] = useState({});
-  const [patients, setPatients] = useState({});
   const [view, setView] = useState("list"); // list | form
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({...EMPTY_FORM});
@@ -115,8 +115,8 @@ export default function ConsultationPage() {
   const [phoneMatch, setPhoneMatch]   = useState(null); // { name, info, data }
   const [phone2Match, setPhone2Match] = useState(null);
 
-  // 전체 상담 (연락처 검색용 — 별도 구독)
-  const [allConsultations, setAllConsultations] = useState({});
+  // 전체 상담 → WardDataContext에서 공급
+  const allConsultations = allConsultationsCtx;
 
   // 병실 모달 (예약 등록)
   const [reserveModal, setReserveModal] = useState(null); // { consultation }
@@ -158,27 +158,74 @@ export default function ConsultationPage() {
     if (q) { setSearch(q); setFilterMonth(""); }
   }, [router.query.q]);
 
-  useEffect(() => {
-    const unsub2 = onValue(ref(db,"slots"), snap => {
-      setSlots(snap.val() || {});
-    });
-    return unsub2;
-  }, []);
+  // slots, patients, allConsultations → WardDataContext에서 공급
 
-  useEffect(() => {
-    const unsub3 = onValue(ref(db,"patients"), snap => {
-      setPatients(snap.val() || {});
+  // slots → consultation 역참조: reservedSlot이 있는 상담의 실제 병상·날짜를 slots에서 조회
+  const slotOverrides = useMemo(() => {
+    const map = {}; // consultationId → { reservedSlot, admitDate, dischargeDate }
+    Object.entries(slots).forEach(([slotKey, slot]) => {
+      // current 환자
+      if (slot?.current?.consultationId) {
+        map[slot.current.consultationId] = {
+          reservedSlot: slotKey,
+          admitDate: slot.current.admitDate || undefined,
+          dischargeDate: slot.current.discharge || undefined,
+        };
+      }
+      // reservation 환자
+      (slot?.reservations || []).forEach(r => {
+        if (r?.consultationId) {
+          map[r.consultationId] = {
+            reservedSlot: slotKey,
+            admitDate: r.admitDate || undefined,
+            dischargeDate: r.discharge || undefined,
+          };
+        }
+      });
     });
-    return unsub3;
-  }, []);
+    // consultationId가 없는 경우: 이름+reservedSlot으로 매칭
+    Object.entries(consultations).forEach(([cid, c]) => {
+      if (map[cid] || !c?.reservedSlot) return;
+      const slot = slots[c.reservedSlot];
+      if (!slot) return;
+      const cn = normName(c.name);
+      if (slot.current?.name && normName(slot.current.name) === cn) {
+        map[cid] = {
+          reservedSlot: c.reservedSlot,
+          admitDate: slot.current.admitDate || undefined,
+          dischargeDate: slot.current.discharge || undefined,
+        };
+      } else {
+        const r = (slot.reservations || []).find(r => r?.name && normName(r.name) === cn);
+        if (r) {
+          map[cid] = {
+            reservedSlot: c.reservedSlot,
+            admitDate: r.admitDate || undefined,
+            dischargeDate: r.discharge || undefined,
+          };
+        }
+      }
+    });
+    return map;
+  }, [slots, consultations]);
 
-  // 연락처 매칭용 전체 상담 로드 (한 번만)
+  // 불일치 자동 보정: slots 데이터를 consultation에 반영
+  const syncedRef = useRef(new Set());
   useEffect(() => {
-    const unsub4 = onValue(ref(db,"consultations"), snap => {
-      setAllConsultations(snap.val() || {});
+    Object.entries(slotOverrides).forEach(([cid, ov]) => {
+      const c = consultations[cid];
+      if (!c) return;
+      if (syncedRef.current.has(cid)) return;
+      const updates = {};
+      if (ov.reservedSlot && ov.reservedSlot !== c.reservedSlot) updates.reservedSlot = ov.reservedSlot;
+      if (ov.admitDate && ov.admitDate !== c.admitDate) updates.admitDate = ov.admitDate;
+      if (ov.dischargeDate && ov.dischargeDate !== c.dischargeDate) updates.dischargeDate = ov.dischargeDate;
+      if (Object.keys(updates).length > 0) {
+        syncedRef.current.add(cid);
+        set(ref(db, `consultations/${cid}`), { ...c, ...updates }).catch(console.error);
+      }
     });
-    return unsub4;
-  }, []);
+  }, [slotOverrides, consultations]);
 
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
@@ -907,7 +954,10 @@ export default function ConsultationPage() {
               </div>
             );
           }
-          const c = item;
+          const raw = item;
+          // slots 기반 보정값 즉시 반영 (Firebase 갱신 전에도 정확한 값 표시)
+          const ov = slotOverrides[raw.id] || {};
+          const c = { ...raw, ...( ov.reservedSlot ? { reservedSlot: ov.reservedSlot } : {}), ...( ov.admitDate ? { admitDate: ov.admitDate } : {}), ...( ov.dischargeDate ? { dischargeDate: ov.dischargeDate } : {}) };
           const hasAdmit = !!(c.admitDate);
           const isReserved = c.status === "예약완료" || c.reservedSlot || (c.admitDate && c.status !== "입원완료" && c.status !== "취소");
           const isAdmitted = c.status === "입원완료";

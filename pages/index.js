@@ -5,6 +5,7 @@ import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 import PatientSearchModal from "../components/PatientSearchModal";
 import { searchPatientsByName } from "../lib/patientSearch";
+import { useWardData } from "../lib/WardDataContext";
 
 // 환자 목록 메모리 캐시 (세션 내 재사용)
 let _patientCache = null;
@@ -148,8 +149,7 @@ async function analyzeMessengerText(text) {
 export default function HospitalWardManager() {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const [slots,          setSlots]          = useState({});
-  const [consultations,  setConsultations]  = useState({});
+  const { slots, setSlots, consultations, logs, setLogs, pendingCount, emrSyncTime, saveSlots, addLog } = useWardData();
   const [view,           setView]           = useState("ward");
   const [selectedRoom,   setSelectedRoom]   = useState(null);
   const [editingSlot,    setEditingSlot]    = useState(null);
@@ -160,11 +160,8 @@ export default function HospitalWardManager() {
   const [uploadResult,   setUploadResult]   = useState(null);
   const [jsonPasteOpen,  setJsonPasteOpen]  = useState(false);
   const [jsonPasteText,  setJsonPasteText]  = useState("");
-  const [logs,           setLogs]           = useState([]);
-  const [pendingCount,   setPendingCount]   = useState(0);
   const [lastSync,       setLastSync]       = useState(null);
-  const [syncing,        setSyncing]        = useState(true);
-  const [emrSyncTime,    setEmrSyncTime]    = useState(null);
+  const [syncing,        setSyncing]        = useState(false);
   const [previewDate,    setPreviewDate]    = useState(null);
   const [previewInput,   setPreviewInput]   = useState(toInputValue(todayDate()));
   const [showReserved,   setShowReserved]   = useState(true);
@@ -182,37 +179,10 @@ export default function HospitalWardManager() {
   const isPreview = previewDate !== null;
   const viewDate  = previewDate || todayDate();
 
+  // slots, consultations, logs, pendingCount, emrSyncTime → WardDataContext에서 공급
   useEffect(() => {
-    setSyncing(true);
-    const sRef = ref(db, "slots");
-    const unsubS = onValue(sRef, snap => {
-      const val = snap.val();
-      if (!val) { set(sRef, INIT_SLOTS); setSlots(INIT_SLOTS); setLastSync(new Date()); setSyncing(false); return; }
-      setSlots(val);
-      setLastSync(new Date()); setSyncing(false);
-    }, () => setSyncing(false));
-    const unsubL = onValue(ref(db, "logs"), snap => {
-      const val = snap.val();
-      if (val) setLogs(Array.isArray(val) ? val : Object.values(val));
-    });
-    const unsubC = onValue(ref(db, "consultations"), snap => {
-      setConsultations(snap.val() || {});
-    });
-    const unsubP = onValue(ref(db, "pendingChanges"), snap => {
-      const val = snap.val();
-      if (val) {
-        const pending = Object.values(val).filter(c => c.status === "pending").length;
-        setPendingCount(pending);
-      } else {
-        setPendingCount(0);
-      }
-    });
-    const unsubE = onValue(ref(db, "emrSyncLog/lastSync"), snap => {
-      const val = snap.val();
-      if (val) setEmrSyncTime(new Date(val));
-    });
-    return () => { unsubS(); unsubL(); unsubC(); unsubP(); unsubE(); };
-  }, []);
+    if (Object.keys(slots).length > 0) { setLastSync(new Date()); setSyncing(false); }
+  }, [slots]);
 
   // ── 자동완성용 전체 환자 목록 (현재 입원 + 예약) ──────────────────────────────
   const allKnownPatients = useMemo(() => {
@@ -288,27 +258,7 @@ export default function HospitalWardManager() {
     }
   }, []);
 
-  const saveSlots = useCallback(async (newS, changedKeys) => {
-    setSlots(newS);
-    if (changedKeys && changedKeys.length > 0) {
-      const updates = {};
-      for (const k of changedKeys) updates[`slots/${k}`] = newS[k] ?? null;
-      await update(ref(db), updates);
-    } else {
-      await set(ref(db, "slots"), newS);
-    }
-  }, []);
-
-
-
-  const addLog = useCallback(async (entry) => {
-    const newLog = { ...entry, ts: new Date().toISOString() };
-    setLogs(prev => {
-      const updated = [newLog, ...prev].slice(0, 100);
-      set(ref(db, "logs"), updated).catch(console.error);
-      return updated;
-    });
-  }, []);
+  // saveSlots, addLog → WardDataContext에서 공급
 
   // 예약 → 현재 입원 전환 (addLog 선언 후에 위치)
   const convertReservation = useCallback(async (slotKey, resIndex) => {

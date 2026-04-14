@@ -4,6 +4,7 @@ import { ref, onValue, set, update } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 import { searchPatientsByName } from "../lib/patientSearch";
+import { useWardData } from "../lib/WardDataContext";
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 const WARD_STRUCTURE = {
@@ -324,8 +325,7 @@ export default function WardTimeline() {
   const router   = useRouter();
   const isMobile = useIsMobile();
 
-  const [slots,         setSlots]         = useState({});
-  const [consultations, setConsultations] = useState({});
+  const { slots, consultations, saveSlots, syncConsultationOnSlotChange } = useWardData();
   const [roomMemos,     setRoomMemos]     = useState({});
   const [syncing,    setSyncing]    = useState(true);
   const [lastSync,   setLastSync]   = useState(null);
@@ -482,23 +482,10 @@ export default function WardTimeline() {
     [days, today]
   );
 
-  // Firebase
+  // slots, consultations → WardDataContext에서 공급
   useEffect(() => {
-    setSyncing(true);
-    const unsub = onValue(ref(db, "slots"), snap => {
-      setSlots(snap.val() || {});
-      setLastSync(new Date());
-      setSyncing(false);
-    }, () => setSyncing(false));
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const unsub = onValue(ref(db, "consultations"), snap => {
-      setConsultations(snap.val() || {});
-    });
-    return () => unsub();
-  }, []);
+    if (Object.keys(slots).length > 0) { setLastSync(new Date()); setSyncing(false); }
+  }, [slots]);
 
   useEffect(() => {
     const unsub = onValue(ref(db, "roomMemos"), snap => {
@@ -745,35 +732,7 @@ export default function WardTimeline() {
     return set;
   }, [consultations]);
 
-  const saveSlots = useCallback(async (ns, changedKeys) => {
-    setSlots(ns);
-    if (changedKeys && changedKeys.length > 0) {
-      const updates = {};
-      for (const k of changedKeys) updates[`slots/${k}`] = ns[k] ?? null;
-      await update(ref(db), updates);
-    } else {
-      await set(ref(db, "slots"), ns);
-    }
-  }, []);
-
-  // 상담일지 역방향 동기화: 타임라인에서 예약 삭제/이동 시 상담일지 업데이트
-  const syncConsultationOnSlotChange = useCallback(async (fromSlotKey, personName, consultationId, newSlotKey) => {
-    // 해당 병상+이름(또는 consultationId)으로 상담 찾기
-    const match = Object.entries(consultations).find(([id, c]) => {
-      if (c.reservedSlot !== fromSlotKey) return false;
-      if (consultationId && id === consultationId) return true;
-      return c.name === personName;
-    });
-    if (!match) return;
-    const [cId, c] = match;
-    if (newSlotKey) {
-      // 병상 이동: reservedSlot 업데이트
-      await set(ref(db, `consultations/${cId}`), { ...c, reservedSlot: newSlotKey });
-    } else {
-      // 예약 삭제: 병상 배정 해제 → 상담중으로 복귀
-      await set(ref(db, `consultations/${cId}`), { ...c, reservedSlot: null, status: "상담중" });
-    }
-  }, [consultations]);
+  // saveSlots, syncConsultationOnSlotChange → WardDataContext에서 공급
 
   const saveMemo = useCallback(async (roomId, text) => {
     const next = { ...roomMemos, [roomId]: text };
@@ -819,9 +778,12 @@ export default function WardTimeline() {
 
     await saveSlots(newSlots, [fromKey, targetSlotKey]);
 
-    // 예약 이동 시 상담일지 연동
-    if (bar.type === "reservation") {
-      await syncConsultationOnSlotChange(fromKey, person.name, person.consultationId, targetSlotKey);
+    // 이동 시 상담일지 연동 (병상 + 날짜)
+    if (bar.type === "reservation" || bar.type === "current") {
+      await syncConsultationOnSlotChange(fromKey, person.name, person.consultationId, targetSlotKey, {
+        admitDate: person.admitDate || undefined,
+        dischargeDate: person.discharge || undefined,
+      });
     }
     setDragging(null);
     setDragOver(null);
@@ -845,9 +807,17 @@ export default function WardTimeline() {
         else slot.reservations.push({ ...form });
       }
       await saveSlots(ns, [slotKey]);
+      // 편집 저장 시 consultation 날짜 동기화
+      const cId = editModal.data?.consultationId || form.consultationId;
+      if (cId) {
+        await syncConsultationOnSlotChange(slotKey, form.name, cId, slotKey, {
+          admitDate: form.admitDate || undefined,
+          dischargeDate: form.discharge || undefined,
+        });
+      }
       setEditModal(null); setPopover(null);
     } finally { setSaving(false); }
-  }, [editModal, slots, saveSlots]);
+  }, [editModal, slots, saveSlots, syncConsultationOnSlotChange]);
 
   const handleDelete = useCallback(async () => {
     if (!editModal) return;

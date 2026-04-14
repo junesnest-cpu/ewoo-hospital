@@ -404,11 +404,16 @@ export default async function handler(req, res) {
     // 파싱 실패 시 빈 항목 하나 생성 (직접 입력용)
     const itemsToSave = (parseError || actionable.length === 0) ? [null] : actionable;
 
-    // slots 한 번만 조회
+    // slots + consultations 한 번만 조회
     let slots = {};
+    let consultations = {};
     try {
-      const snap = await db.ref('slots').once('value');
-      slots = snap.val() || {};
+      const [slotsSnap, consulSnap] = await Promise.all([
+        db.ref('slots').once('value'),
+        db.ref('consultations').once('value'),
+      ]);
+      slots = slotsSnap.val() || {};
+      consultations = consulSnap.val() || {};
     } catch { /* 무시 */ }
 
     const savedIds = [];
@@ -505,6 +510,44 @@ export default async function handler(req, res) {
                     if (Object.keys(updates).length) await db.ref('/').update(updates);
                   }
                 }
+              }
+            }
+          }
+          // consultation 역동기화: slots 변경 시 해당 환자의 consultation도 업데이트
+          if (suggestedSlotKey) {
+            const itemNorm = normalizeName(item.name);
+            // consultationId로 매칭 (slots에서 찾기) 또는 이름+reservedSlot로 매칭
+            const slot = slots[suggestedSlotKey];
+            let cId = null;
+            if (slot?.current?.consultationId && normalizeName(slot.current.name) === itemNorm) {
+              cId = slot.current.consultationId;
+            }
+            if (!cId) {
+              for (const r of (slot?.reservations || [])) {
+                if (r.consultationId && normalizeName(r.name) === itemNorm) { cId = r.consultationId; break; }
+              }
+            }
+            if (!cId) {
+              // 이름+reservedSlot으로 consultations에서 직접 검색
+              for (const [id, c] of Object.entries(consultations)) {
+                if (c.reservedSlot === suggestedSlotKey && normalizeName(c.name) === itemNorm) { cId = id; break; }
+                if (!cId && normalizeName(c.name) === itemNorm && c.status !== "취소" && c.status !== "입원완료") { cId = id; }
+              }
+            }
+            if (cId && consultations[cId]) {
+              const cUpdates = {};
+              if (item.action === 'discharge_update' && item.dischargeDate) {
+                cUpdates[`consultations/${cId}/dischargeDate`] = item.dischargeDate;
+              }
+              if (item.action === 'admit_plan' && item.admitDate) {
+                cUpdates[`consultations/${cId}/admitDate`] = item.admitDate;
+              }
+              // 병상 배정 동기화
+              if (consultations[cId].reservedSlot !== suggestedSlotKey) {
+                cUpdates[`consultations/${cId}/reservedSlot`] = suggestedSlotKey;
+              }
+              if (Object.keys(cUpdates).length) {
+                try { await db.ref('/').update(cUpdates); } catch (e) { console.error('[webhook] consultation 동기화 실패:', e.message); }
               }
             }
           }

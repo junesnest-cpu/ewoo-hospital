@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { ref, onValue, set, update } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
+import { useWardData, normName as sharedNormName } from "../lib/WardDataContext";
 
 const DOW = ["일","월","화","수","목","금","토"];
 
@@ -71,8 +72,7 @@ export default function MonthlySchedule() {
   const now = new Date();
   const [year,  setYear]  = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [slots, setSlots] = useState({});
-  const [consultations, setConsultations] = useState({});
+  const { slots, consultations, newPatientFlags, setNewPatientFlags, namesInSlots } = useWardData();
 
   // 공지/메모
   const [memo, setMemo] = useState("");
@@ -80,13 +80,9 @@ export default function MonthlySchedule() {
   const [memoEditing, setMemoEditing] = useState(false);
   const [memoSaving, setMemoSaving] = useState(false);
 
-  // 편집된 월간 데이터 (Firebase monthlyBoards/{YYYY-MM})
-  // boardData = dailyBoards (저장소 통일: monthlyBoards → dailyBoards)
-  const boardData = dailyBoards;
   const [boardDataLoaded, setBoardDataLoaded] = useState(false);
 
-  // 신환 플래그 (공유 저장소: 일일현황판과 동기화)
-  const [newPatientFlags, setNewPatientFlags] = useState({});
+  // newPatientFlags → WardDataContext에서 공급
 
   // 날짜 편집 모달
   const [editModal, setEditModal] = useState(null); // "YYYY-MM-DD" | null
@@ -127,13 +123,9 @@ export default function MonthlySchedule() {
   }, []);
 
   const [dailyBoards, setDailyBoards] = useState({});
+  const boardData = dailyBoards;
 
-  useEffect(() => {
-    const u1 = onValue(ref(db,"slots"), snap => setSlots(snap.val() || {}));
-    const u2 = onValue(ref(db,"consultations"), snap => setConsultations(snap.val() || {}));
-    const u3 = onValue(ref(db,"newPatientFlags"), snap => setNewPatientFlags(snap.val() || {}));
-    return () => { u1(); u2(); u3(); };
-  }, []);
+  // slots, consultations, newPatientFlags → WardDataContext에서 공급
 
   // 일일현황판 데이터 로드 (해당 월 전체)
   useEffect(() => {
@@ -269,26 +261,29 @@ export default function MonthlySchedule() {
       });
     });
 
-    // 이름 → 실제 병실 매핑 (슬롯에 배정된 환자의 실제 병실 조회용)
+    // 이름 → 실제 병실 매핑 (current + reservation 모두 포함)
     const nameToSlotRoom = {};
     Object.entries(slots).forEach(([slotKey, slot]) => {
       if (slot?.current?.name) {
         const n = normName(slot.current.name);
         if (n) nameToSlotRoom[n] = slotKeyToRoom(slotKey);
       }
+      (slot?.reservations || []).forEach(r => {
+        if (!r?.name) return;
+        const n = normName(r.name);
+        if (n && !nameToSlotRoom[n]) nameToSlotRoom[n] = slotKeyToRoom(slotKey);
+      });
     });
+    // namesInSlots → WardDataContext에서 공급
 
-    // consultations: 슬롯에 미배정된 신환만 추가 (슬롯 배정된 환자는 이미 위에서 신환 플래그 처리됨)
+    // consultations → 신환 메타데이터 병합
+    // slots에 이미 있는 환자: 신환 플래그 + 비고만 병합 (날짜/병실은 slots 값 유지)
+    // slots에 없는 미배정 신환: consultation 날짜/희망병실로 별도 항목 추가
     Object.entries(consultations).forEach(([cid, c]) => {
       if (!c?.name || !c.admitDate) return;
       const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
-      if (!cIsNew) return;                                    // 재입원 → 제외
+      if (!cIsNew) return;
       if (c.status === "취소" || c.status === "입원완료") return;
-      const admitD = parseISO(c.admitDate);
-      if (!admitD) return;
-      const aKey = dateKey(admitD);
-      if (!aKey) return;
-      ensure(aKey);
 
       const noteFields = [c.diagnosis, c.hospital].filter(Boolean);
       if (c.surgery) noteFields.push(c.surgeryDate ? `수술후(${c.surgeryDate})` : "수술후");
@@ -297,49 +292,38 @@ export default function MonthlySchedule() {
       const cNote = noteFields.join(" · ");
 
       const nc = normName(c.name);
-      // 슬롯에 배정된 환자면 실제 병실 사용, 아니면 상담의 희망 병실유형
-      const actualRoom = nameToSlotRoom[nc] || c.roomTypes?.join("/") || "";
 
-      // 같은 날짜에 이미 슬롯 기반 항목이 있으면 병합
-      const existIdx = data[aKey].admissions.findIndex(a => normName(a.name) === nc);
-
-      if (existIdx >= 0) {
-        // 슬롯 항목에 신환 정보 병합 (실제 병실은 슬롯 값 유지, ★신환 플래그 추가)
-        const ex = data[aKey].admissions[existIdx];
-        data[aKey].admissions[existIdx] = {
-          ...ex,
-          isNew: true,
-          note: cNote || ex.note,
-        };
-      } else {
-        // 다른 날짜에 슬롯 항목이 있는지도 확인 (날짜 변경된 경우)
-        let mergedElsewhere = false;
-        if (nameToSlotRoom[nc]) {
-          // 슬롯에 이미 배정된 환자 → 다른 날짜의 기존 항목에 신환 플래그만 추가
-          for (const dk of Object.keys(data)) {
-            const idx = data[dk].admissions.findIndex(a => normName(a.name) === nc);
-            if (idx >= 0) {
-              data[dk].admissions[idx] = { ...data[dk].admissions[idx], isNew: true, note: cNote || data[dk].admissions[idx].note };
-              mergedElsewhere = true;
-              break;
-            }
+      // slots에 이미 있는 환자 → 해당 슬롯 항목에 신환 플래그만 추가 (날짜/병실 변경 없음)
+      if (namesInSlots.has(nc)) {
+        for (const dk of Object.keys(data)) {
+          const idx = data[dk].admissions.findIndex(a => normName(a.name) === nc);
+          if (idx >= 0) {
+            data[dk].admissions[idx] = { ...data[dk].admissions[idx], isNew: true, note: cNote || data[dk].admissions[idx].note, _consultationId: cid };
+            break;
           }
         }
-        if (!mergedElsewhere) {
-          data[aKey].admissions.push({
-            id: uid(),
-            name: c.name,
-            room: actualRoom,
-            note: cNote,
-            isNew: true,
-            isReserved: false,
-            _consultationId: cid,
-          });
-        }
+        return;
       }
+
+      // slots에 없는 미배정 신환 → consultation 날짜/희망병실로 항목 추가
+      const admitD = parseISO(c.admitDate);
+      if (!admitD) return;
+      const aKey = dateKey(admitD);
+      if (!aKey) return;
+      ensure(aKey);
+      const actualRoom = c.roomTypes?.join("/") || "";
+      data[aKey].admissions.push({
+        id: uid(),
+        name: c.name,
+        room: actualRoom,
+        note: cNote,
+        isNew: true,
+        isReserved: false,
+        _consultationId: cid,
+      });
     });
     return data;
-  }, [slots, consultations, dailyBoards, year, month]);
+  }, [slots, consultations, dailyBoards, namesInSlots, year, month]);
 
   // 당일 누적 병합: 슬롯/상담에서 새로 감지된 입퇴원을 frozen 스냅샷에 추가
   // 당일 자동 스냅샷: calendarData의 새 항목을 dailyBoards에 누적 추가
@@ -502,7 +486,7 @@ export default function MonthlySchedule() {
                   continue;
                 }
                 if (disD.getTime() === todayDateOnly.getTime()) {
-                  // 오늘 퇴원 예정 → 하루 끝에는 없을 사람, 카운트 안 함
+                  // 오늘 퇴원 예정 → 제외 (퇴원 처리 전이라도 예정으로 간주)
                   countedNames.add(n);
                   continue;
                 }
@@ -528,8 +512,23 @@ export default function MonthlySchedule() {
         }
       });
 
+      // 오늘 퇴원 예정 인원수 (재원 수에서 제외된 환자)
+      let todayDischargeCount = 0;
+      WARD_ROOMS.forEach(({ id, cap }) => {
+        for (let i = 1; i <= cap; i++) {
+          const s = slots[`${id}-${i}`];
+          if (!s?.current?.name) continue;
+          const dis = parseDateStr(s.current.discharge, nowYear);
+          if (dis) {
+            const disD = new Date(dis.getFullYear(), dis.getMonth(), dis.getDate());
+            if (disD.getTime() === todayDateOnly.getTime()) todayDischargeCount++;
+          }
+        }
+      });
+
       const todayKey = `${year}-${String(month).padStart(2,"0")}-${String(nowDay).padStart(2,"0")}`;
       counts[todayKey] = todayCensus;
+      counts._todayDischargeCount = todayDischargeCount;
 
       // 오늘 이후 → 순방향 누적
       let cur = todayCensus;
@@ -953,6 +952,9 @@ export default function MonthlySchedule() {
                         {(censusData[key] || 0) > 0 && (
                           <span style={{ fontSize:10, background:"#dbeafe", color:"#1e40af", borderRadius:3, padding:"0 5px", fontWeight:800 }}>
                             🏥{censusData[key]}
+                            {isToday && censusData._todayDischargeCount > 0 && (
+                              <span style={{ color:"#dc2626", fontWeight:700 }}> (퇴원예정{censusData._todayDischargeCount})</span>
+                            )}
                           </span>
                         )}
                         {/* 편집 버튼 */}

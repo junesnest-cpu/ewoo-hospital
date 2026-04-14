@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { ref, onValue, set, update } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
+import { useWardData } from "../lib/WardDataContext";
 
 const DOW = ["일","월","화","수","목","금","토"];
 const THERAPY_SLOTS = ["09:00~10:00","10:00~11:00","11:00~12:00","13:00~14:00","14:00~15:00","15:00~16:00","16:00~17:00","17:00~18:00"];
@@ -99,14 +100,12 @@ export default function DailyBoard() {
   const [capturing, setCapturing] = useState(false);
   const [filterName, setFilterName] = useState("");
 
-  // 연동 데이터 소스
-  const [slots, setSlots] = useState({});
-  const [consultations, setConsultations] = useState({});
-  const [patients, setPatients] = useState({});
+  // 연동 데이터 소스 (공유 Context)
+  const { slots, consultations, patients, newPatientFlags, settings } = useWardData();
+  const therapists = useMemo(() => [settings.therapist1 || "치료사1", settings.therapist2 || "치료사2"], [settings]);
   const [monthlyBoard, setMonthlyBoard] = useState({});
   const [physSched, setPhysSched] = useState({});
   const [hyperSched, setHyperSched] = useState({});
-  const [therapists, setTherapists] = useState(["치료사1","치료사2"]);
 
   // 수정 모드 편집 데이터
   const [editAdm, setEditAdm] = useState([]);
@@ -123,21 +122,7 @@ export default function DailyBoard() {
   const ym = useMemo(() => toYM(date), [date]);
   const dateYear = parseInt(date.slice(0,4));
 
-  // 공유 신환 플래그
-  const [newPatientFlags, setNewPatientFlags] = useState({});
-
-  // ── Firebase 구독 ──
-  useEffect(() => {
-    const u1 = onValue(ref(db,"slots"), s => setSlots(s.val()||{}));
-    const u2 = onValue(ref(db,"consultations"), s => setConsultations(s.val()||{}));
-    const u3 = onValue(ref(db,"settings"), s => {
-      const v = s.val()||{};
-      setTherapists([v.therapist1||"치료사1", v.therapist2||"치료사2"]);
-    });
-    const u4 = onValue(ref(db,"patients"), s => setPatients(s.val()||{}));
-    const u5 = onValue(ref(db,"newPatientFlags"), s => setNewPatientFlags(s.val()||{}));
-    return () => { u1(); u2(); u3(); u4(); u5(); };
-  }, []);
+  // slots, consultations, patients, newPatientFlags, settings → WardDataContext에서 공급
 
   useEffect(() => {
     const u = onValue(ref(db, `monthlyBoards/${ym}/${date}`), s => setMonthlyBoard(s.val()||{}));
@@ -207,15 +192,16 @@ export default function DailyBoard() {
     return map;
   }, [slots, consultations, date, dateYear]);
 
-  // ── slots 기반 calendarData (월간보드와 동일 로직) ──
+  // ── slots 기반 calendarData (slots = 단일 진실 소스) ──
   const calendarData = useMemo(() => {
     const adm = [], dis = [];
-    const year = dateYear, month = parseInt(date.slice(5,7));
+    const year = dateYear;
 
-    // 이름→실제 병실 매핑
-    const nameToRoom = {};
-    Object.entries(slots).forEach(([sk, slot]) => {
-      if (slot?.current?.name) nameToRoom[normName(slot.current.name)] = sk;
+    // slots에 등록된 환자 이름 집합 (중복 추가 방지용)
+    const namesInSlots = new Set();
+    Object.values(slots).forEach(slot => {
+      if (slot?.current?.name) namesInSlots.add(normName(slot.current.name));
+      (slot?.reservations || []).forEach(r => { if (r?.name) namesInSlots.add(normName(r.name)); });
     });
 
     Object.entries(slots).forEach(([sk, slot]) => {
@@ -235,28 +221,36 @@ export default function DailyBoard() {
       });
     });
 
-    // consultations → 신환 병합
+    // consultations → 신환 메타데이터 병합 (slots 단일 소스 원칙)
+    // slots에 있는 환자: 신환 플래그만 추가 (날짜/병실 변경 없음)
+    // slots에 없는 미배정 신환: consultation 날짜/희망병실로 항목 추가
     Object.entries(consultations).forEach(([cid, c]) => {
       if (!c?.name || !c.admitDate) return;
       const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
       if (!cIsNew) return;
       if (c.status === "취소" || c.status === "입원완료") return;
-      const cAdmitDate = parseMD(c.admitDate, dateYear);
-      if (cAdmitDate !== date) return;
       const nc = normName(c.name);
-      const actualRoom = nameToRoom[nc] || c.roomTypes?.join("/") || "";
+
       const noteFields = [c.diagnosis, c.hospital].filter(Boolean);
       if (c.surgery) noteFields.push(c.surgeryDate ? `수술후(${c.surgeryDate})` : "수술후");
       if (c.chemo) noteFields.push(c.chemoDate ? `항암(${c.chemoDate})` : "항암중");
       if (c.radiation) noteFields.push("방사선");
       const cNote = noteFields.join(" · ");
 
-      const existIdx = adm.findIndex(a => normName(a.name) === nc);
-      if (existIdx >= 0) {
-        adm[existIdx] = { ...adm[existIdx], isNew: true, note: cNote || adm[existIdx].note };
-      } else {
-        adm.push({ id:uid(), name:c.name, room:actualRoom, note:cNote, isNew:true, isReserved:false, _consultationId:cid });
+      // slots에 이미 있는 환자 → 당일 항목에 신환 플래그만 추가
+      if (namesInSlots.has(nc)) {
+        const existIdx = adm.findIndex(a => normName(a.name) === nc);
+        if (existIdx >= 0) {
+          adm[existIdx] = { ...adm[existIdx], isNew: true, note: cNote || adm[existIdx].note, _consultationId: cid };
+        }
+        return;
       }
+
+      // slots에 없는 미배정 신환 → consultation 날짜로 항목 추가
+      const cAdmitDate = parseMD(c.admitDate, year);
+      if (cAdmitDate !== date) return;
+      const actualRoom = c.roomTypes?.join("/") || "";
+      adm.push({ id:uid(), name:c.name, room:actualRoom, note:cNote, isNew:true, isReserved:false, _consultationId:cid });
     });
 
     return { admissions: adm, discharges: dis };
