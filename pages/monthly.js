@@ -447,6 +447,14 @@ export default function MonthlySchedule() {
   // 표시 데이터: calendarData 기반 + boardData 수동 추가/숨김 병합
   function getDisplayData(key) {
     const bd = boardData[key];
+    // 디버그: 오늘 날짜일 때 데이터 소스 로그
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    if (key === todayKey) {
+      const cd = calendarData[key] || { admissions:[], discharges:[] };
+      console.log(`[getDisplayData ${key}] calendarData: adm=${cd.admissions.length}(${cd.admissions.map(a=>a.name).join(',')}) dis=${cd.discharges.length}(${cd.discharges.map(d=>d.name).join(',')})`);
+      console.log(`[getDisplayData ${key}] boardData: frozen=${bd?.frozen} adm=${(bd?.admissions||[]).length} dis=${(bd?.discharges||[]).length} hiddenAdm=${(bd?.hiddenAdmissions||[]).length} hiddenDis=${(bd?.hiddenDischarges||[]).length}`);
+    }
     // frozen(스냅샷) 데이터: 저장된 데이터 + calendarData 보완 (누락 방지)
     if (bd?.frozen) {
       // frozen이어도 상담일지의 신환 플래그는 반영
@@ -1033,7 +1041,7 @@ export default function MonthlySchedule() {
                         {(dayData.admissions||[]).length > 0 && (
                           <>
                             <div style={{ fontSize:13, fontWeight:800, color:"#166534", marginBottom:3 }}>
-                              ↑ 입원 {(dayData.admissions||[]).length}
+                              ↑ 입원 {(dayData.admissions||[]).filter(a=>a.name).length}
                             </div>
                             {(dayData.admissions||[]).map((p, pi) => (
                               <PatientChip key={p.id||pi} p={p} type="admission"
@@ -1053,7 +1061,7 @@ export default function MonthlySchedule() {
                         {(dayData.discharges||[]).length > 0 && (
                           <>
                             <div style={{ fontSize:13, fontWeight:800, color:"#991b1b", marginBottom:3 }}>
-                              ↓ 퇴원 {(dayData.discharges||[]).length}
+                              ↓ 퇴원 {(dayData.discharges||[]).filter(d=>d.name).length}
                             </div>
                             {(dayData.discharges||[]).map((p, pi) => (
                               <PatientChip key={p.id||pi} p={p} type="discharge"
