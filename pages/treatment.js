@@ -66,18 +66,18 @@ const TREATMENT_GROUPS = [
     group: "경구제", color: "#d97706", bg: "#fffbeb",
     items: [
       { id: "meshima",    name: "메시마F",      price: 18000, custom: "qty" },
-      { id: "selenase_l", name: "셀레나제액상", price: 5000,  custom: "qty" },
-      { id: "selenase_t", name: "셀레나제정",   price: 5000,  custom: "qty" },
-      { id: "selenase_f", name: "셀레나제필름", price: 5000,  custom: "qty" },
+      { id: "selenase_l", name: "셀레나제",     price: 5000,  custom: "qty" },
+      { id: "selenase_t", name: "세파셀렌정",   price: 5000,  custom: "qty" },
+      { id: "selenase_f", name: "셀레늄필름",   price: 5000,  custom: "qty" },
     ],
   },
   {
     group: "퇴원약", color: "#92400e", bg: "#fef3c7",
     items: [
       { id: "meshima_dm",    name: "메시마F(퇴원약)",      price: 18000, custom: "qty", dischargeMed: true },
-      { id: "selenase_l_dm", name: "셀레나제액상(퇴원약)", price: 5000,  custom: "qty", dischargeMed: true },
-      { id: "selenase_t_dm", name: "셀레나제정(퇴원약)",   price: 5000,  custom: "qty", dischargeMed: true },
-      { id: "selenase_f_dm", name: "셀레나제필름(퇴원약)", price: 5000,  custom: "qty", dischargeMed: true },
+      { id: "selenase_l_dm", name: "셀레나제(퇴원약)",     price: 5000,  custom: "qty", dischargeMed: true },
+      { id: "selenase_t_dm", name: "세파셀렌정(퇴원약)",   price: 5000,  custom: "qty", dischargeMed: true },
+      { id: "selenase_f_dm", name: "셀레늄필름(퇴원약)",   price: 5000,  custom: "qty", dischargeMed: true },
     ],
   },
 ];
