@@ -444,27 +444,43 @@ export default function MonthlySchedule() {
     return s;
   }, [consultations, newPatientFlags, dailyBoards, year]);
 
-  // 표시 데이터: calendarData 기반 + boardData 수동 추가/숨김 병합
+  // 표시 데이터: dailyBoards 우선 → calendarData + boardData 병합
   function getDisplayData(key) {
     const bd = boardData[key];
-    // 디버그: 오늘 날짜일 때 데이터 소스 로그
-    const today = new Date();
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-    if (key === todayKey) {
-      const cd = calendarData[key] || { admissions:[], discharges:[] };
-      console.log(`[getDisplayData ${key}] calendarData: adm=${cd.admissions.length}(${cd.admissions.map(a=>a.name).join(',')}) dis=${cd.discharges.length}(${cd.discharges.map(d=>d.name).join(',')})`);
-      console.log(`[getDisplayData ${key}] boardData: frozen=${bd?.frozen} adm=${(bd?.admissions||[]).length} dis=${(bd?.discharges||[]).length} hiddenAdm=${(bd?.hiddenAdmissions||[]).length} hiddenDis=${(bd?.hiddenDischarges||[]).length}`);
+    const db = dailyBoards[key];
+    const cd = calendarData[key] || { admissions:[], discharges:[] };
+
+    // 1순위: dailyBoards에 사용자가 저장한 데이터가 있으면 그것을 기반으로 사용
+    // (일일현황판에서 직접 편집/확인한 최신 데이터)
+    if (db?.admissions || db?.discharges) {
+      const dbAdm = dedupList(db.admissions || []).map(a => {
+        if (!a.isNew && newPatientNorms.has(normName(a.name))) return { ...a, isNew: true };
+        return a;
+      });
+      const dbDis = dedupList(db.discharges || []);
+      // dailyBoards에 없지만 calendarData에 있는 항목도 보완
+      const dbAdmNorms = new Set(dbAdm.map(a => normName(a.name)));
+      const dbDisNorms = new Set(dbDis.map(d => normName(d.name)));
+      const extraAdm = (cd.admissions || []).filter(a =>
+        a.name && !dbAdmNorms.has(normName(a.name))
+      );
+      const extraDis = (cd.discharges || []).filter(d =>
+        d.name && !dbDisNorms.has(normName(d.name))
+      );
+      return {
+        admissions: dedupList([...dbAdm, ...extraAdm]),
+        discharges: dedupList([...dbDis, ...extraDis]),
+        isManual: true,
+      };
     }
-    // frozen(스냅샷) 데이터: 저장된 데이터 + calendarData 보완 (누락 방지)
+
+    // 2순위: frozen(스냅샷) 데이터 + calendarData 보완
     if (bd?.frozen) {
-      // frozen이어도 상담일지의 신환 플래그는 반영
       const admissions = dedupList(bd.admissions || []).map(a => {
         if (!a.isNew && newPatientNorms.has(normName(a.name))) return { ...a, isNew: true };
         return a;
       });
       const discharges = dedupList(bd.discharges || []);
-      // frozen에 없지만 calendarData에 있는 항목 보완 (숨김 제외)
-      const cd = calendarData[key] || { admissions:[], discharges:[] };
       const hiddenAdm = new Set((bd.hiddenAdmissions || []).map(n => typeof n === 'string' ? n : normName(n)));
       const hiddenDis = new Set((bd.hiddenDischarges || []).map(n => typeof n === 'string' ? n : normName(n)));
       const frozenAdmNorms = new Set(admissions.map(a => normName(a.name)));
@@ -481,7 +497,8 @@ export default function MonthlySchedule() {
         isManual: true,
       };
     }
-    const cd = calendarData[key] || { admissions:[], discharges:[] };
+
+    // 3순위: calendarData + monthlyBoards 수동 추가/숨김 병합
     if (!bd) return { admissions: dedupList(cd.admissions), discharges: dedupList(cd.discharges), isManual: false };
     const hiddenAdm = new Set(bd.hiddenAdmissions || []);
     const hiddenDis = new Set(bd.hiddenDischarges || []);
