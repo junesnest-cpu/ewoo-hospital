@@ -450,6 +450,13 @@ export default function MonthlySchedule() {
     const db = dailyBoards[key];
     const cd = calendarData[key] || { admissions:[], discharges:[] };
 
+    // 디버그: 모든 데이터 소스 로그
+    if (key === '2026-04-15') {
+      console.log(`[GDD ${key}] cal: adm=${cd.admissions.length}(${cd.admissions.map(a=>a.name).join(',')}) dis=${cd.discharges.length}(${cd.discharges.map(d=>d.name).join(',')})`);
+      console.log(`[GDD ${key}] dailyBoards: ${db ? `adm=${(db.admissions||[]).filter(a=>a.name).length} dis=${(db.discharges||[]).filter(d=>d.name).length}` : '없음'}`);
+      console.log(`[GDD ${key}] monthlyBoards: ${bd ? `frozen=${bd.frozen} adm=${(bd.admissions||[]).length} dis=${(bd.discharges||[]).length} hidAdm=${(bd.hiddenAdmissions||[]).length} hidDis=${(bd.hiddenDischarges||[]).length}` : '없음'}`);
+    }
+
     // 1순위: dailyBoards에 사용자가 저장한 데이터가 있으면 그대로 사용
     // (일일현황판과 동일한 데이터 소스 — 추가 병합 없음)
     if (db?.admissions || db?.discharges) {
