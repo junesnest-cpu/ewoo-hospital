@@ -262,30 +262,28 @@ export default function DailyBoard() {
     return { admissions: adm, discharges: dis };
   }, [slots, consultations, date, dateYear]);
 
-  // ── 표시 데이터: monthly.js getDisplayData와 동일한 전체 합산 로직 ──
+  // ── 표시 데이터: calendarData + dailyBoards 합산 (monthly.js와 동일 로직) ──
   const displayData = useMemo(() => {
-    const bd = monthlyBoard;
-    const db = savedOverride;
+    const db = savedOverride; // = dailyBoards (단일 저장소)
     const cd = calendarData;
 
-    const hiddenAdm = new Set((bd?.hiddenAdmissions || []).map(n => typeof n === 'string' ? n : normName(n)));
-    const hiddenDis = new Set((bd?.hiddenDischarges || []).map(n => typeof n === 'string' ? n : normName(n)));
+    const hiddenAdm = new Set((db?.hiddenAdmissions || []).map(n => typeof n === 'string' ? n : normName(n)));
+    const hiddenDis = new Set((db?.hiddenDischarges || []).map(n => typeof n === 'string' ? n : normName(n)));
 
-    // 모든 소스를 합산 (이름 기준 dedup)
+    // calendarData + dailyBoards 합산 (이름 기준 dedup)
     const mergeAdm = [], mergeDis = [];
     const seenAdm = new Set(), seenDis = new Set();
     const addAdm = (list) => { for (const a of (list || [])) { const n = normName(a.name); if (n && !seenAdm.has(n)) { mergeAdm.push(a); seenAdm.add(n); } } };
     const addDis = (list) => { for (const d of (list || [])) { const n = normName(d.name); if (n && !seenDis.has(n)) { mergeDis.push(d); seenDis.add(n); } } };
 
     addAdm(cd.admissions);        addDis(cd.discharges);
-    addAdm(bd?.admissions);       addDis(bd?.discharges);
     addAdm(db?.admissions);       addDis(db?.discharges);
 
     return {
       admissions: mergeAdm.filter(a => !hiddenAdm.has(normName(a.name))),
       discharges: mergeDis.filter(d => !hiddenDis.has(normName(d.name))),
     };
-  }, [monthlyBoard, calendarData, savedOverride]);
+  }, [calendarData, savedOverride]);
 
   // ── 입원/퇴원 연동 (displayData + patientInfo 보강) ──
   const syncedAdmissions = useMemo(() => {

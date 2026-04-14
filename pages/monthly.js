@@ -81,7 +81,8 @@ export default function MonthlySchedule() {
   const [memoSaving, setMemoSaving] = useState(false);
 
   // 편집된 월간 데이터 (Firebase monthlyBoards/{YYYY-MM})
-  const [boardData, setBoardData] = useState({});
+  // boardData = dailyBoards (저장소 통일: monthlyBoards → dailyBoards)
+  const boardData = dailyBoards;
   const [boardDataLoaded, setBoardDataLoaded] = useState(false);
 
   // 신환 플래그 (공유 저장소: 일일현황판과 동기화)
@@ -195,14 +196,12 @@ export default function MonthlySchedule() {
     return list;
   }, [slots, consultations]);
 
-  // 월간 보드 데이터 로드
+  // dailyBoards 로드 완료 감지 (boardData = dailyBoards)
   useEffect(() => {
+    // dailyBoards가 비어있어도 로드는 완료된 것으로 간주 (약간의 지연 후)
     setBoardDataLoaded(false);
-    const u = onValue(ref(db, `monthlyBoards/${toYM(year, month)}`), snap => {
-      setBoardData(snap.val() || {});
-      setBoardDataLoaded(true);
-    });
-    return () => u();
+    const t = setTimeout(() => setBoardDataLoaded(true), 500);
+    return () => clearTimeout(t);
   }, [year, month]);
 
   // 메모 로드
@@ -343,65 +342,37 @@ export default function MonthlySchedule() {
   }, [slots, consultations, dailyBoards, year, month]);
 
   // 당일 누적 병합: 슬롯/상담에서 새로 감지된 입퇴원을 frozen 스냅샷에 추가
-  // (과거 날짜는 syncEMR이 이벤트 기반으로 기록하므로 프론트엔드에서 건드리지 않음)
+  // 당일 자동 스냅샷: calendarData의 새 항목을 dailyBoards에 누적 추가
   useEffect(() => {
     if (!Object.keys(slots).length) return;
-    // boardData가 Firebase에서 로드되기 전에는 freeze하지 않음 (syncEMR 데이터 덮어쓰기 방지)
     if (!boardDataLoaded) return;
     const today = new Date(); today.setHours(0,0,0,0);
-    const ym = toYM(year, month);
 
     // 당월이 아니면 건너뜀
     if (year !== today.getFullYear() || month !== (today.getMonth()+1)) return;
 
     const key = `${year}-${String(month).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
-    const bd = boardData[key];
+    const bd = boardData[key]; // = dailyBoards[key]
     const cd = calendarData[key] || { admissions:[], discharges:[] };
 
-    // live 데이터: calendarData + boardData(수동 추가분) 병합
-    const mergeCdBd = () => {
-      if (!bd || bd.frozen) return { admissions: cd.admissions || [], discharges: cd.discharges || [] };
-      const hiddenAdm = new Set(bd.hiddenAdmissions || []);
-      const hiddenDis = new Set(bd.hiddenDischarges || []);
-      const baseAdm = (cd.admissions || []).filter(a => !hiddenAdm.has(normName(a.name)));
-      const baseDis = (cd.discharges || []).filter(dd => !hiddenDis.has(normName(dd.name)));
-      const cdAdmNorms = new Set((cd.admissions || []).map(a => normName(a.name)));
-      const cdDisNorms = new Set((cd.discharges || []).map(dd => normName(dd.name)));
-      const manualAdm = (bd.admissions || []).filter(a => !cdAdmNorms.has(normName(a.name)));
-      const manualDis = (bd.discharges || []).filter(dd => !cdDisNorms.has(normName(dd.name)));
-      return { admissions: [...baseAdm, ...manualAdm], discharges: [...baseDis, ...manualDis] };
-    };
+    if (!cd.admissions.length && !cd.discharges.length) return;
 
-    const live = mergeCdBd();
+    // 기존 dailyBoards에 새 항목만 추가 (기존 항목은 절대 삭제하지 않음)
+    const existAdmNorms = new Set((bd?.admissions || []).filter(a => a.name).map(a => normName(a.name)));
+    const existDisNorms = new Set((bd?.discharges || []).filter(d => d.name).map(d => normName(d.name)));
+    const newAdm = (cd.admissions || []).filter(a => a.name && !existAdmNorms.has(normName(a.name)));
+    const newDis = (cd.discharges || []).filter(d => d.name && !existDisNorms.has(normName(d.name)));
 
-    if (bd?.frozen) {
-      // 기존 frozen에 새 항목만 추가 (기존 항목은 절대 삭제하지 않음)
-      const existAdmNorms = new Set((bd.admissions || []).map(a => normName(a.name)));
-      const existDisNorms = new Set((bd.discharges || []).map(d => normName(d.name)));
-      const newAdm = (live.admissions || []).filter(a => a.name && !existAdmNorms.has(normName(a.name)));
-      const newDis = (live.discharges || []).filter(d => d.name && !existDisNorms.has(normName(d.name)));
-      if (newAdm.length || newDis.length) {
-        const updated = {
-          frozen: true,
-          admissions: [...(bd.admissions || []), ...newAdm],
-          discharges: [...(bd.discharges || []), ...newDis],
-        };
-        if (bd.hiddenAdmissions?.length) updated.hiddenAdmissions = bd.hiddenAdmissions;
-        if (bd.hiddenDischarges?.length) updated.hiddenDischarges = bd.hiddenDischarges;
-        set(ref(db, `monthlyBoards/${ym}/${key}`), updated);
-      }
-    } else {
-      // 최초 frozen 생성 (당일에 처음 monthly 방문 시)
-      if (frozenKeysRef.current.has(key)) return;
-      if (!live.admissions.length && !live.discharges.length) return;
-      frozenKeysRef.current.add(key);
-      set(ref(db, `monthlyBoards/${ym}/${key}`), { frozen: true, admissions: live.admissions, discharges: live.discharges });
+    if (newAdm.length || newDis.length) {
+      const updated = {
+        ...(bd || {}),
+        admissions: [...(bd?.admissions || []), ...newAdm],
+        discharges: [...(bd?.discharges || []), ...newDis],
+      };
+      set(ref(db, `dailyBoards/${key}`), updated);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendarData, boardData, boardDataLoaded, year, month, slots]);
-
-  // 월 변경 시 스냅샷 추적 초기화
-  useEffect(() => { frozenKeysRef.current = new Set(); }, [year, month]);
 
   // 이름 기준 중복 제거 (boardData에 이미 저장된 중복도 처리)
   function dedupList(list) {
@@ -446,24 +417,21 @@ export default function MonthlySchedule() {
 
   // 표시 데이터: dailyBoards 우선 → calendarData + boardData 병합
   function getDisplayData(key) {
-    const bd = boardData[key];
-    const db = dailyBoards[key];
+    const bd = boardData[key]; // = dailyBoards[key] (단일 저장소)
     const cd = calendarData[key] || { admissions:[], discharges:[] };
 
     // hidden 처리 목록
     const hiddenAdm = new Set((bd?.hiddenAdmissions || []).map(n => typeof n === 'string' ? n : normName(n)));
     const hiddenDis = new Set((bd?.hiddenDischarges || []).map(n => typeof n === 'string' ? n : normName(n)));
 
-    // 모든 소스를 합산하여 가장 완전한 목록 생성 (이름 기준 dedup)
+    // calendarData(slots 실시간) + dailyBoards(저장된 데이터) 합산 (이름 기준 dedup)
     const mergeAdm = [], mergeDis = [];
     const seenAdm = new Set(), seenDis = new Set();
     const addAdm = (list) => { for (const a of (list || [])) { const n = normName(a.name); if (n && !seenAdm.has(n)) { mergeAdm.push(a); seenAdm.add(n); } } };
     const addDis = (list) => { for (const d of (list || [])) { const n = normName(d.name); if (n && !seenDis.has(n)) { mergeDis.push(d); seenDis.add(n); } } };
 
-    // 소스별 합산 (먼저 추가된 소스의 항목 정보가 우선 유지됨)
-    addAdm(cd.admissions);        addDis(cd.discharges);         // slots 기반 실시간
-    addAdm(bd?.admissions);       addDis(bd?.discharges);        // monthlyBoards (frozen/수동)
-    addAdm(db?.admissions);       addDis(db?.discharges);        // dailyBoards
+    addAdm(cd.admissions);        addDis(cd.discharges);
+    addAdm(bd?.admissions);       addDis(bd?.discharges);
 
     // hidden 제거 + 신환 플래그 반영
     const admissions = mergeAdm
@@ -472,8 +440,7 @@ export default function MonthlySchedule() {
     const discharges = mergeDis
       .filter(d => !hiddenDis.has(normName(d.name)));
 
-    const hasManual = !!(bd || db);
-    return { admissions, discharges, isManual: hasManual };
+    return { admissions, discharges, isManual: !!bd };
   }
 
   // 편집 모달 열기
@@ -685,45 +652,36 @@ export default function MonthlySchedule() {
   // 편집 저장 (calendarData 기반 수동 추가/숨김만 저장)
   async function saveEdit() {
     setEditSaving(true);
-    // 이름 변경 시 consultation/slots 연동
     const cd = calendarData[editModal] || { admissions:[], discharges:[] };
     await propagateNameChanges(editAdm, cd.admissions || []);
     await propagateNameChanges(editDis, cd.discharges || []);
-    // 신환 플래그 동기화
     await syncNewPatientFlags(editAdm, editModal);
-    const bd = boardData[editModal];
-    // frozen 데이터: 전체 목록을 직접 저장 (_slotKey, _consultationId 메타 제거)
-    const cleanList = (list) => (list || []).map(({_slotKey, _consultationId, ...rest}) => rest);
-    if (bd?.frozen) {
-      const savedAdmNorms = new Set(editAdm.map(a => normName(a.name)));
-      const savedDisNorms = new Set(editDis.map(d => normName(d.name)));
-      // calendarData에 있지만 편집 목록에서 제거된 항목 → hidden 처리 (되살아남 방지)
-      const cd = calendarData[editModal] || { admissions:[], discharges:[] };
-      const hiddenAdmissions = (cd.admissions || [])
-        .filter(a => a.name && !savedAdmNorms.has(normName(a.name)))
-        .map(a => normName(a.name));
-      const hiddenDischarges = (cd.discharges || [])
-        .filter(d => d.name && !savedDisNorms.has(normName(d.name)))
-        .map(d => normName(d.name));
-      const payload = { frozen: true, admissions: cleanList(editAdm), discharges: cleanList(editDis) };
-      if (hiddenAdmissions.length) payload.hiddenAdmissions = hiddenAdmissions;
-      if (hiddenDischarges.length) payload.hiddenDischarges = hiddenDischarges;
-      await set(ref(db, `monthlyBoards/${toYM(year, month)}/${editModal}`), payload);
-      setEditSaving(false);
-      setEditModal(null);
-      return;
-    }
-    const cdAdmNorms = new Set((cd.admissions || []).map(a => normName(a.name)));
-    const cdDisNorms = new Set((cd.discharges || []).map(d => normName(d.name)));
+
+    const cleanList = (list) => (list || []).map(({_slotKey, _consultationId, frozen, ...rest}) => rest);
     const savedAdmNorms = new Set(editAdm.map(a => normName(a.name)));
     const savedDisNorms = new Set(editDis.map(d => normName(d.name)));
-    const hiddenAdmissions = (cd.admissions || []).filter(a => !savedAdmNorms.has(normName(a.name))).map(a => normName(a.name));
-    const hiddenDischarges = (cd.discharges || []).filter(d => !savedDisNorms.has(normName(d.name))).map(d => normName(d.name));
-    const manualAdmissions = cleanList(editAdm.filter(a => !cdAdmNorms.has(normName(a.name))));
-    const manualDischarges = cleanList(editDis.filter(d => !cdDisNorms.has(normName(d.name))));
-    const hasAny = manualAdmissions.length || manualDischarges.length || hiddenAdmissions.length || hiddenDischarges.length;
-    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${editModal}`),
-      hasAny ? { admissions: manualAdmissions, discharges: manualDischarges, hiddenAdmissions, hiddenDischarges } : null);
+    // calendarData에 있지만 편집에서 제거된 항목 → hidden 처리 (자동 부활 방지)
+    const hiddenAdmissions = (cd.admissions || [])
+      .filter(a => a.name && !savedAdmNorms.has(normName(a.name)))
+      .map(a => normName(a.name));
+    const hiddenDischarges = (cd.discharges || [])
+      .filter(d => d.name && !savedDisNorms.has(normName(d.name)))
+      .map(d => normName(d.name));
+
+    const bd = boardData[editModal];
+    const payload = {
+      ...(bd || {}),
+      admissions: cleanList(editAdm),
+      discharges: cleanList(editDis),
+    };
+    // frozen 플래그 제거 (더 이상 사용하지 않음)
+    delete payload.frozen;
+    if (hiddenAdmissions.length) payload.hiddenAdmissions = hiddenAdmissions;
+    else delete payload.hiddenAdmissions;
+    if (hiddenDischarges.length) payload.hiddenDischarges = hiddenDischarges;
+    else delete payload.hiddenDischarges;
+
+    await set(ref(db, `dailyBoards/${editModal}`), payload);
     setEditSaving(false);
     setEditModal(null);
   }
@@ -731,13 +689,12 @@ export default function MonthlySchedule() {
   // 인라인 삭제
   async function deleteEntry(dKey, type, entryId) {
     const bd = boardData[dKey];
-    // frozen 데이터: 직접 필터 + calendarData 항목은 hidden 처리
-    if (bd?.frozen) {
+    // 저장된 데이터가 있으면 직접 수정
+    if (bd?.admissions || bd?.discharges) {
       const all = type === "admission" ? [...(bd.admissions || [])] : [...(bd.discharges || [])];
       const deleted = all.find(e => (e.id || "") === entryId);
-      const newBd = { frozen: true, admissions: [...(bd.admissions || [])], discharges: [...(bd.discharges || [])] };
-      if (bd.hiddenAdmissions?.length) newBd.hiddenAdmissions = [...bd.hiddenAdmissions];
-      if (bd.hiddenDischarges?.length) newBd.hiddenDischarges = [...bd.hiddenDischarges];
+      const newBd = { ...bd, admissions: [...(bd.admissions || [])], discharges: [...(bd.discharges || [])] };
+      delete newBd.frozen;
       if (type === "admission") newBd.admissions = newBd.admissions.filter(a => a.id !== entryId);
       else newBd.discharges = newBd.discharges.filter(d => d.id !== entryId);
       // calendarData에 있는 항목이면 hidden 목록에 추가 (삭제 후 되살아남 방지)
@@ -752,7 +709,7 @@ export default function MonthlySchedule() {
           newBd[hKey] = [...new Set([...(newBd[hKey] || []), dn])];
         }
       }
-      await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), newBd);
+      await set(ref(db, `dailyBoards/${dKey}`), newBd);
       return;
     }
     const merged = getDisplayData(dKey);
@@ -771,7 +728,7 @@ export default function MonthlySchedule() {
       else newBd2.discharges = newBd2.discharges.filter(d => d.id !== entryId);
     }
     const hasAny = newBd2.admissions.length || newBd2.discharges.length || newBd2.hiddenAdmissions.length || newBd2.hiddenDischarges.length;
-    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), hasAny ? newBd2 : null);
+    await set(ref(db, `dailyBoards/${dKey}`), hasAny ? newBd2 : null);
   }
 
   // 인라인 추가
@@ -784,33 +741,27 @@ export default function MonthlySchedule() {
       }
     }
     const bd = boardData[dKey] || {};
-    // frozen 데이터: 직접 추가
-    if (bd?.frozen) {
-      const newBd = { frozen: true, admissions: [...(bd.admissions || [])], discharges: [...(bd.discharges || [])] };
-      if (type === "admission") newBd.admissions.push({...entry, id: uid()});
-      else newBd.discharges.push({...entry, id: uid()});
-      await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), newBd);
-      return;
-    }
-    const newBd = { admissions: bd.admissions || [], discharges: bd.discharges || [], hiddenAdmissions: bd.hiddenAdmissions || [], hiddenDischarges: bd.hiddenDischarges || [] };
-    if (type === "admission") newBd.admissions = [...newBd.admissions, {...entry, id: uid()}];
-    else newBd.discharges = [...newBd.discharges, {...entry, id: uid()}];
-    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), newBd);
+    const newBd = { ...bd, admissions: [...(bd.admissions || [])], discharges: [...(bd.discharges || [])] };
+    delete newBd.frozen;
+    if (type === "admission") newBd.admissions.push({...entry, id: uid()});
+    else newBd.discharges.push({...entry, id: uid()});
+    await set(ref(db, `dailyBoards/${dKey}`), newBd);
   }
 
   // 시간만 인라인 수정
   async function updateEntryTime(dKey, type, entryId, newTime) {
     const bd = boardData[dKey];
-    if (bd?.frozen) {
+    if (bd?.admissions || bd?.discharges) {
       const newBd = { ...bd, [type]: (bd[type] || []).map(e => e.id === entryId ? { ...e, time: newTime } : e) };
-      await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), newBd);
+      delete newBd.frozen;
+      await set(ref(db, `dailyBoards/${dKey}`), newBd);
       return;
     }
-    // non-frozen: getDisplayData → frozen으로 저장 (시간 수정은 boardData에 보존 필요)
+    // 저장된 데이터 없으면 displayData를 스냅샷으로 저장
     const display = getDisplayData(dKey);
     const admissions = type === "admissions" ? (display.admissions || []).map(e => e.id === entryId ? { ...e, time: newTime } : e) : (display.admissions || []);
     const discharges = type === "discharges" ? (display.discharges || []).map(e => e.id === entryId ? { ...e, time: newTime } : e) : (display.discharges || []);
-    await set(ref(db, `monthlyBoards/${toYM(year, month)}/${dKey}`), { frozen: true, admissions, discharges });
+    await set(ref(db, `dailyBoards/${dKey}`), { admissions, discharges });
   }
 
   function openPopover(dKey, type, e) {
