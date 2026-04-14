@@ -1111,12 +1111,11 @@ function PhysPrint({patients,selected,weekDates,therapists}){
             </div>
             <div style={{fontSize:22,color:"#555",marginBottom:6}}>물리치료 안내 · {weekDates[0].getMonth()+1}/{weekDates[0].getDate()}~{weekDates[6].getMonth()+1}/{weekDates[6].getDate()}</div>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:24}}>
-              <thead><tr style={{background:"#f0f0f0"}}>{["날짜","요일","치료","담당","시간"].map(h=><th key={h} style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}>{h}</th>)}</tr></thead>
+              <thead><tr style={{background:"#f0f0f0"}}>{["날짜","요일","치료","시간"].map(h=><th key={h} style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}>{h}</th>)}</tr></thead>
               <tbody>{sorted.map((e,i)=><tr key={i}>
                 <td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}>{weekDates[e.dayIdx].getMonth()+1}/{weekDates[e.dayIdx].getDate()}</td>
                 <td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}>{"월화수목금토일"[e.dayIdx]}</td>
                 <td style={{border:"1px solid #ddd",padding:"4px 8px"}}>{tName(e.treatmentId)}</td>
-                <td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}>{thName(e.therapistId)}</td>
                 <td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center",fontWeight:700}}>{e.time.slice(0,5)}</td>
               </tr>)}</tbody>
             </table>
