@@ -252,6 +252,7 @@ export default function TreatmentPage() {
   // 주차별 하한선 계산
   const calcWeekMin = (weekNum, hospDays) => {
     if (hospDays >= 7) return weekBase;
+    if (roomFree) return hospDays * Math.floor(weekBase / 7 / 1000) * 1000;
     if (weekNum === 1) return hospDays * 200000;
     return hospDays * 185000;
   };
