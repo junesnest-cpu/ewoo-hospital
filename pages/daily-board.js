@@ -262,18 +262,39 @@ export default function DailyBoard() {
     return { admissions: adm, discharges: dis };
   }, [slots, consultations, date, dateYear]);
 
-  // ── 월간보드 표시 데이터 (getDisplayData와 동일 로직) ──
+  // ── 표시 데이터: monthly.js getDisplayData와 동일 로직 ──
   const displayData = useMemo(() => {
     const bd = monthlyBoard;
+    const db = savedOverride;
+    const cd = calendarData;
     const dedupList = (list) => {
       const seen = new Set();
       return (list||[]).filter(a => { const n = normName(a.name); if (!n||seen.has(n)) return false; seen.add(n); return true; });
     };
 
-    if (bd?.frozen) {
-      return { admissions: dedupList(bd.admissions||[]), discharges: dedupList(bd.discharges||[]) };
+    // 1순위: dailyBoards에 사용자가 저장한 데이터가 있으면 그대로 사용
+    if (db?.admissions || db?.discharges) {
+      return { admissions: dedupList(db.admissions||[]), discharges: dedupList(db.discharges||[]) };
     }
-    const cd = calendarData;
+
+    // 2순위: frozen 데이터 + calendarData 보완
+    if (bd?.frozen) {
+      const admissions = dedupList(bd.admissions||[]);
+      const discharges = dedupList(bd.discharges||[]);
+      const hiddenAdm = new Set((bd.hiddenAdmissions||[]).map(n => typeof n === 'string' ? n : normName(n)));
+      const hiddenDis = new Set((bd.hiddenDischarges||[]).map(n => typeof n === 'string' ? n : normName(n)));
+      const frozenAdmNorms = new Set(admissions.map(a => normName(a.name)));
+      const frozenDisNorms = new Set(discharges.map(d => normName(d.name)));
+      const extraAdm = (cd.admissions||[]).filter(a =>
+        a.name && !frozenAdmNorms.has(normName(a.name)) && !hiddenAdm.has(normName(a.name))
+      );
+      const extraDis = (cd.discharges||[]).filter(d =>
+        d.name && !frozenDisNorms.has(normName(d.name)) && !hiddenDis.has(normName(d.name))
+      );
+      return { admissions: dedupList([...admissions,...extraAdm]), discharges: dedupList([...discharges,...extraDis]) };
+    }
+
+    // 3순위: calendarData + monthlyBoards 수동 병합
     if (!bd || (!bd.admissions?.length && !bd.discharges?.length && !bd.hiddenAdmissions?.length && !bd.hiddenDischarges?.length)) {
       return { admissions: dedupList(cd.admissions), discharges: dedupList(cd.discharges) };
     }
@@ -286,7 +307,7 @@ export default function DailyBoard() {
     const manualAdm = (bd.admissions||[]).filter(a => !cdAdmNorms.has(normName(a.name)));
     const manualDis = (bd.discharges||[]).filter(d => !cdDisNorms.has(normName(d.name)));
     return { admissions: dedupList([...baseAdm,...manualAdm]), discharges: dedupList([...baseDis,...manualDis]) };
-  }, [monthlyBoard, calendarData]);
+  }, [monthlyBoard, calendarData, savedOverride]);
 
   // ── 입원/퇴원 연동 (displayData + patientInfo 보강) ──
   const syncedAdmissions = useMemo(() => {
@@ -366,9 +387,9 @@ export default function DailyBoard() {
     { key:"hyperbaric", label:"고압산소" },
   ], [therapists]);
 
-  // ── 표시 데이터: 오버라이드가 있으면 오버라이드, 없으면 연동 ──
-  const admissions   = savedOverride?.admissions   || syncedAdmissions;
-  const discharges   = savedOverride?.discharges   || syncedDischarges;
+  // ── 표시 데이터: displayData 기반 연동 (savedOverride는 displayData에 통합됨) ──
+  const admissions   = syncedAdmissions;
+  const discharges   = syncedDischarges;
   const transfers    = savedOverride?.transfers    || [EMPTY_TRN()];
   const reservedBeds = savedOverride?.reservedBeds || (syncedReserved.length ? syncedReserved : [EMPTY_RES()]);
   const therapy      = savedOverride?.therapy      || {};
