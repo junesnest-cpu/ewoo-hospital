@@ -5,7 +5,9 @@ import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 
 const ROOM_TYPES = ["1인실","2인실","4인실","6인실"];
-const TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
+const ADMIT_TIME_OPTIONS = ["아침","점심","저녁"];
+const DISCHARGE_TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
+const ALL_TIME_OPTIONS = [...ADMIT_TIME_OPTIONS, ...DISCHARGE_TIME_OPTIONS];
 const WARD_STRUCTURE = {
   2: { rooms: [
     {id:"201",type:"4인실",cap:4},{id:"202",type:"1인실",cap:1},{id:"203",type:"4인실",cap:4},
@@ -697,11 +699,11 @@ export default function ConsultationPage() {
                 <label style={S.lbl}>입원 예약일</label>
                 <input style={{...S.inp, width:"100%", boxSizing:"border-box"}} type="date" value={form.admitDate} onChange={e=>setF("admitDate",e.target.value)}/>
                 <div style={{marginTop:4}}>
-                  {(!form.admitTime || TIME_OPTIONS.includes(form.admitTime)) ? (
+                  {(!form.admitTime || ALL_TIME_OPTIONS.includes(form.admitTime)) ? (
                     <select value={form.admitTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("admitTime",v?v.trim():""); } else setF("admitTime",e.target.value); }}
                       style={{...S.inp, width:"100%", boxSizing:"border-box", color:form.admitTime?"#166534":"#94a3b8"}}>
                       <option value="">시간</option>
-                      {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                      {ADMIT_TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
                       <option value="__custom__">직접입력</option>
                     </select>
                   ) : (
@@ -714,11 +716,11 @@ export default function ConsultationPage() {
                 <label style={S.lbl}>퇴원 예정일</label>
                 <input style={{...S.inp, width:"100%", boxSizing:"border-box"}} type="date" value={form.dischargeDate} onChange={e=>setF("dischargeDate",e.target.value)}/>
                 <div style={{marginTop:4}}>
-                  {(!form.dischargeTime || TIME_OPTIONS.includes(form.dischargeTime)) ? (
+                  {(!form.dischargeTime || ALL_TIME_OPTIONS.includes(form.dischargeTime)) ? (
                     <select value={form.dischargeTime||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setF("dischargeTime",v?v.trim():""); } else setF("dischargeTime",e.target.value); }}
                       style={{...S.inp, width:"100%", boxSizing:"border-box", color:form.dischargeTime?"#991b1b":"#94a3b8"}}>
                       <option value="">시간</option>
-                      {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                      {DISCHARGE_TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
                       <option value="__custom__">직접입력</option>
                     </select>
                   ) : (

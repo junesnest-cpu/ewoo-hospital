@@ -60,7 +60,9 @@ function parseDateStr(str, contextYear) {
 const EMPTY_ADM = () => ({ id:uid(), name:"", room:"", isNew:false, isReserved:false, note:"", time:"" });
 const EMPTY_DIS = () => ({ id:uid(), name:"", room:"", note:"", time:"" });
 
-const TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
+const ADMIT_TIME_OPTIONS = ["아침","점심","저녁"];
+const DISCHARGE_TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
+const ALL_TIME_OPTIONS = [...ADMIT_TIME_OPTIONS, ...DISCHARGE_TIME_OPTIONS];
 
 export default function MonthlySchedule() {
   const router = useRouter();
@@ -1173,11 +1175,11 @@ function CellPopover({ popover, onClose, onSave, allPatients }) {
         <div style={{ display:"flex", gap:6 }}>
           <input value={form.room} onChange={e => setForm(f => ({...f, room:e.target.value}))}
             placeholder="호실 (예: 501-1)" style={{ ...inputSt, flex:1 }} />
-          {(!form.time || TIME_OPTIONS.includes(form.time)) ? (
+          {(!form.time || ALL_TIME_OPTIONS.includes(form.time)) ? (
             <select value={form.time} onChange={e => { if(e.target.value==="__custom__") { const v=prompt("시간 입력 (예: 14시)"); setForm(f=>({...f,time:v?v.trim():""})); } else setForm(f=>({...f,time:e.target.value})); }}
               style={{ ...inputSt, width:95, color: form.time ? (isAdm?"#166534":"#991b1b") : "#94a3b8" }}>
               <option value="">시간</option>
-              {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+              {(isAdm ? ADMIT_TIME_OPTIONS : DISCHARGE_TIME_OPTIONS).map(t => <option key={t} value={t}>{t}</option>)}
               <option value="__custom__">✏️ 직접입력</option>
             </select>
           ) : (
@@ -1285,11 +1287,11 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
                     />
                     <input value={row.room} onChange={e => updateAdm(row.id,"room",e.target.value)}
                       placeholder="호실" style={{ ...MS.input, width:90 }} />
-                    {(!row.time || TIME_OPTIONS.includes(row.time)) ? (
+                    {(!row.time || ALL_TIME_OPTIONS.includes(row.time)) ? (
                       <select value={row.time||""} onChange={e => { if(e.target.value==="__custom__") updateAdm(row.id,"time",""); else updateAdm(row.id,"time",e.target.value); if(e.target.value==="__custom__") { const v=prompt("시간 입력 (예: 14시)"); if(v) updateAdm(row.id,"time",v.trim()); } }}
                         style={{ ...MS.input, width:85, color: row.time?"#166534":"#94a3b8", padding:"6px 4px" }}>
                         <option value="">시간</option>
-                        {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                        {ADMIT_TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                         <option value="__custom__">✏️ 직접입력</option>
                       </select>
                     ) : (
@@ -1342,11 +1344,11 @@ function DayEditModal({ dateKey, admissions, discharges, onChangeAdm, onChangeDi
                     />
                     <input value={row.room} onChange={e => updateDis(row.id,"room",e.target.value)}
                       placeholder="호실" style={{ ...MS.input, width:90 }} />
-                    {(!row.time || TIME_OPTIONS.includes(row.time)) ? (
+                    {(!row.time || ALL_TIME_OPTIONS.includes(row.time)) ? (
                       <select value={row.time||""} onChange={e => { if(e.target.value==="__custom__") updateDis(row.id,"time",""); else updateDis(row.id,"time",e.target.value); if(e.target.value==="__custom__") { const v=prompt("시간 입력 (예: 14시)"); if(v) updateDis(row.id,"time",v.trim()); } }}
                         style={{ ...MS.input, width:85, color: row.time?"#991b1b":"#94a3b8", padding:"6px 4px" }}>
                         <option value="">시간</option>
-                        {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                        {DISCHARGE_TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                         <option value="__custom__">✏️ 직접입력</option>
                       </select>
                     ) : (
@@ -1426,14 +1428,14 @@ function PatientChip({ p, type, onDelete, highlight, onTimeChange }) {
           style={{ position:"absolute", top:"100%", left:0, zIndex:100, background:"#fff",
             borderRadius:8, boxShadow:"0 4px 16px rgba(0,0,0,0.18)", border:"1px solid #e2e8f0",
             padding:6, display:"flex", flexDirection:"column", gap:3, minWidth:100 }}>
-          {TIME_OPTIONS.map(t => (
+          {(type === "admission" ? ADMIT_TIME_OPTIONS : DISCHARGE_TIME_OPTIONS).map(t => (
             <button key={t} onClick={() => handleSelect(t)}
               style={{ background: p.time===t?"#0f2744":"#f8fafc", color: p.time===t?"#fff":"#334155",
                 border:"1px solid #e2e8f0", borderRadius:5, padding:"4px 10px", cursor:"pointer",
                 fontSize:12, fontWeight:700, textAlign:"left" }}>{t}</button>
           ))}
           {!customInput ? (
-            <button onClick={() => { setCustomInput(true); setCustomVal(p.time && !TIME_OPTIONS.includes(p.time) ? p.time : ""); }}
+            <button onClick={() => { setCustomInput(true); setCustomVal(p.time && !ALL_TIME_OPTIONS.includes(p.time) ? p.time : ""); }}
               style={{ background:"#f8fafc", color:"#64748b", border:"1px dashed #cbd5e1",
                 borderRadius:5, padding:"4px 10px", cursor:"pointer", fontSize:12, fontWeight:600, textAlign:"left" }}>✏️ 직접입력</button>
           ) : (

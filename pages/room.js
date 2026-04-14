@@ -635,7 +635,9 @@ export default function RoomPage() {
   );
 }
 
-const TIME_OPTIONS_RM = ["아침 후","점심 후","저녁 후"];
+const ADMIT_TIME_OPTIONS_RM = ["아침","점심","저녁"];
+const DISCHARGE_TIME_OPTIONS_RM = ["아침 후","점심 후","저녁 후"];
+const ALL_TIME_OPTIONS_RM = [...ADMIT_TIME_OPTIONS_RM, ...DISCHARGE_TIME_OPTIONS_RM];
 
 // ── PatientModal (타임라인 EditModal과 동일 형식) ─────────────────────────────
 function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, allPatients=[], currentPatient=null }) {
@@ -754,17 +756,17 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
             <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>{f.label}</label>
             <div style={{ display:"flex", gap:6 }}>
               <input style={{...inpStyle, flex:1}} value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} placeholder={f.ph} />
-              {(!form[f.timeKey] || TIME_OPTIONS_RM.includes(form[f.timeKey])) ? (
+              {(() => { const opts = f.timeKey === "admitTime" ? ADMIT_TIME_OPTIONS_RM : DISCHARGE_TIME_OPTIONS_RM; return (!form[f.timeKey] || ALL_TIME_OPTIONS_RM.includes(form[f.timeKey])) ? (
                 <select value={form[f.timeKey]||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setForm(p=>({...p,[f.timeKey]:v?v.trim():""})); } else setForm(p=>({...p,[f.timeKey]:e.target.value})); }}
                   style={{...inpStyle, width:110, color:form[f.timeKey]?"#166534":"#94a3b8", flexShrink:0}}>
                   <option value="">시간</option>
-                  {TIME_OPTIONS_RM.map(t=><option key={t} value={t}>{t}</option>)}
+                  {opts.map(t=><option key={t} value={t}>{t}</option>)}
                   <option value="__custom__">직접입력</option>
                 </select>
               ) : (
                 <input value={form[f.timeKey]} onChange={e=>setForm(p=>({...p,[f.timeKey]:e.target.value}))}
                   style={{...inpStyle, width:110, color:"#166534", flexShrink:0}} />
-              )}
+              ); })()}
             </div>
           </div>
         ))}

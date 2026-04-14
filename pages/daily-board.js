@@ -6,7 +6,9 @@ import useIsMobile from "../lib/useismobile";
 
 const DOW = ["일","월","화","수","목","금","토"];
 const THERAPY_SLOTS = ["09:00~10:00","10:00~11:00","11:00~12:00","13:00~14:00","14:00~15:00","15:00~16:00","16:00~17:00","17:00~18:00"];
-const TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
+const ADMIT_TIME_OPTIONS = ["아침","점심","저녁"];
+const DISCHARGE_TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
+const ALL_TIME_OPTIONS = [...ADMIT_TIME_OPTIONS, ...DISCHARGE_TIME_OPTIONS];
 const TREAT_NAMES = { pain:"페인", manip2:"도수2", manip1:"도수1" };
 const VALID_ROOMS = new Set([
   "201","202","203","204","205","206","301","302","303","304","305","306",
@@ -578,11 +580,11 @@ export default function DailyBoard() {
                       )}
                     </div>
                     {editMode ? (
-                      (!row.time || TIME_OPTIONS.includes(row.time)) ? (
+                      (!row.time || ALL_TIME_OPTIONS.includes(row.time)) ? (
                         <select value={row.time||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력"); updateRow(setEditAdm,row.id,"time",v?v.trim():""); } else updateRow(setEditAdm,row.id,"time",e.target.value); }}
                           style={{ border:"none", outline:"none", background:"transparent", fontSize:13, color:row.time?"#0891b2":"#94a3b8", fontFamily:"inherit", width:80, flexShrink:0 }}>
                           <option value="">시간</option>
-                          {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                          {ADMIT_TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
                           <option value="__custom__">직접입력</option>
                         </select>
                       ) : (
@@ -623,11 +625,11 @@ export default function DailyBoard() {
                       <span style={{ fontWeight:700, fontSize:16, flexShrink:0 }}>{row.name}</span>
                     )}
                     {editMode ? (
-                      (!row.time || TIME_OPTIONS.includes(row.time)) ? (
+                      (!row.time || ALL_TIME_OPTIONS.includes(row.time)) ? (
                         <select value={row.time||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력"); updateRow(setEditDis,row.id,"time",v?v.trim():""); } else updateRow(setEditDis,row.id,"time",e.target.value); }}
                           style={{ border:"none", outline:"none", background:"transparent", fontSize:13, color:row.time?"#0891b2":"#94a3b8", fontFamily:"inherit", width:80, flexShrink:0 }}>
                           <option value="">시간</option>
-                          {TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
+                          {DISCHARGE_TIME_OPTIONS.map(t=><option key={t} value={t}>{t}</option>)}
                           <option value="__custom__">직접입력</option>
                         </select>
                       ) : (
