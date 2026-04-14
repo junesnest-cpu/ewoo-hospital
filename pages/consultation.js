@@ -183,26 +183,29 @@ export default function ConsultationPage() {
         }
       });
     });
-    // consultationId가 없는 경우: 이름+reservedSlot으로 매칭
+    // consultationId가 없는 경우: 이름으로 전체 slots 검색 (병상 이동 대응)
     Object.entries(consultations).forEach(([cid, c]) => {
-      if (map[cid] || !c?.reservedSlot) return;
-      const slot = slots[c.reservedSlot];
-      if (!slot) return;
+      if (map[cid] || !c?.name) return;
       const cn = normName(c.name);
-      if (slot.current?.name && normName(slot.current.name) === cn) {
-        map[cid] = {
-          reservedSlot: c.reservedSlot,
-          admitDate: slot.current.admitDate || undefined,
-          dischargeDate: slot.current.discharge || undefined,
-        };
-      } else {
-        const r = (slot.reservations || []).find(r => r?.name && normName(r.name) === cn);
+      if (!cn) return;
+      // 전체 slots에서 이름으로 검색 (reservedSlot이 변경되었을 수 있으므로)
+      for (const [slotKey, slot] of Object.entries(slots)) {
+        if (slot?.current?.name && normName(slot.current.name) === cn) {
+          map[cid] = {
+            reservedSlot: slotKey,
+            admitDate: slot.current.admitDate || undefined,
+            dischargeDate: slot.current.discharge || undefined,
+          };
+          break;
+        }
+        const r = (slot?.reservations || []).find(r => r?.name && normName(r.name) === cn);
         if (r) {
           map[cid] = {
-            reservedSlot: c.reservedSlot,
+            reservedSlot: slotKey,
             admitDate: r.admitDate || undefined,
             dischargeDate: r.discharge || undefined,
           };
+          break;
         }
       }
     });
