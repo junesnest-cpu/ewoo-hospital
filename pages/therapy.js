@@ -6,7 +6,7 @@ import useIsMobile from "../lib/useismobile";
 import PatientSearchModal from "../components/PatientSearchModal";
 
 const DAYS  = ["월","화","수","목","금","토","일"];
-const TIMES = ["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00"];
+const TIMES = ["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"];
 const LUNCH = "12:00";
 
 const PHYS_TREATS = [
@@ -678,10 +678,10 @@ export default function TherapyPage() {
                 if(isLunch&&!lunchHasData) return null;
                 const isCustom=!TIMES.includes(time);
                 return (
-                  <tr key={time} style={{borderBottom:"1px solid #e2e8f0"}}>
+                  <tr key={time} style={{borderBottom:"3px solid #e2e8f0"}}>
                     <td style={{...S.tdTime,background:isLunch?"#f8fafc":isCustom?"#fefce8":"#fff",
                       color:isLunch?"#94a3b8":isCustom?"#854d0e":"#0f2744",
-                      height:isLunch?24:64}}>
+                      height:isLunch?24:48}}>
                       <div style={{fontWeight:800,fontSize:12}}>{toHHMM(time)}</div>
                       {isLunch&&<div style={{fontSize:8,color:"#94a3b8"}}>점심</div>}
                       {isCustom&&<div style={{fontSize:8,color:"#d97706"}}>추가</div>}
@@ -690,8 +690,8 @@ export default function TherapyPage() {
                       if(isLunch) return <td key={dayIdx} style={{background:"#f8fafc",textAlign:"center",color:"#cbd5e1",fontSize:12}}>—</td>;
                       const conflicts=getConflicts(dayIdx,time);
                       return (
-                        <td key={dayIdx} style={{padding:"3px 4px",verticalAlign:"top",background:isCustom?"#fefce8":"#fff",borderLeft:"2px solid #cbd5e1"}}>
-                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:3,height:120}}>
+                        <td key={dayIdx} style={{padding:"6px 4px",verticalAlign:"top",background:isCustom?"#fefce8":"#fff",borderLeft:"2px solid #cbd5e1"}}>
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:3,height:90}}>
                             {ROOMS.map(r=>{
                               // ── 고압산소 칸: A(정시)/B(+30분) ────────────────
                               if(r.id==="hyperbaric"){
@@ -780,7 +780,7 @@ export default function TherapyPage() {
                                     openModal(r.id,dayIdx,time);
                                   }}
                                   style={{background:moveMode?(moveMode.roomId===r.id&&moveMode.dayIdx===dayIdx&&moveMode.time===time?"#fef3c7":"#fff7ed"):bg,
-                                    borderRadius:5,cursor:moveMode?"crosshair":"pointer",padding:"5px 6px",
+                                    borderRadius:5,cursor:moveMode?"crosshair":"pointer",padding:"2px 3px",
                                     border:moveMode?"2px dashed #f59e0b":isConflict?"2px solid #dc2626":`1.5px solid ${col}bb`,
                                     display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",
                                     position:"relative",overflow:"hidden",boxSizing:"border-box"}}>
