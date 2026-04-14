@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, set, get } from "firebase/database";
+import { ref, onValue, set, get, update } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import { searchPatientsByName } from "../lib/patientSearch";
 
@@ -209,29 +209,31 @@ export default function RoomPage() {
   useEffect(() => {
     if (Object.keys(slots).length === 0) return;
     const today = todayDate();
-    const newSlots = JSON.parse(JSON.stringify(slots));
-    let changed = false;
-    Object.entries(newSlots).forEach(([slotKey, slot]) => {
+    const updates = {};
+    Object.entries(slots).forEach(([slotKey, slot]) => {
       if (!slot?.reservations?.length) return;
       const keep = [];
       let promoted = false;
+      let slotChanged = false;
       slot.reservations.forEach((r) => {
         const admitD    = parseDateStr(r.admitDate);
         const dischargeD = parseDateStr(r.discharge);
         // 퇴원 예정일이 어제 이전인 예약 → 자동 삭제
-        if (dischargeD && dateOnly(dischargeD) < today) { changed = true; return; }
+        if (dischargeD && dateOnly(dischargeD) < today) { slotChanged = true; return; }
         // 입원일이 과거 + current 빈 자리 → 자동 입원 전환 (당일 예약은 예약 상태 유지)
-        if (!promoted && admitD && dateOnly(admitD) < today && !newSlots[slotKey].current?.name) {
-          newSlots[slotKey].current = { ...r };
+        if (!promoted && admitD && dateOnly(admitD) < today && !slot.current?.name) {
+          updates[`slots/${slotKey}/current`] = { ...r };
           promoted = true;
-          changed = true;
+          slotChanged = true;
           return;
         }
         keep.push(r);
       });
-      newSlots[slotKey].reservations = keep;
+      if (slotChanged) {
+        updates[`slots/${slotKey}/reservations`] = keep.length > 0 ? keep : null;
+      }
     });
-    if (changed) set(ref(db,"slots"), newSlots);
+    if (Object.keys(updates).length > 0) update(ref(db), updates);
   }, [slots]);
 
   // 병실 정보
@@ -250,9 +252,15 @@ export default function RoomPage() {
   };
 
   // 저장
-  const saveSlots = useCallback(async (newS) => {
+  const saveSlots = useCallback(async (newS, changedKeys) => {
     setSlots(newS);
-    await set(ref(db,"slots"), newS);
+    if (changedKeys && changedKeys.length > 0) {
+      const updates = {};
+      for (const k of changedKeys) updates[`slots/${k}`] = newS[k] ?? null;
+      await update(ref(db), updates);
+    } else {
+      await set(ref(db,"slots"), newS);
+    }
   },[]);
 
   const addLog = useCallback(async (entry) => {
@@ -264,7 +272,7 @@ export default function RoomPage() {
 
   const saveSlotKey = useCallback(async (slotKey, newSlotData) => {
     const newSlots = {...slots, [slotKey]: newSlotData};
-    await saveSlots(newSlots);
+    await saveSlots(newSlots, [slotKey]);
   },[slots, saveSlots]);
 
   // 상담일지 역방향 동기화
@@ -292,7 +300,7 @@ export default function RoomPage() {
     const newSlots = JSON.parse(JSON.stringify(slots));
     newSlots[slotKey].current = { ...r };
     newSlots[slotKey].reservations = slot.reservations.filter((_,i)=>i!==resIndex);
-    await saveSlots(newSlots);
+    await saveSlots(newSlots, [slotKey]);
     await addLog({ action:"입원전환", slotKey, name:r.name });
   },[slots, saveSlots, addLog]);
 
@@ -326,7 +334,7 @@ export default function RoomPage() {
       target.reservations.push({...data});
     }
     setMovingPatient(null);
-    await saveSlots(newSlots);
+    await saveSlots(newSlots, [fromKey, targetSlotKey]);
     await addLog({ action:"이동", from:fromKey, to:targetSlotKey, name:data.name });
     // 예약 이동 시 상담일지 연동
     if (mode === "reservation") {
@@ -604,7 +612,7 @@ export default function RoomPage() {
               if(editingSlot?.resIndex!==undefined) slot2.reservations[editingSlot.resIndex]=form;
               else slot2.reservations.push(form);
             }
-            await saveSlots(newSlots);
+            await saveSlots(newSlots, [sk]);
             await addLog({action:addingTo?"등록":"수정",slotKey:sk,name:form.name});
             setEditingSlot(null); setAddingTo(null);
           }}
@@ -621,7 +629,7 @@ export default function RoomPage() {
                 return true;
               });
             }
-            await saveSlots(newSlots);
+            await saveSlots(newSlots, [sk]);
             await addLog({action:"삭제",slotKey:sk,name:editingSlot.data.name});
             // 예약 삭제 시 상담일지 연동
             if (editingSlot.mode === "reservation") {

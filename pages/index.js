@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, set, get } from "firebase/database";
+import { ref, onValue, set, get, update } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 import PatientSearchModal from "../components/PatientSearchModal";
@@ -252,29 +252,31 @@ export default function HospitalWardManager() {
   useEffect(() => {
     if (Object.keys(slots).length === 0) return;
     const today = todayDate();
-    const newSlots = JSON.parse(JSON.stringify(slots));
-    let changed = false;
-    Object.entries(newSlots).forEach(([slotKey, slot]) => {
+    const updates = {};
+    Object.entries(slots).forEach(([slotKey, slot]) => {
       if (!slot?.reservations?.length) return;
       const keep = [];
       let promoted = false;
+      let slotChanged = false;
       slot.reservations.forEach((r) => {
         const admitD    = parseDateStr(r.admitDate);
         const dischargeD = parseDateStr(r.discharge);
         // 퇴원 예정일이 어제 이전인 예약 → 자동 삭제
-        if (dischargeD && dateOnly(dischargeD) < today) { changed = true; return; }
+        if (dischargeD && dateOnly(dischargeD) < today) { slotChanged = true; return; }
         // 입원일이 과거 + current 빈 자리 → 자동 입원 전환 (당일 예약은 예약 상태 유지)
-        if (!promoted && admitD && dateOnly(admitD) < today && !newSlots[slotKey].current?.name) {
-          newSlots[slotKey].current = { ...r };
+        if (!promoted && admitD && dateOnly(admitD) < today && !slot.current?.name) {
+          updates[`slots/${slotKey}/current`] = { ...r };
           promoted = true;
-          changed = true;
+          slotChanged = true;
           return;
         }
         keep.push(r);
       });
-      newSlots[slotKey].reservations = keep;
+      if (slotChanged) {
+        updates[`slots/${slotKey}/reservations`] = keep.length > 0 ? keep : null;
+      }
     });
-    if (changed) set(ref(db, "slots"), newSlots);
+    if (Object.keys(updates).length > 0) update(ref(db), updates);
   }, [slots]);
 
   // ── sessionStorage에서 pendingMove 복원 (room.js에서 이동 시작 시) ─────────
@@ -286,9 +288,15 @@ export default function HospitalWardManager() {
     }
   }, []);
 
-  const saveSlots = useCallback(async (newS) => {
+  const saveSlots = useCallback(async (newS, changedKeys) => {
     setSlots(newS);
-    await set(ref(db, "slots"), newS);
+    if (changedKeys && changedKeys.length > 0) {
+      const updates = {};
+      for (const k of changedKeys) updates[`slots/${k}`] = newS[k] ?? null;
+      await update(ref(db), updates);
+    } else {
+      await set(ref(db, "slots"), newS);
+    }
   }, []);
 
 
@@ -312,7 +320,7 @@ export default function HospitalWardManager() {
     const { admitDate, ...rest } = r;
     newSlots[slotKey].current = { ...rest };
     newSlots[slotKey].reservations = slot.reservations.filter((_, i) => i !== resIndex);
-    await saveSlots(newSlots);
+    await saveSlots(newSlots, [slotKey]);
     await addLog({ action: "입원전환", slotKey, name: r.name, note: `예약→입원 전환 (예약일: ${admitDate||"미정"})` });
   }, [slots, saveSlots, addLog]);
 
@@ -700,7 +708,7 @@ export default function HospitalWardManager() {
       targetSlot.reservations.push({ ...data });
     }
 
-    await saveSlots(newSlots);
+    await saveSlots(newSlots, [fromKey, targetSlotKey]);
     await addLog({ type: "edit", msg: `${data.name} 이동: ${fromKey} → ${targetSlotKey}` });
     setMovingPatient(null);
   };
@@ -721,7 +729,7 @@ export default function HospitalWardManager() {
       newSlot.current = data;
     }
     const newSlots = { ...slots, [slotKey]: newSlot };
-    await saveSlots(newSlots);
+    await saveSlots(newSlots, [slotKey]);
     await addLog({ type: "edit", msg: `${slotKey} ${data.name} 정보 수정` });
     setEditingSlot(null); setAddingTo(null);
   };
@@ -749,7 +757,7 @@ export default function HospitalWardManager() {
       delete newSlot.current.admitDate;
       newSlot.reservations = reservations.filter((_, i) => i !== nextIdx);
     }
-    await saveSlots({ ...slots, [slotKey]: newSlot });
+    await saveSlots({ ...slots, [slotKey]: newSlot }, [slotKey]);
     await addLog({ type: "discharge", msg: `${slotKey} ${name} 퇴원 처리` });
     setEditingSlot(null);
   };
@@ -760,7 +768,7 @@ export default function HospitalWardManager() {
     if (resIndex !== undefined) reservations[resIndex] = resData;
     else reservations.push(resData);
     reservations.sort((a, b) => { const da = parseDateStr(a.admitDate), db2 = parseDateStr(b.admitDate); if (!da) return 1; if (!db2) return -1; return da - db2; });
-    await saveSlots({ ...slots, [slotKey]: { ...oldSlot, reservations } });
+    await saveSlots({ ...slots, [slotKey]: { ...oldSlot, reservations } }, [slotKey]);
     await addLog({ type: "reserve", msg: `${slotKey} ${resData.name} ${resIndex !== undefined ? "예약 수정":"예약 등록"} (${resData.admitDate})` });
     setEditingSlot(null); setAddingTo(null);
   };
@@ -775,7 +783,7 @@ export default function HospitalWardManager() {
       if (delName && (r.name||'').trim().toLowerCase() === delName) return false;
       return true;
     });
-    await saveSlots({ ...slots, [slotKey]: { ...oldSlot, reservations } });
+    await saveSlots({ ...slots, [slotKey]: { ...oldSlot, reservations } }, [slotKey]);
     await addLog({ type: "reserve", msg: `${slotKey} ${name} 예약 취소` });
     setEditingSlot(null);
   };
@@ -790,6 +798,7 @@ export default function HospitalWardManager() {
 
   const applyAnalysis = async (results) => {
     const newSlots = { ...slots }; let applied = 0;
+    const changed = new Set();
     results.forEach(r => {
       if (!r.room || !r.name) return;
       let cap = 4;
@@ -798,18 +807,18 @@ export default function HospitalWardManager() {
         const key = `${r.room}-${i}`;
         if (newSlots[key]?.current?.name === r.name) {
           newSlots[key] = { ...newSlots[key], current: { ...newSlots[key].current, discharge: r.discharge, note: r.note, scheduleAlert: r.scheduleAlert } };
-          applied++; return;
+          changed.add(key); applied++; return;
         }
       }
       for (let i = 1; i <= cap; i++) {
         const key = `${r.room}-${i}`;
         if (!newSlots[key]?.current) {
           newSlots[key] = { current: { name: r.name, bedPosition: i, discharge: r.discharge || "미정", note: r.note || "", scheduleAlert: r.scheduleAlert || false }, reservations: [] };
-          applied++; return;
+          changed.add(key); applied++; return;
         }
       }
     });
-    await saveSlots(newSlots);
+    await saveSlots(newSlots, [...changed]);
     await addLog({ type: "upload", msg: `메신저 분석 완료: ${applied}명 반영` });
     setUploadResult(null);
   };

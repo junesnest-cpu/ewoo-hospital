@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, set, get } from "firebase/database";
+import { ref, onValue, set, get, update } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 
 // ── 상수 ──────────────────────────────────────────────────────────────────────
@@ -287,7 +287,10 @@ async function applySlotChange(form) {
     changeDescription = `[업데이트] ${form.name} (${targetSlotKey}): ${updates.join(", ") || "정보 갱신"}`;
   }
 
-  await set(ref(db, "slots"), newSlots);
+  const changedKeys = Object.keys(beforeSnapshot);
+  const updates = {};
+  for (const k of changedKeys) updates[`slots/${k}`] = newSlots[k] ?? null;
+  await update(ref(db), updates);
   return { changeDescription, targetSlotKey, finalSlotKey, beforeSnapshot };
 }
 

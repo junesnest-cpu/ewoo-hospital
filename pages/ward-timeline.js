@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, set } from "firebase/database";
+import { ref, onValue, set, update } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 import { searchPatientsByName } from "../lib/patientSearch";
@@ -745,9 +745,15 @@ export default function WardTimeline() {
     return set;
   }, [consultations]);
 
-  const saveSlots = useCallback(async ns => {
+  const saveSlots = useCallback(async (ns, changedKeys) => {
     setSlots(ns);
-    await set(ref(db, "slots"), ns);
+    if (changedKeys && changedKeys.length > 0) {
+      const updates = {};
+      for (const k of changedKeys) updates[`slots/${k}`] = ns[k] ?? null;
+      await update(ref(db), updates);
+    } else {
+      await set(ref(db, "slots"), ns);
+    }
   }, []);
 
   // 상담일지 역방향 동기화: 타임라인에서 예약 삭제/이동 시 상담일지 업데이트
@@ -811,7 +817,7 @@ export default function WardTimeline() {
       target.reservations.push({ ...person });
     }
 
-    await saveSlots(newSlots);
+    await saveSlots(newSlots, [fromKey, targetSlotKey]);
 
     // 예약 이동 시 상담일지 연동
     if (bar.type === "reservation") {
@@ -838,7 +844,7 @@ export default function WardTimeline() {
         if (resIndex >= 0) slot.reservations[resIndex] = { ...(slot.reservations[resIndex]||{}), ...form };
         else slot.reservations.push({ ...form });
       }
-      await saveSlots(ns);
+      await saveSlots(ns, [slotKey]);
       setEditModal(null); setPopover(null);
     } finally { setSaving(false); }
   }, [editModal, slots, saveSlots]);
@@ -852,7 +858,7 @@ export default function WardTimeline() {
       const ns = JSON.parse(JSON.stringify(slots));
       if (mode === "current") ns[slotKey].current = null;
       else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
-      await saveSlots(ns);
+      await saveSlots(ns, [slotKey]);
       // 예약 삭제 시 상담일지 연동 (현재 입원 정보 삭제는 연동 제외)
       if (mode === "reservation") {
         await syncConsultationOnSlotChange(slotKey, data.name, data.consultationId, null);
@@ -870,7 +876,7 @@ export default function WardTimeline() {
       const ns = JSON.parse(JSON.stringify(slots));
       ns[slotKey].current = { ...data };
       ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
-      await saveSlots(ns);
+      await saveSlots(ns, [slotKey]);
       setEditModal(null); setPopover(null);
     } finally { setSaving(false); }
   }, [editModal, slots, saveSlots]);
@@ -882,7 +888,7 @@ export default function WardTimeline() {
     const ns = JSON.parse(JSON.stringify(slots));
     ns[slotKey].current = { ...bar.person };
     ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==bar.resIndex);
-    await saveSlots(ns);
+    await saveSlots(ns, [slotKey]);
     setPopover(null);
   }, [popover, slots, saveSlots]);
 
@@ -893,7 +899,7 @@ export default function WardTimeline() {
     const ns = JSON.parse(JSON.stringify(slots));
     if (bar.type==="current") ns[slotKey].current = null;
     else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==bar.resIndex);
-    await saveSlots(ns);
+    await saveSlots(ns, [slotKey]);
     // 예약 삭제 시 상담일지 연동
     if (bar.type === "reservation") {
       await syncConsultationOnSlotChange(slotKey, bar.person.name, bar.person.consultationId, null);
