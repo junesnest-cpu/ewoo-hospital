@@ -325,7 +325,7 @@ export default function WardTimeline() {
   const router   = useRouter();
   const isMobile = useIsMobile();
 
-  const { slots, consultations, saveSlots, syncConsultationOnSlotChange } = useWardData();
+  const { slots, consultations, saveSlots, recordDischarge, syncConsultationOnSlotChange } = useWardData();
   const [roomMemos,     setRoomMemos]     = useState({});
   const [syncing,    setSyncing]    = useState(true);
   const [lastSync,   setLastSync]   = useState(null);
@@ -826,8 +826,17 @@ export default function WardTimeline() {
     setSaving(true);
     try {
       const ns = JSON.parse(JSON.stringify(slots));
-      if (mode === "current") ns[slotKey].current = null;
-      else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
+      if (mode === "current") {
+        // 퇴원 기록을 dailyBoards에 저장
+        const cur = slots[slotKey]?.current;
+        if (cur?.name) {
+          const d = cur.discharge;
+          const disDate = d?.match(/^(\d{4})-(\d{2})-(\d{2})/) ? d.split("T")[0]
+            : d?.match(/(\d{1,2})\/(\d{1,2})/) ? `${new Date().getFullYear()}-${d.match(/(\d{1,2})\/(\d{1,2})/)[1].padStart(2,"0")}-${d.match(/(\d{1,2})\/(\d{1,2})/)[2].padStart(2,"0")}` : null;
+          await recordDischarge(cur.name, slotKey, disDate);
+        }
+        ns[slotKey].current = null;
+      } else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
       await saveSlots(ns, [slotKey]);
       // 예약 삭제 시 상담일지 연동 (현재 입원 정보 삭제는 연동 제외)
       if (mode === "reservation") {
@@ -835,7 +844,7 @@ export default function WardTimeline() {
       }
       setEditModal(null); setPopover(null);
     } finally { setSaving(false); }
-  }, [editModal, slots, saveSlots, syncConsultationOnSlotChange]);
+  }, [editModal, slots, saveSlots, recordDischarge, syncConsultationOnSlotChange]);
 
   const handleConvert = useCallback(async () => {
     if (!editModal || editModal.mode !== "reservation") return;
@@ -867,15 +876,23 @@ export default function WardTimeline() {
     const { slotKey, bar } = popover;
     if (!window.confirm(`${bar.person.name}님의 정보를 삭제하시겠습니까?`)) return;
     const ns = JSON.parse(JSON.stringify(slots));
-    if (bar.type==="current") ns[slotKey].current = null;
-    else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==bar.resIndex);
+    if (bar.type==="current") {
+      const cur = slots[slotKey]?.current;
+      if (cur?.name) {
+        const d = cur.discharge;
+        const disDate = d?.match(/^(\d{4})-(\d{2})-(\d{2})/) ? d.split("T")[0]
+          : d?.match(/(\d{1,2})\/(\d{1,2})/) ? `${new Date().getFullYear()}-${d.match(/(\d{1,2})\/(\d{1,2})/)[1].padStart(2,"0")}-${d.match(/(\d{1,2})\/(\d{1,2})/)[2].padStart(2,"0")}` : null;
+        await recordDischarge(cur.name, slotKey, disDate);
+      }
+      ns[slotKey].current = null;
+    } else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==bar.resIndex);
     await saveSlots(ns, [slotKey]);
     // 예약 삭제 시 상담일지 연동
     if (bar.type === "reservation") {
       await syncConsultationOnSlotChange(slotKey, bar.person.name, bar.person.consultationId, null);
     }
     setPopover(null);
-  }, [popover, slots, saveSlots, syncConsultationOnSlotChange]);
+  }, [popover, slots, saveSlots, recordDischarge, syncConsultationOnSlotChange]);
 
   if (syncing && Object.keys(slots).length === 0) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", flexDirection:"column", gap:16, background:"#f0f4f8", fontFamily:"'Noto Sans KR',sans-serif" }}>

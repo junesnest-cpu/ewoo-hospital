@@ -149,7 +149,7 @@ async function analyzeMessengerText(text) {
 export default function HospitalWardManager() {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { slots, setSlots, consultations, logs, setLogs, pendingCount, emrSyncTime, saveSlots, addLog } = useWardData();
+  const { slots, setSlots, consultations, logs, setLogs, pendingCount, emrSyncTime, saveSlots, addLog, recordDischarge } = useWardData();
   const [view,           setView]           = useState("ward");
   const [selectedRoom,   setSelectedRoom]   = useState(null);
   const [editingSlot,    setEditingSlot]    = useState(null);
@@ -706,6 +706,14 @@ export default function HospitalWardManager() {
       newSlot.current = { ...reservations[nextIdx] };
       delete newSlot.current.admitDate;
       newSlot.reservations = reservations.filter((_, i) => i !== nextIdx);
+    }
+    // 퇴원 기록을 dailyBoards에 즉시 저장 (slot.current 제거 전에 기록)
+    if (name && cur?.discharge) {
+      const disDate = cur.discharge.match(/^(\d{4})-(\d{2})-(\d{2})/) ? cur.discharge.split("T")[0]
+        : (() => { const m = cur.discharge.match(/(\d{1,2})\/(\d{1,2})/); return m ? `${new Date().getFullYear()}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}` : null; })();
+      await recordDischarge(name, slotKey, disDate);
+    } else if (name) {
+      await recordDischarge(name, slotKey);
     }
     await saveSlots({ ...slots, [slotKey]: newSlot }, [slotKey]);
     await addLog({ type: "discharge", msg: `${slotKey} ${name} 퇴원 처리` });

@@ -158,7 +158,7 @@ export default function RoomPage() {
   const isMobile = useIsMobile();
   const { roomId: qRoomId, preview } = router.query;
 
-  const { slots, consultations, newPatientFlags, saveSlots, addLog, syncConsultationOnSlotChange } = useWardData();
+  const { slots, consultations, newPatientFlags, saveSlots, addLog, recordDischarge, syncConsultationOnSlotChange } = useWardData();
   const [loading,  setLoading]  = useState(false);
   const [viewDateInput, setViewDateInput] = useState(toInputValue(todayDate()));
   const [previewDate,   setPreviewDate]   = useState(null);
@@ -582,8 +582,17 @@ export default function RoomPage() {
             if(!window.confirm("삭제하시겠습니까?")) return;
             const sk=editingSlot.slotKey;
             const newSlots=JSON.parse(JSON.stringify(slots));
-            if(editingSlot.mode==="current") newSlots[sk].current=null;
-            else {
+            if(editingSlot.mode==="current") {
+              // 퇴원 기록을 dailyBoards에 저장
+              const cur = slots[sk]?.current;
+              if (cur?.name) {
+                const d = cur.discharge;
+                const disDate = d?.match(/^(\d{4})-(\d{2})-(\d{2})/) ? d.split("T")[0]
+                  : d?.match(/(\d{1,2})\/(\d{1,2})/) ? `${new Date().getFullYear()}-${d.match(/(\d{1,2})\/(\d{1,2})/)[1].padStart(2,"0")}-${d.match(/(\d{1,2})\/(\d{1,2})/)[2].padStart(2,"0")}` : null;
+                await recordDischarge(cur.name, sk, disDate);
+              }
+              newSlots[sk].current=null;
+            } else {
               const delName = (editingSlot.data.name||'').trim().toLowerCase();
               newSlots[sk].reservations=newSlots[sk].reservations.filter((r,i)=> {
                 if (i === editingSlot.resIndex) return false;
