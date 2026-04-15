@@ -408,14 +408,42 @@ export default function MonthlySchedule() {
     const hiddenAdm = new Set((bd?.hiddenAdmissions || []).map(n => typeof n === 'string' ? n : normName(n)));
     const hiddenDis = new Set((bd?.hiddenDischarges || []).map(n => typeof n === 'string' ? n : normName(n)));
 
+    // boardData의 시간/비고를 이름 기준으로 병합하기 위한 맵
+    const bdAdmMap = new Map();
+    for (const a of (bd?.admissions || [])) { const n = normName(a.name); if (n) bdAdmMap.set(n, a); }
+    const bdDisMap = new Map();
+    for (const d of (bd?.discharges || [])) { const n = normName(d.name); if (n) bdDisMap.set(n, d); }
+
     // calendarData(slots 실시간) + dailyBoards(저장된 데이터) 합산 (이름 기준 dedup)
+    // calendarData 기본 + boardData 속성(시간/비고/신환) 병합
     const mergeAdm = [], mergeDis = [];
     const seenAdm = new Set(), seenDis = new Set();
-    const addAdm = (list) => { for (const a of (list || [])) { const n = normName(a.name); if (n && !seenAdm.has(n)) { mergeAdm.push(a); seenAdm.add(n); } } };
-    const addDis = (list) => { for (const d of (list || [])) { const n = normName(d.name); if (n && !seenDis.has(n)) { mergeDis.push(d); seenDis.add(n); } } };
 
-    addAdm(cd.admissions);        addDis(cd.discharges);
-    addAdm(bd?.admissions);       addDis(bd?.discharges);
+    for (const a of (cd.admissions || [])) {
+      const n = normName(a.name);
+      if (n && !seenAdm.has(n)) {
+        const bdA = bdAdmMap.get(n);
+        mergeAdm.push(bdA ? { ...a, time: bdA.time || a.time, note: bdA.note || a.note, isNew: bdA.isNew ?? a.isNew, id: bdA.id || a.id } : a);
+        seenAdm.add(n);
+      }
+    }
+    for (const a of (bd?.admissions || [])) {
+      const n = normName(a.name);
+      if (n && !seenAdm.has(n)) { mergeAdm.push(a); seenAdm.add(n); }
+    }
+
+    for (const d of (cd.discharges || [])) {
+      const n = normName(d.name);
+      if (n && !seenDis.has(n)) {
+        const bdD = bdDisMap.get(n);
+        mergeDis.push(bdD ? { ...d, time: bdD.time || d.time, note: bdD.note || d.note, id: bdD.id || d.id } : d);
+        seenDis.add(n);
+      }
+    }
+    for (const d of (bd?.discharges || [])) {
+      const n = normName(d.name);
+      if (n && !seenDis.has(n)) { mergeDis.push(d); seenDis.add(n); }
+    }
 
     // hidden 제거 + 신환 플래그 반영
     const admissions = mergeAdm
@@ -690,8 +718,14 @@ export default function MonthlySchedule() {
     const bd = boardData[dKey];
     // 저장된 데이터가 있으면 직접 수정
     if (bd?.admissions || bd?.discharges) {
-      const all = type === "admission" ? [...(bd.admissions || [])] : [...(bd.discharges || [])];
-      const deleted = all.find(e => (e.id || "") === entryId);
+      // bd와 merged display data 모두에서 삭제 대상 검색
+      const bdAll = type === "admission" ? [...(bd.admissions || [])] : [...(bd.discharges || [])];
+      let deleted = bdAll.find(e => (e.id || "") === entryId);
+      if (!deleted) {
+        const merged = getDisplayData(dKey);
+        const mAll = type === "admission" ? (merged.admissions || []) : (merged.discharges || []);
+        deleted = mAll.find(e => (e.id || "") === entryId);
+      }
       const newBd = { ...bd, admissions: [...(bd.admissions || [])], discharges: [...(bd.discharges || [])] };
       delete newBd.frozen;
       if (type === "admission") newBd.admissions = newBd.admissions.filter(a => a.id !== entryId);
@@ -751,15 +785,31 @@ export default function MonthlySchedule() {
   async function updateEntryTime(dKey, type, entryId, newTime) {
     const bd = boardData[dKey];
     if (bd?.admissions || bd?.discharges) {
-      const newBd = { ...bd, [type]: (bd[type] || []).map(e => e.id === entryId ? { ...e, time: newTime } : e) };
-      delete newBd.frozen;
-      await set(ref(db, `dailyBoards/${dKey}`), newBd);
+      const found = (bd[type] || []).some(e => e.id === entryId);
+      if (found) {
+        const newBd = { ...bd, [type]: (bd[type] || []).map(e => e.id === entryId ? { ...e, time: newTime } : e) };
+        delete newBd.frozen;
+        await set(ref(db, `dailyBoards/${dKey}`), newBd);
+        return;
+      }
+      // calendarData에서 온 항목 → display 데이터에서 찾아서 bd에 추가
+      const display = getDisplayData(dKey);
+      const list = type === "admissions" ? (display.admissions || []) : (display.discharges || []);
+      const entry = list.find(e => e.id === entryId);
+      if (entry) {
+        const clean = (({_slotKey, _consultationId, frozen, ...rest}) => rest)(entry);
+        const newBd = { ...bd };
+        delete newBd.frozen;
+        newBd[type] = [...(bd[type] || []), { ...clean, time: newTime }];
+        await set(ref(db, `dailyBoards/${dKey}`), newBd);
+      }
       return;
     }
     // 저장된 데이터 없으면 displayData를 스냅샷으로 저장
     const display = getDisplayData(dKey);
-    const admissions = type === "admissions" ? (display.admissions || []).map(e => e.id === entryId ? { ...e, time: newTime } : e) : (display.admissions || []);
-    const discharges = type === "discharges" ? (display.discharges || []).map(e => e.id === entryId ? { ...e, time: newTime } : e) : (display.discharges || []);
+    const cleanList = (list) => (list || []).map(({_slotKey, _consultationId, frozen, ...rest}) => rest);
+    const admissions = type === "admissions" ? cleanList(display.admissions).map(e => e.id === entryId ? { ...e, time: newTime } : e) : cleanList(display.admissions);
+    const discharges = type === "discharges" ? cleanList(display.discharges).map(e => e.id === entryId ? { ...e, time: newTime } : e) : cleanList(display.discharges);
     await set(ref(db, `dailyBoards/${dKey}`), { admissions, discharges });
   }
 

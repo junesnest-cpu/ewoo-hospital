@@ -264,14 +264,41 @@ export default function DailyBoard() {
     const hiddenAdm = new Set((db?.hiddenAdmissions || []).map(n => typeof n === 'string' ? n : normName(n)));
     const hiddenDis = new Set((db?.hiddenDischarges || []).map(n => typeof n === 'string' ? n : normName(n)));
 
-    // calendarData + dailyBoards 합산 (이름 기준 dedup)
+    // boardData의 시간/비고를 이름 기준으로 병합하기 위한 맵
+    const bdAdmMap = new Map();
+    for (const a of (db?.admissions || [])) { const n = normName(a.name); if (n) bdAdmMap.set(n, a); }
+    const bdDisMap = new Map();
+    for (const d of (db?.discharges || [])) { const n = normName(d.name); if (n) bdDisMap.set(n, d); }
+
+    // calendarData(slots 실시간) 기본 + dailyBoards 속성(시간/비고) 병합
     const mergeAdm = [], mergeDis = [];
     const seenAdm = new Set(), seenDis = new Set();
-    const addAdm = (list) => { for (const a of (list || [])) { const n = normName(a.name); if (n && !seenAdm.has(n)) { mergeAdm.push(a); seenAdm.add(n); } } };
-    const addDis = (list) => { for (const d of (list || [])) { const n = normName(d.name); if (n && !seenDis.has(n)) { mergeDis.push(d); seenDis.add(n); } } };
 
-    addAdm(cd.admissions);        addDis(cd.discharges);
-    addAdm(db?.admissions);       addDis(db?.discharges);
+    for (const a of (cd.admissions || [])) {
+      const n = normName(a.name);
+      if (n && !seenAdm.has(n)) {
+        const bdA = bdAdmMap.get(n);
+        mergeAdm.push(bdA ? { ...a, time: bdA.time || a.time, note: bdA.note || a.note, isNew: bdA.isNew ?? a.isNew, id: bdA.id || a.id } : a);
+        seenAdm.add(n);
+      }
+    }
+    for (const a of (db?.admissions || [])) {
+      const n = normName(a.name);
+      if (n && !seenAdm.has(n)) { mergeAdm.push(a); seenAdm.add(n); }
+    }
+
+    for (const d of (cd.discharges || [])) {
+      const n = normName(d.name);
+      if (n && !seenDis.has(n)) {
+        const bdD = bdDisMap.get(n);
+        mergeDis.push(bdD ? { ...d, time: bdD.time || d.time, note: bdD.note || d.note, id: bdD.id || d.id } : d);
+        seenDis.add(n);
+      }
+    }
+    for (const d of (db?.discharges || [])) {
+      const n = normName(d.name);
+      if (n && !seenDis.has(n)) { mergeDis.push(d); seenDis.add(n); }
+    }
 
     return {
       admissions: mergeAdm.filter(a => !hiddenAdm.has(normName(a.name))),
@@ -413,9 +440,22 @@ export default function DailyBoard() {
     }
     // _slotKey, _consultationId 메타데이터 제거 후 저장
     const cleanList = (list) => (list || []).map(({_slotKey, _consultationId, ...rest}) => rest);
-    await set(ref(db, `dailyBoards/${date}`), {
+    // calendarData에 있지만 편집에서 제거된 항목 → hidden 처리 (자동 부활 방지)
+    const savedAdmNorms = new Set(editAdm.map(a => normName(a.name)));
+    const savedDisNorms = new Set(editDis.map(d => normName(d.name)));
+    const cd = calendarData;
+    const hiddenAdmissions = (cd.admissions || [])
+      .filter(a => a.name && !savedAdmNorms.has(normName(a.name)))
+      .map(a => normName(a.name));
+    const hiddenDischarges = (cd.discharges || [])
+      .filter(d => d.name && !savedDisNorms.has(normName(d.name)))
+      .map(d => normName(d.name));
+    const payload = {
       admissions: cleanList(editAdm), discharges: cleanList(editDis), transfers: editTrn, reservedBeds: editRes, therapy: editTherapy,
-    });
+    };
+    if (hiddenAdmissions.length) payload.hiddenAdmissions = hiddenAdmissions;
+    if (hiddenDischarges.length) payload.hiddenDischarges = hiddenDischarges;
+    await set(ref(db, `dailyBoards/${date}`), payload);
     setSaving(false);
     setEditMode(false);
   }
