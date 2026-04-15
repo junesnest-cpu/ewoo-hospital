@@ -107,6 +107,12 @@
 - parseMD: YYYY-MM-DD, M/D 두 형식 모두 지원
 - monthlyBoards frozen 데이터: syncEMR이 기록, monthly.js는 당일만 live 병합
 
+## MCP 서버 연동 (.mcp.json)
+- **firebase**: `@gannonh/firebase-mcp` (서비스 계정 키 방식, ewoo-hospital-ward 프로젝트)
+- **github**: stdio 방식 (`@modelcontextprotocol/server-github`, PAT 인증)
+- **playwright**: `@playwright/mcp` (브라우저 자동화/테스트)
+- **vercel**: HTTP 방식 (`mcp.vercel.com`, OAuth 인증)
+
 ## 인증
 - Email/Password (이름@ewoo.com 형식)
 - 비밀번호 변경 시 모든 기기 강제 로그아웃 (userPwChangedAt)

@@ -109,7 +109,7 @@ export default function TherapyPage() {
   const [printSel,  setPrintSel]  = useState({});
   const [printTab,  setPrintTab]  = useState("physical");
 
-  const physRef=React.useRef({}), hyperRef=React.useRef({}), treatRef=React.useRef({});
+  const physRef=React.useRef({}), hyperRef=React.useRef({}), treatRef=React.useRef({}), slotsRef=React.useRef({});
   const weeklyPlansRef=React.useRef({});
   const weekStartRef=React.useRef(weekStart);
   React.useEffect(()=>{ weekStartRef.current=weekStart; },[weekStart]);
@@ -120,7 +120,7 @@ export default function TherapyPage() {
 
   useEffect(()=>{
     const u0=onValue(ref(db,"consultations"),        s=>setConsultations(s.val()||{}));
-    const u1=onValue(ref(db,"slots"),               s=>setSlots(s.val()||{}));
+    const u1=onValue(ref(db,"slots"),               s=>{ const v=s.val()||{}; setSlots(v); slotsRef.current=v; });
     const u2=onValue(ref(db,"treatmentPlans"),      s=>{ const v=s.val()||{}; setTreatPlans(v); treatRef.current=v; });
     const u3=onValue(ref(db,"physicalSchedule"),    s=>{ const v=s.val()||{}; setPhysSched(v);  physRef.current=v; });
     const u4=onValue(ref(db,"hyperthermiaSchedule"),s=>{ const v=s.val()||{}; setHyperSched(v); hyperRef.current=v; });
@@ -179,30 +179,25 @@ export default function TherapyPage() {
 
   // ── treatmentPlan 동기화 ──────────────────────────────────────────────────
   const syncTreat=useCallback(async(slotKey,dayIdx,treatmentId,action)=>{
-    if(!slotKey||slotKey.startsWith("pending_")||slotKey==="__pending__"||slotKey.startsWith("db_")) return;
+    if(!slotKey||slotKey.startsWith("pending_")||slotKey==="__pending__") return;
+    // db_ 슬롯키 → 실제 병실 슬롯키로 변환
+    let resolvedKey=slotKey;
+    if(slotKey.startsWith("db_")){
+      const internalId=slotKey.slice(3);
+      const found=Object.entries(slotsRef.current).find(([,sd])=>sd?.current?.patientId===internalId);
+      if(!found) return; // 현재 입원 중이 아니면 스킵
+      resolvedKey=found[0];
+    }
     const date=addDays(weekStartRef.current,parseInt(dayIdx));
     const mKey=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
     const dKey=String(date.getDate());
     const tp=JSON.parse(JSON.stringify(treatRef.current));
-    if(!tp[slotKey])       tp[slotKey]={};
-    if(!tp[slotKey][mKey]) tp[slotKey][mKey]={};
-    const ex=tp[slotKey][mKey][dKey]||[];
-    tp[slotKey][mKey][dKey]=action==="add"?ex.some(e=>e.id===treatmentId)?ex:[...ex,{id:treatmentId,qty:"1"}]:ex.filter(e=>e.id!==treatmentId);
+    if(!tp[resolvedKey])       tp[resolvedKey]={};
+    if(!tp[resolvedKey][mKey]) tp[resolvedKey][mKey]={};
+    const ex=tp[resolvedKey][mKey][dKey]||[];
+    tp[resolvedKey][mKey][dKey]=action==="add"?ex.some(e=>e.id===treatmentId)?ex:[...ex,{id:treatmentId,qty:"1"}]:ex.filter(e=>e.id!==treatmentId);
     treatRef.current=tp; setTreatPlans(tp);
-    await set(ref(db,`treatmentPlans/${slotKey}/${mKey}/${dKey}`),tp[slotKey][mKey][dKey]);
-
-    // 주N회 계획에서 차감: 치료 추가 시 weeklyPlan의 해당 항목 count -1, 0되면 삭제
-    if(action==="add"){
-      const wp=weeklyPlansRef.current[slotKey];
-      if(wp&&wp[treatmentId]&&wp[treatmentId].count>0){
-        const newCount=wp[treatmentId].count-1;
-        const newWp={...wp};
-        if(newCount<=0) delete newWp[treatmentId];
-        else newWp[treatmentId]={...wp[treatmentId],count:newCount};
-        weeklyPlansRef.current={...weeklyPlansRef.current,[slotKey]:newWp};
-        await set(ref(db,`weeklyPlans/${slotKey}`),newWp);
-      }
-    }
+    await set(ref(db,`treatmentPlans/${resolvedKey}/${mKey}/${dKey}`),tp[resolvedKey][mKey][dKey]);
   },[]);
 
   // ── 물리치료 저장 (th1/th2 고정 키) ─────────────────────────────────────

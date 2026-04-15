@@ -226,7 +226,9 @@ async function applySlotChange(form) {
       // 기존 예약 업데이트
       const existing = slot.reservations[existingIdx];
       if (form.admitDate) existing.admitDate = form.admitDate;
+      if (form.admitTime) existing.admitTime = form.admitTime;
       if (form.dischargeDate) existing.discharge = form.dischargeDate;
+      if (form.dischargeTime) existing.dischargeTime = form.dischargeTime;
       if (form.roomFeeType) existing.roomFeeType = form.roomFeeType;
       if (form.scheduleAlert) existing.scheduleAlert = true;
       const noteAdd = buildNote({ treatments: form.treatments, dischargeNote: form.dischargeNote, note: form.note });
@@ -242,6 +244,8 @@ async function applySlotChange(form) {
         note: buildNote(form),
         scheduleAlert: form.scheduleAlert || false,
       };
+      if (form.admitTime) reservation.admitTime = form.admitTime;
+      if (form.dischargeTime) reservation.dischargeTime = form.dischargeTime;
       if (form.roomFeeType) reservation.roomFeeType = form.roomFeeType;
       slot.reservations.push(reservation);
       changeDescription = `[입원예약] ${form.name} → ${targetSlotKey} (입원: ${reservation.admitDate || "미정"})`;
@@ -265,7 +269,9 @@ async function applySlotChange(form) {
     // 퇴원일: "미정" 또는 명시적 날짜 모두 반영 (빈 문자열이면 변경 없음)
     if (form.dischargeDate === "미정") patient.discharge = "미정";
     else if (form.dischargeDate) patient.discharge = form.dischargeDate;
+    if (form.dischargeTime) patient.dischargeTime = form.dischargeTime;
     if (form.admitDate) patient.admitDate = form.admitDate;
+    if (form.admitTime) patient.admitTime = form.admitTime;
     if (form.roomFeeType) patient.roomFeeType = form.roomFeeType;
     if (form.scheduleAlert) patient.scheduleAlert = true;
 
@@ -864,7 +870,9 @@ function PendingCard({ change, onApprove, onReject }) {
     slotKeyOverride: change.suggestedSlotKey || p.slotKey || "",
     name: p.name || "",
     dischargeDate: p.dischargeDate || "",
+    dischargeTime: p.dischargeTime || "",
     admitDate: p.admitDate || "",
+    admitTime: p.admitTime || "",
     transferToRoom: p.transferToRoom || "",
     treatments: p.treatments || [],
     weeklySchedule: p.weeklySchedule || "",
