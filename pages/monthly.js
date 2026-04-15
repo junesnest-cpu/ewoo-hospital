@@ -179,7 +179,7 @@ export default function MonthlySchedule() {
       if (c.chemo)     noteFields.push(c.chemoDate   ? `항암(${c.chemoDate})`     : "항암중");
       if (c.radiation) noteFields.push("방사선");
       const cIsNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
-      add({ name: c.name, room: c.roomTypes?.join("/") || "",
+      add({ name: c.name, room: c.reservedSlot || c.roomTypes?.join("/") || "",
         note: noteFields.join(" · "),
         isNew: cIsNew, isReserved: c.status === "예약완료",
         source:"consultation", sourceBadge:"상담",
@@ -311,7 +311,7 @@ export default function MonthlySchedule() {
       const aKey = dateKey(admitD);
       if (!aKey) return;
       ensure(aKey);
-      const actualRoom = c.roomTypes?.join("/") || "";
+      const actualRoom = c.reservedSlot || c.roomTypes?.join("/") || "";
       data[aKey].admissions.push({
         id: uid(),
         name: c.name,

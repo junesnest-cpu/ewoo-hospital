@@ -249,7 +249,7 @@ export default function DailyBoard() {
       // slots에 없는 미배정 신환 → consultation 날짜로 항목 추가
       const cAdmitDate = parseMD(c.admitDate, year);
       if (cAdmitDate !== date) return;
-      const actualRoom = c.roomTypes?.join("/") || "";
+      const actualRoom = c.reservedSlot || c.roomTypes?.join("/") || "";
       adm.push({ id:uid(), name:c.name, room:actualRoom, note:cNote, isNew:true, isReserved:false, _consultationId:cid });
     });
 

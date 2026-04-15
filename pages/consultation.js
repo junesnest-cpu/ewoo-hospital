@@ -230,6 +230,49 @@ export default function ConsultationPage() {
     });
   }, [slotOverrides, consultations]);
 
+  // 역방향 자동 복원: consultation에 reservedSlot이 있는데 slots에 reservation이 없으면 자동 추가
+  const restoredRef = useRef(new Set());
+  useEffect(() => {
+    if (!Object.keys(slots).length) return;
+    Object.entries(consultations).forEach(([cid, c]) => {
+      if (!c?.name || !c.reservedSlot) return;
+      if (c.status === "취소" || c.status === "입원완료") return;
+      if (restoredRef.current.has(cid)) return;
+      const slotKey = c.reservedSlot;
+      const slot = slots[slotKey];
+      // current에 있으면 이미 입원 상태 → 복원 불필요
+      if (slot?.current?.name && normName(slot.current.name) === normName(c.name)) return;
+      // reservations에 이미 있으면 정상 → 복원 불필요
+      const inRes = (slot?.reservations || []).some(r =>
+        (r.consultationId && r.consultationId === cid) || (r.name && normName(r.name) === normName(c.name))
+      );
+      if (inRes) return;
+      // slots에 없음 → 자동 복원
+      restoredRef.current.add(cid);
+      const slotData = slot || { current: null, reservations: [] };
+      const existingRes = [...(slotData.reservations || [])];
+      const admitDateFmt = c.admitDate ? fmtDate(c.admitDate) : "";
+      existingRes.push({
+        name: c.name,
+        admitDate: admitDateFmt,
+        admitTime: c.admitTime || "",
+        discharge: c.dischargeDate ? fmtDate(c.dischargeDate) : (c.discharge || "미정"),
+        dischargeTime: c.dischargeTime || "",
+        note: c.diagnosis || "",
+        consultationId: cid,
+        scheduleAlert: false,
+      });
+      existingRes.sort((a, b) => {
+        const pa = a.admitDate?.match(/(\d+)\/(\d+)/);
+        const pb = b.admitDate?.match(/(\d+)\/(\d+)/);
+        if (!pa) return 1; if (!pb) return -1;
+        return (parseInt(pa[1]) * 31 + parseInt(pa[2])) - (parseInt(pb[1]) * 31 + parseInt(pb[2]));
+      });
+      set(ref(db, `slots/${slotKey}`), { ...slotData, reservations: existingRes }).catch(console.error);
+      console.log(`[auto-restore] ${c.name} → ${slotKey} reservation 복원`);
+    });
+  }, [slots, consultations]);
+
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
   // 기존 환자 검색 결과
