@@ -1,0 +1,112 @@
+# ewoo-hospital - 병동현황관리 시스템
+
+## 프로젝트 개요
+병원 병동 입퇴원 현황, 치료 일정, 상담일지를 실시간으로 관리하는 웹 시스템.
+
+## 기술 스택
+- Next.js 14, React 18
+- Firebase Realtime Database (client SDK `firebase@10`)
+- Firebase Admin SDK (서버/스크립트용)
+- MSSQL (`mssql@12`) - EMR DB 직접 연결
+- Claude API (raw fetch, model: claude-haiku-4-5-20251001)
+- 배포: Vercel
+
+## 관련 프로젝트
+| 프로젝트 | 역할 | Firebase 프로젝트 |
+|----------|------|-------------------|
+| ewoo-hospital | 병동현황, 치료, 상담일지 | ewoo-hospital-ward |
+| ewoo-approval | 전자결재, 경영현황 | ewoo-approval |
+| ewoo-clinical | 임상서식 (간호라운딩, 바이탈) | ewoo-clinical (Firestore) |
+
+- 3개 프로젝트는 Firebase 프로젝트가 각각 분리되어 있음
+- ewoo-clinical은 인증을 ewoo-approval과 공유 (Auth만)
+- 공유 데이터: users/profiles만 공유, 나머지는 완전 독립
+
+## EMR 연동 아키텍처
+
+### EMR DB
+- 서버: 192.168.0.253:1433 (병원 내부망 SQL Server)
+- DB: BrWonmu (브레인 닥터스 EMR)
+- 인증: SQL Server 인증 (sa)
+- 주요 테이블: Wbedm(병상배치), VIEWJUBLIST(환자마스터), SILVER_PATIENT_INFO(입원이력)
+
+### 라즈베리파이 연동
+- 병원 내부 네트워크에 라즈베리파이 설치
+- syncEMR.js 스크립트를 cron으로 실행하여 EMR DB → Firebase 동기화
+- 경량 모드: 매시간 실행 (Phase 1L + Phase 2)
+- 전체 모드: 새벽 실행 --full 플래그 (Phase 0~3 전체)
+- 라즈베리파이만 EMR DB에 직접 접근 가능 (내부망)
+
+### syncEMR Phase 구성
+```
+[0]   차트번호 중복 정리 (전체모드)
+[0.5] 구형 슬롯 키 마이그레이션 (전체모드)
+[1]   환자 마스터 동기화 (경량: 입원환자만 / 전체: 전체)
+[2]   병상 배치 동기화 + monthlyBoards 입퇴원 기록
+[2.5] 상담일지 자동 연결 (phone/birthYear 매칭)
+[2.6] 입원 환자 consultation 상태 업데이트
+[3]   과거 입원이력 동기화 (전체모드)
+```
+
+## Claude Code 제한사항
+
+### Firebase DB 직접 확인 불가
+- Claude Code는 Firebase에 인증할 수 없어 DB 데이터를 직접 조회/검증할 수 없음
+- 데이터 구조나 값을 확인해야 할 때는 사용자에게 요청하거나, 코드 로직에서 추론해야 함
+- Firebase Rules, 실제 데이터 상태, 인덱스 설정 등을 직접 확인할 방법이 없음
+- 개선 방향: Firebase 데이터를 조회할 수 있는 API 엔드포인트나 스크립트를 만들면 Claude Code가 간접적으로 확인 가능
+
+### EMR DB 직접 확인 불가
+- EMR DB는 병원 내부망(192.168.0.253)에 있어 외부 접근 불가
+- 라즈베리파이를 통해서만 접근 가능
+- EMR 테이블 구조나 데이터를 확인해야 할 때는 사용자에게 요청해야 함
+
+## Firebase 데이터 구조
+- `slots/{roomId}-{bedNum}`: 병상 데이터 (current, reservations)
+- `patients/{normChart}`: 환자 마스터 (chartNo 10자리 0패딩 키)
+- `patientByChartNo/{normChart}`: 차트번호 → internalId 인덱스
+- `patientByPhone/{digits}`: 전화번호 → internalId 인덱스
+- `consultations/{id}`: 상담일지
+- `treatmentPlans/{slotKey}/{YYYY-MM}/{day}`: 치료 계획
+- `weeklyPlans/{slotKey}`: 주N회 치료 계획
+- `monthlyBoards/{YYYY-MM}/{YYYY-MM-DD}`: 월간 입퇴원 기록
+- `dailyBoards/{YYYY-MM-DD}`: 일일 현황판
+- `physicalSchedule/`, `hyperthermiaSchedule/`: 치료실 일정
+- `logs`: 변경 이력 (최대 200건)
+- `pendingChanges/{id}`: 웹훅 대기 변경사항
+- `settings`: 치료사 이름 등
+
+## 병동 구조 (WARD_ROOMS)
+- 2병동: 201(4인), 202(1인), 203(4인), 204(2인), 205(6인), 206(6인)
+- 3병동: 301(4인), 302(1인), 303(4인), 304(2인), 305(2인), 306(6인)
+- 5병동: 501(4인), 502(1인), 503(4인), 504(2인), 505(6인), 506(6인)
+- 6병동: 601(6인), 602(1인), 603(6인)
+
+## 페이지 구성
+- `pages/index.js` - 병동 현황 메인
+- `pages/room.js` - 병실 상세 (입퇴원 관리)
+- `pages/treatment.js` - 치료계획표 (병실료 자동계산)
+- `pages/daily.js` - 일일 치료 일정
+- `pages/therapy.js` - 통합 치료실
+- `pages/consultation.js` - 상담일지
+- `pages/monthly.js` - 월간 입퇴원 예정표
+- `pages/daily-board.js` - 일일 현황판
+- `pages/ward-timeline.js` - 병동 타임라인
+- `pages/patients.js` - 환자 DB + 데이터 진단
+- `pages/settings.js` - 설정
+- `pages/history.js` - 웹훅 승인 대기 UI
+
+## API 엔드포인트
+- `POST /api/analyze` - Claude로 메시지 텍스트 분석
+- `POST /api/naver-works-webhook` - 네이버 웍스 봇 웹훅 수신
+- `POST /api/inquiry` - 외부 웹사이트 문의 접수
+
+## 주요 규칙
+- 입원 예약 자동 승격: admitDate < today (당일 미포함, 과거만) — index.js, room.js 양쪽 동일 로직
+- normName(): 동명이인 숫자(이현주5) 보존 필수
+- parseMD: YYYY-MM-DD, M/D 두 형식 모두 지원
+- monthlyBoards frozen 데이터: syncEMR이 기록, monthly.js는 당일만 live 병합
+
+## 인증
+- Email/Password (이름@ewoo.com 형식)
+- 비밀번호 변경 시 모든 기기 강제 로그아웃 (userPwChangedAt)
