@@ -204,21 +204,27 @@ export default function TreatmentPage() {
   // 네이버 웍스 공지 발송
   const sendNotification = useCallback(async () => {
     if (sending) return;
-    const md = plan[`${year}-${String(month + 1).padStart(2, "0")}`] || {};
-    const days = Object.keys(md).map(Number).filter(d => {
-      const items = md[String(d)] || [];
-      return items.length > 0 && items.some(e => e.emr !== "removed");
-    }).sort((a, b) => a - b);
 
-    if (days.length === 0) {
-      alert("현재 월에 입력된 치료 일정이 없습니다.");
+    // 시작일: 입원일
+    const startDate = admitDate || null;
+    // 종료일: 퇴원예정일, 미정이면 치료 입력된 마지막 날
+    let endDate = (discharge && discharge !== "미정") ? discharge : null;
+    if (!endDate) {
+      const md = plan[`${year}-${String(month + 1).padStart(2, "0")}`] || {};
+      const days = Object.keys(md).map(Number).filter(d => {
+        const items = md[String(d)] || [];
+        return items.length > 0 && items.some(e => e.emr !== "removed");
+      }).sort((a, b) => a - b);
+      if (days.length > 0) endDate = `${month + 1}/${days[days.length - 1]}`;
+    }
+
+    if (!startDate) {
+      alert("입원일 정보가 없습니다.");
       return;
     }
 
-    const m = month + 1;
-    const firstDay = `${m}/${days[0]}`;
-    const lastDay = `${m}/${days[days.length - 1]}`;
-    const msg = `${slotKey} ${name}님 ${firstDay} ~ ${lastDay} 치료 일정 입력 완료되었습니다.`;
+    const pageUrl = `${window.location.origin}/treatment?slotKey=${encodeURIComponent(slotKey)}&name=${encodeURIComponent(name)}&discharge=${encodeURIComponent(discharge || "")}&admitDate=${encodeURIComponent(admitDate || "")}${resolvedPatientId ? "&patientId=" + encodeURIComponent(resolvedPatientId) : ""}`;
+    const msg = `${slotKey} ${name}님 ${startDate} ~ ${endDate || "미정"} 치료 일정 입력 완료되었습니다.\n${pageUrl}`;
 
     if (!confirm(`다음 메시지를 네이버 웍스에 발송하시겠습니까?\n\n${msg}`)) return;
 
@@ -237,7 +243,7 @@ export default function TreatmentPage() {
     } finally {
       setSending(false);
     }
-  }, [sending, plan, year, month, slotKey, name]);
+  }, [sending, plan, year, month, slotKey, name, admitDate, discharge, resolvedPatientId]);
 
   const saveDay = useCallback(async (day, items) => {
     const newPlan = { ...plan, [monthKey]: { ...monthData, [String(day)]: items } };
