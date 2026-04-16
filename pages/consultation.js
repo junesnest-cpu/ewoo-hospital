@@ -44,15 +44,27 @@ function monthKey(str) {
   if (!str) return "";
   return str.slice(0,7); // "YYYY-MM"
 }
+// 날짜를 YYYY-MM-DD로 정규화 (M/D 형식은 contextYear 기준)
+function normDateToISO(str, contextYear) {
+  if (!str) return null;
+  if (str.includes("-")) return str.slice(0, 10);
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return null;
+  const year = contextYear || new Date().getFullYear();
+  return `${year}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;
+}
 // admitDate를 YYYY-MM-DD로 정규화 (M/D 형식은 createdAt 연도 기준)
 function normAdmitDate(c) {
-  const s = c.admitDate;
-  if (!s) return null;
-  if (s.includes("-")) return s.slice(0, 10);
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
-  if (!m) return null;
   const year = c.createdAt ? new Date(c.createdAt).getFullYear() : new Date().getFullYear();
-  return `${year}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;
+  return normDateToISO(c.admitDate, year);
+}
+// 상담 데이터를 폼에 로드할 때 날짜 필드 정규화
+function normFormDates(c) {
+  const year = c.createdAt ? new Date(c.createdAt).getFullYear() : new Date().getFullYear();
+  const normed = {};
+  if (c.admitDate) normed.admitDate = normDateToISO(c.admitDate, year) || c.admitDate;
+  if (c.dischargeDate) normed.dischargeDate = normDateToISO(c.dischargeDate, year) || c.dischargeDate;
+  return normed;
 }
 function korMonth(ym) {
   if (!ym) return "";
@@ -823,9 +835,10 @@ export default function ConsultationPage() {
                 </div>
                 {form.admitDate && form.dischargeDate && (() => {
                   const a = new Date(form.admitDate), d = new Date(form.dischargeDate);
-                  const days = Math.round((d - a) / 86400000);
-                  if (days > 0) return <span style={{fontSize:11, color:"#059669", fontWeight:700}}>→ {days}일 입원</span>;
-                  if (days < 0) return <span style={{fontSize:11, color:"#dc2626", fontWeight:700}}>날짜 오류</span>;
+                  const diff = Math.round((d - a) / 86400000);
+                  if (diff > 0) return <span style={{fontSize:11, color:"#059669", fontWeight:700}}>→ {diff + 1}일 입원</span>;
+                  if (diff < 0) return <span style={{fontSize:11, color:"#dc2626", fontWeight:700}}>날짜 오류</span>;
+                  if (diff === 0) return <span style={{fontSize:11, color:"#059669", fontWeight:700}}>→ 1일 입원</span>;
                   return null;
                 })()}
               </div>
@@ -937,7 +950,7 @@ export default function ConsultationPage() {
               return (
                 <div key={c.id} style={{background:"#fff", border:`1.5px solid ${isOverdue?"#fca5a5":isToday?"#fcd34d":"#e2e8f0"}`,
                   borderRadius:8, padding:"8px 12px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap"}}
-                  onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setPtSearchOpen(false); setPtSearchQ(""); setView("form"); }}>
+                  onClick={()=>{ setForm({...EMPTY_FORM,...c,...normFormDates(c)}); setEditId(c.id); setPtSearchOpen(false); setPtSearchQ(""); setView("form"); }}>
                   <span
                     style={{fontWeight:800, fontSize:14,
                       ...(c.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
@@ -1016,7 +1029,7 @@ export default function ConsultationPage() {
           }
 
           return (
-            <div key={c.id} style={cardStyle} onClick={()=>{ setForm({...EMPTY_FORM,...c}); setEditId(c.id); setPtSearchOpen(false); setPtSearchQ(""); setView("form"); }}>
+            <div key={c.id} style={cardStyle} onClick={()=>{ setForm({...EMPTY_FORM,...c,...normFormDates(c)}); setEditId(c.id); setPtSearchOpen(false); setPtSearchQ(""); setView("form"); }}>
               {/* 이름 + 순번 + 상태 */}
               <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:5}}>
                 {c._monthSeq && (
@@ -1105,8 +1118,8 @@ export default function ConsultationPage() {
               입원예정: {fmtDate(reserveModal.consultation.admitDate)}
               {reserveModal.consultation.dischargeDate && ` ~ ${fmtDate(reserveModal.consultation.dischargeDate)}`}
               {reserveModal.consultation.admitDate && reserveModal.consultation.dischargeDate && (() => {
-                const days = Math.round((new Date(reserveModal.consultation.dischargeDate) - new Date(reserveModal.consultation.admitDate)) / 86400000);
-                return days > 0 ? <span style={{marginLeft:4, fontWeight:700, color:"#0369a1"}}>{days}일</span> : null;
+                const diff = Math.round((new Date(reserveModal.consultation.dischargeDate) - new Date(reserveModal.consultation.admitDate)) / 86400000);
+                return diff >= 0 ? <span style={{marginLeft:4, fontWeight:700, color:"#0369a1"}}>{diff + 1}일</span> : null;
               })()}
               {reserveModal.consultation.roomTypes?.length>0 && ` · 희망: ${reserveModal.consultation.roomTypes.join(", ")}`}
             </div>

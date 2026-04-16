@@ -325,7 +325,7 @@ export default function WardTimeline() {
   const router   = useRouter();
   const isMobile = useIsMobile();
 
-  const { slots, consultations, saveSlots, recordDischarge, syncConsultationOnSlotChange } = useWardData();
+  const { slots, consultations, saveSlots, recordDischarge, syncConsultationOnSlotChange, cleanupDailyBoards } = useWardData();
   const [roomMemos,     setRoomMemos]     = useState({});
   const [syncing,    setSyncing]    = useState(true);
   const [lastSync,   setLastSync]   = useState(null);
@@ -807,6 +807,11 @@ export default function WardTimeline() {
         else slot.reservations.push({ ...form });
       }
       await saveSlots(ns, [slotKey]);
+      // 날짜 변경 시 이전 dailyBoards 항목 정리
+      const oldData = editModal.data || {};
+      if (oldData.admitDate !== form.admitDate || oldData.discharge !== form.discharge) {
+        await cleanupDailyBoards(form.name, oldData, form);
+      }
       // 편집 저장 시 consultation 날짜 동기화
       const cId = editModal.data?.consultationId || form.consultationId;
       if (cId) {
@@ -817,7 +822,7 @@ export default function WardTimeline() {
       }
       setEditModal(null); setPopover(null);
     } finally { setSaving(false); }
-  }, [editModal, slots, saveSlots, syncConsultationOnSlotChange]);
+  }, [editModal, slots, saveSlots, syncConsultationOnSlotChange, cleanupDailyBoards]);
 
   const handleDelete = useCallback(async () => {
     if (!editModal) return;
@@ -838,13 +843,17 @@ export default function WardTimeline() {
         ns[slotKey].current = null;
       } else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
       await saveSlots(ns, [slotKey]);
+      // 삭제 시 dailyBoards 항목 정리
+      if (data) {
+        await cleanupDailyBoards(data.name, data, {});
+      }
       // 예약 삭제 시 상담일지 연동 (현재 입원 정보 삭제는 연동 제외)
       if (mode === "reservation") {
         await syncConsultationOnSlotChange(slotKey, data.name, data.consultationId, null);
       }
       setEditModal(null); setPopover(null);
     } finally { setSaving(false); }
-  }, [editModal, slots, saveSlots, recordDischarge, syncConsultationOnSlotChange]);
+  }, [editModal, slots, saveSlots, recordDischarge, syncConsultationOnSlotChange, cleanupDailyBoards]);
 
   const handleConvert = useCallback(async () => {
     if (!editModal || editModal.mode !== "reservation") return;

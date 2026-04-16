@@ -158,7 +158,7 @@ export default function RoomPage() {
   const isMobile = useIsMobile();
   const { roomId: qRoomId, preview } = router.query;
 
-  const { slots, consultations, newPatientFlags, saveSlots, addLog, recordDischarge, syncConsultationOnSlotChange } = useWardData();
+  const { slots, consultations, newPatientFlags, saveSlots, addLog, recordDischarge, syncConsultationOnSlotChange, cleanupDailyBoards } = useWardData();
   const [loading,  setLoading]  = useState(false);
   const [viewDateInput, setViewDateInput] = useState(toInputValue(todayDate()));
   const [previewDate,   setPreviewDate]   = useState(null);
@@ -603,6 +603,11 @@ export default function RoomPage() {
               else slot2.reservations.push(form);
             }
             await saveSlots(newSlots, [sk]);
+            // 날짜 변경 시 이전 dailyBoards 항목 정리
+            const oldData = editingSlot?.data || {};
+            if (oldData.admitDate !== form.admitDate || oldData.discharge !== form.discharge) {
+              await cleanupDailyBoards(form.name, oldData, form);
+            }
             await addLog({action:addingTo?"등록":"수정",slotKey:sk,name:form.name});
             // 편집 저장 시 consultation 날짜 동기화
             if (editingSlot?.data?.consultationId || form.consultationId) {
@@ -636,6 +641,10 @@ export default function RoomPage() {
               });
             }
             await saveSlots(newSlots, [sk]);
+            // 삭제 시 dailyBoards 항목 정리
+            if (editingSlot.data) {
+              await cleanupDailyBoards(editingSlot.data.name, editingSlot.data, {});
+            }
             await addLog({action:"삭제",slotKey:sk,name:editingSlot.data.name});
             // 예약 삭제 시 상담일지 연동
             if (editingSlot.mode === "reservation") {

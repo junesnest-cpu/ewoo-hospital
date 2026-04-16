@@ -149,7 +149,7 @@ async function analyzeMessengerText(text) {
 export default function HospitalWardManager() {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { slots, setSlots, consultations, logs, setLogs, pendingCount, emrSyncTime, saveSlots, addLog, recordDischarge } = useWardData();
+  const { slots, setSlots, consultations, logs, setLogs, pendingCount, emrSyncTime, saveSlots, addLog, recordDischarge, cleanupDailyBoards } = useWardData();
   const [view,           setView]           = useState("ward");
   const [selectedRoom,   setSelectedRoom]   = useState(null);
   const [editingSlot,    setEditingSlot]    = useState(null);
@@ -680,6 +680,11 @@ export default function HospitalWardManager() {
     }
     const newSlots = { ...slots, [slotKey]: newSlot };
     await saveSlots(newSlots, [slotKey]);
+    // 날짜 변경 시 이전 dailyBoards 항목 정리
+    const oldData = editingSlot?.data || {};
+    if (oldData.admitDate !== data.admitDate || oldData.discharge !== data.discharge) {
+      await cleanupDailyBoards(data.name, oldData, data);
+    }
     await addLog({ type: "edit", msg: `${slotKey} ${data.name} 정보 수정` });
     setEditingSlot(null); setAddingTo(null);
   };
@@ -723,10 +728,15 @@ export default function HospitalWardManager() {
   const saveReservation = async (slotKey, resData, resIndex) => {
     const oldSlot = slots[slotKey] || { current: null, reservations: [] };
     const reservations = [...(oldSlot.reservations || [])];
+    const oldResData = resIndex !== undefined ? oldSlot.reservations?.[resIndex] : null;
     if (resIndex !== undefined) reservations[resIndex] = resData;
     else reservations.push(resData);
     reservations.sort((a, b) => { const da = parseDateStr(a.admitDate), db2 = parseDateStr(b.admitDate); if (!da) return 1; if (!db2) return -1; return da - db2; });
     await saveSlots({ ...slots, [slotKey]: { ...oldSlot, reservations } }, [slotKey]);
+    // 날짜 변경 시 이전 dailyBoards 항목 정리
+    if (oldResData && (oldResData.admitDate !== resData.admitDate || oldResData.discharge !== resData.discharge)) {
+      await cleanupDailyBoards(resData.name, oldResData, resData);
+    }
     await addLog({ type: "reserve", msg: `${slotKey} ${resData.name} ${resIndex !== undefined ? "예약 수정":"예약 등록"} (${resData.admitDate})` });
     setEditingSlot(null); setAddingTo(null);
   };
@@ -742,6 +752,11 @@ export default function HospitalWardManager() {
       return true;
     });
     await saveSlots({ ...slots, [slotKey]: { ...oldSlot, reservations } }, [slotKey]);
+    // 취소 시 dailyBoards 항목 정리
+    const cancelledRes = oldSlot.reservations?.[resIndex];
+    if (cancelledRes) {
+      await cleanupDailyBoards(cancelledRes.name, cancelledRes, {});
+    }
     await addLog({ type: "reserve", msg: `${slotKey} ${name} 예약 취소` });
     setEditingSlot(null);
   };
