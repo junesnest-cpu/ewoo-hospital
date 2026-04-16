@@ -410,6 +410,7 @@ export default function TreatmentPage() {
 
   return (
     <div style={TS.page}>
+      <style>{`@media print { .wkplan-bar { display:none !important } .wkplan-print { display:block !important } }`}</style>
       <header style={{ ...TS.header, flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", padding: isMobile ? "10px 14px" : "12px 20px", gap: isMobile ? 6 : 16 }}>
         {/* 모바일: 상단 한 줄 — 뒤로 + 환자명 + 인쇄 */}
         <div style={{ display:"flex", alignItems:"center", width:"100%", gap:8 }}>
@@ -503,7 +504,7 @@ export default function TreatmentPage() {
         <div style={{ background:"#f0f9ff", borderBottom:"1px solid #bae6fd", padding:"12px 20px" }}>
           <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:10 }}>
             <span style={{ fontSize:14, fontWeight:800, color:"#0369a1" }}>📋 주간 치료 계획 (주N회)</span>
-            <span style={{ fontSize:12, color:"#64748b" }}>— 실제 입력 시 날짜에 반영되고 계획에서 제거됩니다</span>
+            <span style={{ fontSize:12, color:"#64748b" }}>— 주당 치료 횟수 설정 (달력에 진행 현황 표시)</span>
             {resolvedPatientId && (
               <button onClick={() => router.push(`/patients?id=${encodeURIComponent(resolvedPatientId)}`)}
                 style={{ marginLeft:"auto", background:"#0f2744", color:"#fff", border:"none", borderRadius:7,
@@ -561,8 +562,59 @@ export default function TreatmentPage() {
           ))}
         </div>
         <div style={TS.calGrid}>
-          {calCells.map((day, idx) => {
-            if (!day) return <div key={`e${idx}`} style={TS.emptyCell} />;
+          {calCells.flatMap((day, idx) => {
+            const _r = [];
+            let _printPlan = null;
+            if (idx % 7 === 0 && Object.keys(weeklyPlan).length > 0) {
+              const rowDays = calCells.slice(idx, idx + 7).filter(d => d != null);
+              if (rowDays.length > 0) {
+                const admitP = parseDateStr(admitDate);
+                const lastD = new Date(year, month, rowDays[rowDays.length - 1]);
+                const firstD = new Date(year, month, rowDays[0]);
+                const inStay = (!admitP || lastD >= dateOnly(admitP)) && (!dischargeDate || firstD <= dateOnly(dischargeDate));
+                if (inStay) {
+                  const doneMap = {};
+                  rowDays.forEach(d => {
+                    (monthData[String(d)] || []).filter(e => e.emr !== "removed" && weeklyPlan[e.id])
+                      .forEach(e => { doneMap[e.id] = (doneMap[e.id] || 0) + parseInt(e.qty || 1); });
+                  });
+                  const allDone = Object.entries(weeklyPlan).every(([id, p]) => (doneMap[id] || 0) >= p.count);
+                  _r.push(
+                    <div key={`wkplan-${idx}`} className="wkplan-bar" style={{
+                      gridColumn: "1 / -1", background: allDone ? "#f0fdf4" : "#f0f9ff",
+                      borderBottom: `1px solid ${allDone ? "#bbf7d0" : "#bae6fd"}`,
+                      padding: "3px 8px", display: "flex", gap: 8, alignItems: "center", fontSize: 11, flexWrap: "wrap",
+                    }}>
+                      <span style={{ fontWeight: 700, color: allDone ? "#16a34a" : "#0369a1", flexShrink: 0, fontSize: 10 }}>주간계획</span>
+                      {Object.entries(weeklyPlan).map(([itemId, p]) => {
+                        const item = ALL_ITEMS.find(i => i.id === itemId);
+                        const grp = getItemGroup(itemId);
+                        const done = doneMap[itemId] || 0;
+                        const ok = done >= p.count;
+                        return (
+                          <span key={itemId} style={{
+                            background: ok ? "#dcfce7" : "#fff", border: `1px solid ${grp?.color || "#e2e8f0"}`,
+                            borderRadius: 4, padding: "1px 6px", color: grp?.color, fontWeight: 600, fontSize: 10,
+                          }}>
+                            {item?.name} {done}/{p.count}{ok ? " ✓" : ""}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  );
+                  _printPlan = (
+                    <div className="wkplan-print" style={{ display:"none", fontSize:8, lineHeight:1.4, marginTop:2 }}>
+                      {Object.entries(weeklyPlan).map(([id, p]) => {
+                        const item = ALL_ITEMS.find(i => i.id === id);
+                        const grp = getItemGroup(id);
+                        return <div key={id} style={{ color:grp?.color, fontWeight:700, whiteSpace:"nowrap" }}>{item?.name} 주{p.count}회</div>;
+                      })}
+                    </div>
+                  );
+                }
+              }
+            }
+            if (!day) { _r.push(<div key={`e${idx}`} style={TS.emptyCell}>{_printPlan}</div>); return _r; }
             const dow       = (firstDow + day - 1) % 7;
             const items     = monthData[String(day)] || [];
             const total     = dayTotal(day);
@@ -575,7 +627,7 @@ export default function TreatmentPage() {
             const isCopied  = copiedDay && copiedDay.monthKey===monthKey && copiedDay.day===day;
             const wkNum     = admitDate ? getWeekNumber(admitDate, thisDate) : null;
 
-            return (
+            _r.push(
               <div key={day}
                 style={{ ...TS.dayCell,
                   border: isAdmit ? "2px solid #16a34a" : isDisch ? "2px solid #f59e0b" : isToday ? "2px solid #0ea5e9" : isCopied ? "2px dashed #7c3aed" : "1px solid #e2e8f0",
@@ -589,6 +641,7 @@ export default function TreatmentPage() {
                   </div>
                   {wkNum && <span style={{ fontSize:9, color:"#94a3b8", fontWeight:600 }}>{wkNum}주</span>}
                 </div>
+                {_printPlan}
                 {isAdmit && <div style={TS.admitTag}>🏥 입원일</div>}
                 {isDisch && <div style={TS.dischargeTag}>🚪 퇴원 예정</div>}
                 <div style={TS.tagList}>
@@ -617,6 +670,7 @@ export default function TreatmentPage() {
                 {total > 0 && <div style={TS.dayTotalLabel}>{Math.floor(total/10000)}만원</div>}
               </div>
             );
+            return _r;
           })}
         </div>
       </div>

@@ -123,7 +123,7 @@ function BedCalendar({ slot, year, month }) {
               onMouseEnter={e=>{ if(day&&label) setTooltip({day,label,x:e.clientX,y:e.clientY}); }}
               onMouseLeave={()=>setTooltip(null)}
               style={{
-                aspectRatio:"1/1", borderRadius:3, background:day?bg:"transparent",
+                aspectRatio:"1/0.35", borderRadius:3, background:day?bg:"transparent",
                 display:"flex", alignItems:"center", justifyContent:"center",
                 border:isToday?"2px solid #0f2744":"1px solid rgba(0,0,0,0.05)",
                 boxSizing:"border-box", cursor:day&&label?"pointer":"default",
