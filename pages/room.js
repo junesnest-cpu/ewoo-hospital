@@ -443,20 +443,46 @@ export default function RoomPage() {
                 <div style={{ flex:3, minHeight:0, display:"flex", flexDirection:"column", overflow:"hidden" }}>
                 {person ? (<>
                   <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4, flexShrink:0 }}>
-                      <span
-                        style={{ fontSize:20, fontWeight:800,
-                          color:isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
-                          ...(person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
-                        onClick={person.patientId ? () => router.push(`/patients?id=${encodeURIComponent(person.patientId)}`) : undefined}>
-                        {person.name}
-                      </span>
-                      {newPatientNames.has(normN(person.name)) && (
-                        <span style={{ fontSize:12, background:"#fef08a", color:"#713f12", borderRadius:4, padding:"1px 6px", fontWeight:800, flexShrink:0 }}>★ 신환</span>
-                      )}
-                    </div>
-                    {person.admitDate&&<div style={{ fontSize:14,color:"#7c3aed",marginBottom:2,flexShrink:0 }}>입원일: {person.admitDate}</div>}
-                    <div style={{ fontSize:15,color:"#64748b",marginBottom:4,flexShrink:0 }}>퇴원: {person.discharge||"미정"}</div>
+                    {isMobile ? (
+                      /* 모바일: 가로 배치 — 이름(좌) | 입퇴원일(우) */
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:6, marginBottom:4, flexShrink:0, flexWrap:"wrap" }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                          <span
+                            style={{ fontSize:18, fontWeight:800,
+                              color:isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
+                              ...(person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                            onClick={person.patientId ? () => router.push(`/patients?id=${encodeURIComponent(person.patientId)}`) : undefined}>
+                            {person.name}
+                          </span>
+                          {newPatientNames.has(normN(person.name)) && (
+                            <span style={{ fontSize:11, background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 5px", fontWeight:800, flexShrink:0 }}>★ 신환</span>
+                          )}
+                        </div>
+                        <div style={{ display:"flex", gap:8, alignItems:"center", fontSize:12, color:"#64748b", flexShrink:0 }}>
+                          {person.admitDate&&<span style={{ color:"#7c3aed", fontWeight:600 }}>{person.admitDate}</span>}
+                          <span>→</span>
+                          <span>{person.discharge||"미정"}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      /* 데스크탑: 기존 세로 배치 */
+                      <>
+                        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4, flexShrink:0 }}>
+                          <span
+                            style={{ fontSize:20, fontWeight:800,
+                              color:isAdmitting||isReservedType?"#7c3aed":isDischarging?"#d97706":"#0f2744",
+                              ...(person.patientId ? { cursor:"pointer", textDecoration:"underline", textDecorationStyle:"dotted" } : {}) }}
+                            onClick={person.patientId ? () => router.push(`/patients?id=${encodeURIComponent(person.patientId)}`) : undefined}>
+                            {person.name}
+                          </span>
+                          {newPatientNames.has(normN(person.name)) && (
+                            <span style={{ fontSize:12, background:"#fef08a", color:"#713f12", borderRadius:4, padding:"1px 6px", fontWeight:800, flexShrink:0 }}>★ 신환</span>
+                          )}
+                        </div>
+                        {person.admitDate&&<div style={{ fontSize:14,color:"#7c3aed",marginBottom:2,flexShrink:0 }}>입원일: {person.admitDate}</div>}
+                        <div style={{ fontSize:15,color:"#64748b",marginBottom:4,flexShrink:0 }}>퇴원: {person.discharge||"미정"}</div>
+                      </>
+                    )}
                     {person.note&&<div style={{ fontSize:13,color:"#475569",background:"#f8fafc",borderRadius:6,padding:"4px 8px",lineHeight:1.4,overflow:"auto",flex:1,minHeight:0 }}>{person.note}</div>}
                     {person.scheduleAlert&&<div style={{ background:"#fef3c7",color:"#92400e",borderRadius:6,padding:"3px 8px",fontSize:13,fontWeight:700,flexShrink:0,marginTop:4 }}>⚠ 스케줄 확인 필요</div>}
                   </div>
