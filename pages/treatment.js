@@ -164,6 +164,7 @@ export default function TreatmentPage() {
   const [roomFree,  setRoomFree]  = useState(false); // 병실료 프리 옵션
   const [weeklyPlan,setWeeklyPlan]= useState({}); // {itemId: {count:N, price:P}} 주N회 계획
   const [showWkPlan,setShowWkPlan]= useState(false); // 주간 계획 패널 토글
+  const [sending, setSending] = useState(false); // 공지 발송 중
   const [resolvedPatientId, setResolvedPatientId] = useState(""); // URL에 없으면 슬롯에서 조회
 
   useEffect(() => {
@@ -199,6 +200,44 @@ export default function TreatmentPage() {
   const monthKey  = `${year}-${String(month + 1).padStart(2, "0")}`;
   const monthData = plan[monthKey] || {};
   const dischargeDate = parseDateStr(discharge);
+
+  // 네이버 웍스 공지 발송
+  const sendNotification = useCallback(async () => {
+    if (sending) return;
+    const md = plan[`${year}-${String(month + 1).padStart(2, "0")}`] || {};
+    const days = Object.keys(md).map(Number).filter(d => {
+      const items = md[String(d)] || [];
+      return items.length > 0 && items.some(e => e.emr !== "removed");
+    }).sort((a, b) => a - b);
+
+    if (days.length === 0) {
+      alert("현재 월에 입력된 치료 일정이 없습니다.");
+      return;
+    }
+
+    const m = month + 1;
+    const firstDay = `${m}/${days[0]}`;
+    const lastDay = `${m}/${days[days.length - 1]}`;
+    const msg = `${slotKey} ${name}님 ${firstDay} ~ ${lastDay} 치료 일정 입력 완료되었습니다.`;
+
+    if (!confirm(`다음 메시지를 네이버 웍스에 발송하시겠습니까?\n\n${msg}`)) return;
+
+    setSending(true);
+    try {
+      const res = await fetch("/api/naver-works-send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "발송 실패");
+      alert("공지가 발송되었습니다.");
+    } catch (err) {
+      alert(`발송 실패: ${err.message}`);
+    } finally {
+      setSending(false);
+    }
+  }, [sending, plan, year, month, slotKey, name]);
 
   const saveDay = useCallback(async (day, items) => {
     const newPlan = { ...plan, [monthKey]: { ...monthData, [String(day)]: items } };
@@ -425,6 +464,9 @@ export default function TreatmentPage() {
             </div>
             <div style={{ fontSize:11, color:"#7dd3fc", fontWeight:600 }}>{roomId}호 {bedNum}번 병상{admitDate ? ` · 입원 ${admitDate}` : ""}{discharge && discharge !== "미정" ? ` · 퇴원 ${discharge}` : ""}</div>
           </div>
+          <button style={{ ...TS.btnPrint, background:"#16a34a", marginRight:4 }} onClick={sendNotification} disabled={sending}>
+            {sending ? "발송중..." : "📢 공지"}
+          </button>
           <button style={TS.btnPrint} onClick={() => window.print()}>🖨 인쇄</button>
         </div>
         {/* 월 네비 */}
