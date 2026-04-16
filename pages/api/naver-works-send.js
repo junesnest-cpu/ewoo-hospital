@@ -35,8 +35,14 @@ async function getAccessToken() {
   const serviceAccount = process.env.NAVER_WORKS_SERVICE_ACCOUNT;
   const privateKey   = process.env.NAVER_WORKS_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
-  if (!clientId || !clientSecret || !serviceAccount || !privateKey) {
-    throw new Error('네이버 웍스 환경변수 미설정');
+  const missing = [
+    !clientId && 'CLIENT_ID',
+    !clientSecret && 'CLIENT_SECRET',
+    !serviceAccount && 'SERVICE_ACCOUNT',
+    !privateKey && 'PRIVATE_KEY',
+  ].filter(Boolean);
+  if (missing.length > 0) {
+    throw new Error(`네이버 웍스 환경변수 미설정: NAVER_WORKS_${missing.join(', NAVER_WORKS_')}`);
   }
 
   const jwt = createJWT(clientId, serviceAccount, privateKey);
