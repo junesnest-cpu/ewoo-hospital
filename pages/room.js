@@ -167,6 +167,8 @@ export default function RoomPage() {
   const today = new Date();
   const [calYear,  setCalYear]  = useState(today.getFullYear());
   const [calMonth, setCalMonth] = useState(today.getMonth());
+  const [calOpen,  setCalOpen]  = useState(true);
+  useEffect(() => { setCalOpen(!isMobile); }, [isMobile]); // 모바일에서 캘린더 기본 접힘
 
   // 편집 모달
   const [editingSlot,  setEditingSlot]  = useState(null);
@@ -380,15 +382,20 @@ export default function RoomPage() {
       </header>
 
       {/* 캘린더 월 네비 */}
-      <div style={{ background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"8px 16px", display:"flex", alignItems:"center", gap:10 }}>
-        <span style={{ fontSize:15, fontWeight:700, color:"#0f2744" }}>📅 병상 캘린더</span>
-        <button onClick={()=>{ if(calMonth===0){setCalYear(y=>y-1);setCalMonth(11);}else setCalMonth(m=>m-1); }}
-          style={NS.btnMonth}>‹</button>
-        <span style={{ fontSize:15, fontWeight:700, minWidth:80 }}>{calYear}년 {calMonth+1}월</span>
-        <button onClick={()=>{ if(calMonth===11){setCalYear(y=>y+1);setCalMonth(0);}else setCalMonth(m=>m+1); }}
-          style={NS.btnMonth}>›</button>
-        <button onClick={()=>{ setCalYear(today.getFullYear()); setCalMonth(today.getMonth()); }}
-          style={{ ...NS.btnMonth, width:"auto", padding:"0 10px", fontSize:13, fontWeight:700 }}>이번달</button>
+      <div style={{ background:"#fff", borderBottom:"1px solid #e2e8f0", padding:"8px 16px", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+        <span style={{ fontSize:15, fontWeight:700, color:"#0f2744", cursor:isMobile?"pointer":"default" }}
+          onClick={()=>isMobile&&setCalOpen(o=>!o)}>
+          📅 병상 캘린더 {isMobile&&(calOpen?"▲":"▼")}
+        </span>
+        {(!isMobile || calOpen) && <>
+          <button onClick={()=>{ if(calMonth===0){setCalYear(y=>y-1);setCalMonth(11);}else setCalMonth(m=>m-1); }}
+            style={NS.btnMonth}>‹</button>
+          <span style={{ fontSize:15, fontWeight:700, minWidth:80 }}>{calYear}년 {calMonth+1}월</span>
+          <button onClick={()=>{ if(calMonth===11){setCalYear(y=>y+1);setCalMonth(0);}else setCalMonth(m=>m+1); }}
+            style={NS.btnMonth}>›</button>
+          <button onClick={()=>{ setCalYear(today.getFullYear()); setCalMonth(today.getMonth()); }}
+            style={{ ...NS.btnMonth, width:"auto", padding:"0 10px", fontSize:13, fontWeight:700 }}>이번달</button>
+        </>}
       </div>
 
       {/* 범례 - 헤더 바에 통합 */}
@@ -418,7 +425,7 @@ export default function RoomPage() {
                 style={{ background: isMovingFrom?"#fffbeb":isMoveTarget?"#f0fdf4":isAdmitting?"#eff6ff":isDischarging?"#fffbeb":isReservedType?"#faf5ff":"#fff",
                   border:`2px ${person?"solid":"dashed"} ${borderColor}`,
                   borderRadius:10, padding:10, minWidth:0, overflow:"hidden",
-                  height:"calc(100vh - 180px)", display:"flex", flexDirection:"column",
+                  height:isMobile?"auto":"calc(100vh - 180px)", display:"flex", flexDirection:"column",
                   cursor:movingPatient&&!isMovingFrom?"pointer":"default",
                   boxShadow:"0 1px 6px rgba(0,0,0,0.06)", transition:"all 0.2s" }}>
 
@@ -524,9 +531,11 @@ export default function RoomPage() {
                 </div>
 
                 {/* 병상 캘린더 */}
+                {(!isMobile || calOpen) && (
                 <div style={{ flexShrink:0, marginTop:6 }}>
                   <BedCalendar slot={slot} year={calYear} month={calMonth}/>
                 </div>
+                )}
               </div>
             );
           })}
