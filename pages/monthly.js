@@ -429,10 +429,7 @@ export default function MonthlySchedule() {
     }
     for (const a of (bd?.admissions || [])) {
       const n = normName(a.name);
-      // slots에 존재하지만 이 날짜의 calendarData에 없는 환자 = 날짜가 변경됨 → 스킵
-      if (n && !seenAdm.has(n) && !namesInSlots.has(n)) {
-        mergeAdm.push(a); seenAdm.add(n);
-      }
+      if (n && !seenAdm.has(n)) { mergeAdm.push(a); seenAdm.add(n); }
     }
 
     for (const d of (cd.discharges || [])) {
@@ -445,8 +442,7 @@ export default function MonthlySchedule() {
     }
     for (const d of (bd?.discharges || [])) {
       const n = normName(d.name);
-      // slots에 존재하지만 이 날짜의 calendarData에 없는 환자 = 날짜가 변경됨 → 스킵
-      if (n && !seenDis.has(n) && !namesInSlots.has(n)) { mergeDis.push(d); seenDis.add(n); }
+      if (n && !seenDis.has(n)) { mergeDis.push(d); seenDis.add(n); }
     }
 
     // hidden 제거 + 신환 플래그 반영

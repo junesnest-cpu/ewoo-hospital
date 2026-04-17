@@ -101,7 +101,7 @@ export default function DailyBoard() {
   const [filterName, setFilterName] = useState("");
 
   // 연동 데이터 소스 (공유 Context)
-  const { slots, consultations, patients, newPatientFlags, settings, namesInSlots } = useWardData();
+  const { slots, consultations, patients, newPatientFlags, settings } = useWardData();
   const therapists = useMemo(() => [settings.therapist1 || "치료사1", settings.therapist2 || "치료사2"], [settings]);
   const [monthlyBoard, setMonthlyBoard] = useState({});
   const [physSched, setPhysSched] = useState({});
@@ -284,8 +284,7 @@ export default function DailyBoard() {
     }
     for (const a of (db?.admissions || [])) {
       const n = normName(a.name);
-      // slots에 존재하지만 이 날짜의 calendarData에 없는 환자 = 날짜가 변경됨 → 스킵
-      if (n && !seenAdm.has(n) && !namesInSlots.has(n)) { mergeAdm.push(a); seenAdm.add(n); }
+      if (n && !seenAdm.has(n)) { mergeAdm.push(a); seenAdm.add(n); }
     }
 
     for (const d of (cd.discharges || [])) {
@@ -298,15 +297,14 @@ export default function DailyBoard() {
     }
     for (const d of (db?.discharges || [])) {
       const n = normName(d.name);
-      // slots에 존재하지만 이 날짜의 calendarData에 없는 환자 = 날짜가 변경됨 → 스킵
-      if (n && !seenDis.has(n) && !namesInSlots.has(n)) { mergeDis.push(d); seenDis.add(n); }
+      if (n && !seenDis.has(n)) { mergeDis.push(d); seenDis.add(n); }
     }
 
     return {
       admissions: mergeAdm.filter(a => !hiddenAdm.has(normName(a.name))),
       discharges: mergeDis.filter(d => !hiddenDis.has(normName(d.name))),
     };
-  }, [calendarData, savedOverride, namesInSlots]);
+  }, [calendarData, savedOverride]);
 
   // ── 입원/퇴원 연동 (displayData + patientInfo 보강) ──
   const syncedAdmissions = useMemo(() => {
