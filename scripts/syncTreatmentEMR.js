@@ -1,12 +1,14 @@
 /**
- * EMR → Firebase 치료계획표 동기화 (201호 테스트)
- * - 일치 항목: emr:"match"
- * - EMR에만 있는 항목: emr:"added"  (추가)
- * - Firebase에만 있는 항목: emr:"removed" (삭제 표시)
- * - 수량 불일치: emr:"modified", 기존 qty를 EMR 기준으로 변경
+ * EMR → Firebase 치료계획표 동기화
+ *
+ * 규칙:
+ *   - 어제까지: EMR 우선. EMR에만 있음=added, Firebase에만 있음=removed, 수량 불일치=modified
+ *   - 오늘 이후: 삭제 로직 없이 일치 여부만 표시. Firebase에만 있으면 원본 유지(태그 제거)
+ *   - hyperbaric(고압산소)는 EMR 연동 제외
+ *   - 주치의(VIEWJUBLIST.dctrName): 강국형/이숙경만 인정, slots/{sk}/current/attending 갱신
+ *   - Widam/VIEWJUBLIST 쿼리는 IN 절 벌크화
  *
  * 실행: node scripts/syncTreatmentEMR.js [roomId]
- *   예: node scripts/syncTreatmentEMR.js 201
  */
 require('dotenv').config({ path: '.env.local' });
 const sql   = require('mssql');
@@ -70,8 +72,8 @@ const EMR_TO_PLAN = {
 };
 
 const TODAY = new Date().toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD
+const TODAY_INT = parseInt(TODAY);
 
-// 전체 호실 목록
 const ALL_ROOMS = [
   '201','202','203','204','205','206',
   '301','302','303','304','305','306',
@@ -79,17 +81,39 @@ const ALL_ROOMS = [
   '601','602','603',
 ];
 
+function computeMaxPlanYMD(fbPlan) {
+  let maxYMD = TODAY;
+  for (const mk of Object.keys(fbPlan || {})) {
+    const [yr, mo] = mk.split('-').map(Number);
+    if (!yr || !mo) continue;
+    for (const d of Object.keys(fbPlan[mk] || {})) {
+      const dayNum = parseInt(d);
+      if (isNaN(dayNum)) continue;
+      const ymd = `${yr}${String(mo).padStart(2,'0')}${String(dayNum).padStart(2,'0')}`;
+      if (ymd > maxYMD) maxYMD = ymd;
+    }
+  }
+  return maxYMD;
+}
+
+function attendingOf(raw) {
+  const s = (raw || '').trim();
+  if (s.includes('강국형')) return '강국형';
+  if (s.includes('이숙경')) return '이숙경';
+  return '';
+}
+
 async function main() {
   const argRoom = process.argv[2];
   const targetRooms = argRoom ? [argRoom] : ALL_ROOMS;
   const maxBeds = 6;
 
   console.log(`🏥 치료계획표 EMR 연동 시작 (${argRoom ? argRoom+'호' : '전체 호실'})`);
-  console.log(`📅 기준일: ~${TODAY} (오늘 미포함)\n`);
+  console.log(`📅 오늘: ${TODAY}\n`);
 
   const pool = await sql.connect(sqlConfig);
 
-  // 대상 호실 전체에서 환자 조회
+  // ── 1) 입원환자 수집 ──
   const patients = [];
   for (const roomId of targetRooms) {
     for (let bed = 1; bed <= maxBeds; bed++) {
@@ -108,36 +132,98 @@ async function main() {
 
   console.log(`환자 ${patients.length}명: ${patients.map(p => `${p.slotKey} ${p.name}`).join(', ')}\n`);
 
+  // ── 2) Firebase 치료계획표 사전 로드 + maxPlanYMD 계산 ──
+  await Promise.all(patients.map(async pat => {
+    const fbSnap = await db.ref(`treatmentPlans/${pat.slotKey}`).once('value');
+    pat.fbPlan = fbSnap.val() || {};
+    pat.maxPlanYMD = computeMaxPlanYMD(pat.fbPlan);
+  }));
+
+  const globalMaxYMD = patients.reduce((m, p) =>
+    p.maxPlanYMD > m ? p.maxPlanYMD : m, TODAY);
+  const minAdmitYMD = patients.reduce((m, p) => {
+    const ymd = (p.admitDate || '').replace(/-/g, '');
+    if (!ymd) return m;
+    return !m || ymd < m ? ymd : m;
+  }, null);
+
+  const chartNos = patients
+    .map(p => (p.chartNo || '').toString().trim())
+    .filter(c => /^[0-9A-Za-z\-]+$/.test(c));
+
+  // ── 3) 주치의 벌크 조회 (VIEWJUBLIST) ──
+  const attMap = {};
+  if (chartNos.length) {
+    const inList = chartNos.map(c => `'${c}'`).join(',');
+    try {
+      const attRes = await pool.request().query(`
+        SELECT x.chamKey, x.dctrName FROM (
+          SELECT chamKey, dctrName,
+            ROW_NUMBER() OVER (PARTITION BY chamKey ORDER BY (SELECT NULL)) AS rn
+          FROM VIEWJUBLIST WHERE chamKey IN (${inList})
+        ) x WHERE x.rn = 1
+      `);
+      for (const r of attRes.recordset) {
+        attMap[String(r.chamKey).trim()] = attendingOf(r.dctrName);
+      }
+    } catch (e) {
+      console.error('주치의 조회 오류:', e.message);
+    }
+  }
+
+  // ── 4) Widam 벌크 쿼리 ──
+  const emrByPat = {};
+  if (chartNos.length && minAdmitYMD) {
+    const inList = chartNos.map(c => `'${c}'`).join(',');
+    const emrRes = await pool.request().query(`
+      SELECT RTRIM(d.idam_cham) AS chartNo,
+             d.idam_in_date AS inDate, d.idam_date AS dt,
+             d.idam_momn AS code,
+             d.idam_dosage AS dosage, d.idam_times AS times
+      FROM Widam d
+      WHERE d.idam_cham IN (${inList})
+        AND d.idam_bigub = 1
+        AND d.idam_date >= '${minAdmitYMD}'
+        AND d.idam_date <= '${globalMaxYMD}'
+      ORDER BY d.idam_cham, d.idam_date
+    `);
+    for (const row of emrRes.recordset) {
+      const cham = String(row.chartNo).trim();
+      if (!emrByPat[cham]) emrByPat[cham] = [];
+      emrByPat[cham].push(row);
+    }
+  }
+
+  // ── 5) 환자별 처리 ──
   const fbUpdates = {};
   let matchCount = 0, addCount = 0, removeCount = 0, modifyCount = 0;
 
   for (const pat of patients) {
+    const chart = (pat.chartNo || '').toString().trim();
+    const att = attMap[chart] || '';
     console.log('─'.repeat(50));
-    console.log(`[${pat.slotKey}] ${pat.name} (입원:${pat.admitDate})`);
+    console.log(`[${pat.slotKey}] ${pat.name} (입원:${pat.admitDate}) 주치의:${att || '-'}`);
 
-    const admitYMD = pat.admitDate.replace(/-/g, '');
+    // 주치의 갱신
+    if (pat.chartNo) {
+      fbUpdates[`slots/${pat.slotKey}/current/attending`] = att;
+    }
 
-    // EMR 비급여 처방 조회
-    const emrRes = await pool.request().query(`
-      SELECT d.idam_date, d.idam_momn, d.idam_dosage, d.idam_times,
-        d.idam_day, d.idam_amt, d.idam_bigub
-      FROM Widam d
-      WHERE d.idam_cham = '${pat.chartNo}'
-        AND d.idam_in_date = '${admitYMD}'
-        AND d.idam_bigub = 1
-        AND d.idam_date >= '${admitYMD}'
-        AND d.idam_date < '${TODAY}'
-      ORDER BY d.idam_date, d.idam_cnt
-    `);
+    const admitYMD = (pat.admitDate || '').replace(/-/g, '');
+    if (!admitYMD) continue;
+
+    // 현재 입원건만 필터 (idam_in_date == admitYMD)
+    const rows = (emrByPat[chart] || [])
+      .filter(r => String(r.inDate).trim() === admitYMD);
 
     // EMR → 날짜별 치료항목 변환
-    const emrByDate = {}; // { 'YYYY-MM': { 'D': { itemId: {id, qty} } } }
-    for (const row of emrRes.recordset) {
-      const code = row.idam_momn.trim();
+    const emrByDate = {};
+    for (const row of rows) {
+      const code = (row.code || '').trim();
       const mapping = EMR_TO_PLAN[code];
       if (!mapping) continue;
 
-      const dateStr = row.idam_date.trim();
+      const dateStr = String(row.dt).trim();
       const monthKey = `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}`;
       const day = String(parseInt(dateStr.slice(6,8)));
 
@@ -147,8 +233,8 @@ async function main() {
       const itemId = mapping.id;
       let qty;
       if (mapping.vitcG) qty = mapping.vitcG;
-      else if (mapping.qtyField === 'dosage') qty = row.idam_dosage;
-      else if (mapping.qtyField === 'times') qty = row.idam_times || 1;
+      else if (mapping.qtyField === 'dosage') qty = row.dosage;
+      else if (mapping.qtyField === 'times') qty = row.times || 1;
       else qty = undefined;
 
       if (mapping.combo) {
@@ -171,32 +257,28 @@ async function main() {
       }
     }
 
-    // combo 항목 정리 (dramin은 닥터라민+멀티주 2개가 있어야 1세트)
+    // combo 태그 정리
     for (const mk of Object.keys(emrByDate)) {
       for (const d of Object.keys(emrByDate[mk])) {
-        for (const [id, item] of Object.entries(emrByDate[mk][d])) {
-          if (item._combo !== undefined) {
-            delete item._combo;
-          }
+        for (const [, item] of Object.entries(emrByDate[mk][d])) {
+          if (item._combo !== undefined) delete item._combo;
         }
       }
     }
 
-    // Firebase 치료계획표 조회
-    const fbSnap = await db.ref(`treatmentPlans/${pat.slotKey}`).once('value');
-    const fbPlan = fbSnap.val() || {};
+    const fbPlan = pat.fbPlan || {};
+    const admitDate = new Date(
+      `${admitYMD.slice(0,4)}-${admitYMD.slice(4,6)}-${admitYMD.slice(6,8)}`
+    );
+    const maxDate = new Date(
+      `${pat.maxPlanYMD.slice(0,4)}-${pat.maxPlanYMD.slice(4,6)}-${pat.maxPlanYMD.slice(6,8)}`
+    );
 
-    // 입원일~오늘 사이 날짜 범위 계산
-    const admitDate = new Date(pat.admitDate);
-    const todayDate = new Date(`${TODAY.slice(0,4)}-${TODAY.slice(4,6)}-${TODAY.slice(6,8)}`);
-
-    // 대상 월 목록 계산
     const months = new Set();
-    for (let d = new Date(admitDate); d < todayDate; d.setDate(d.getDate() + 1)) {
+    for (let d = new Date(admitDate); d <= maxDate; d.setDate(d.getDate() + 1)) {
       months.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
     }
 
-    // 월별로 처리
     for (const monthKey of months) {
       const emrMonth = emrByDate[monthKey] || {};
       const fbMonth  = fbPlan[monthKey] || {};
@@ -204,11 +286,10 @@ async function main() {
       const [yr, mo] = monthKey.split('-').map(Number);
       const daysInMonth = new Date(yr, mo, 0).getDate();
 
-      // 대상 일자 범위 (입원일~오늘 사이)
       const startDay = (monthKey === `${admitDate.getFullYear()}-${String(admitDate.getMonth()+1).padStart(2,'0')}`)
         ? admitDate.getDate() : 1;
-      const endDay = (monthKey === `${todayDate.getFullYear()}-${String(todayDate.getMonth()+1).padStart(2,'0')}`)
-        ? todayDate.getDate() - 1 : daysInMonth;
+      const endDay = (monthKey === `${maxDate.getFullYear()}-${String(maxDate.getMonth()+1).padStart(2,'0')}`)
+        ? maxDate.getDate() : daysInMonth;
 
       for (let day = startDay; day <= endDay; day++) {
         const dayStr = String(day);
@@ -216,7 +297,6 @@ async function main() {
         const fbItems  = Array.isArray(fbMonth[dayStr]) ? fbMonth[dayStr]
                        : fbMonth[dayStr] ? Object.values(fbMonth[dayStr]) : [];
 
-        // Firebase 항목을 id 기준 Map으로
         const fbMap = {};
         for (const item of fbItems) {
           if (item && item.id) fbMap[item.id] = { ...item };
@@ -225,6 +305,9 @@ async function main() {
         const allIds = new Set([...Object.keys(emrItems), ...Object.keys(fbMap)]);
         if (allIds.size === 0) continue;
 
+        const dayYMD = parseInt(`${yr}${String(mo).padStart(2,'0')}${String(day).padStart(2,'0')}`);
+        const isTodayOrFuture = dayYMD >= TODAY_INT;
+
         const newItems = [];
 
         for (const itemId of allIds) {
@@ -232,69 +315,68 @@ async function main() {
           const inFb  = fbMap[itemId];
 
           if (inEmr && inFb) {
-            // 양쪽 모두 존재
             const emrQty = inEmr.qty;
             const fbQty  = inFb.qty;
 
             if (emrQty !== undefined && fbQty !== undefined &&
                 Number(emrQty) !== Number(fbQty)) {
-              // 수량 불일치 → EMR 기준으로 수정
               newItems.push({ id: itemId, qty: emrQty, emr: 'modified' });
               console.log(`  ${monthKey}/${dayStr} ${itemId}: 수량 수정 (${fbQty}→${emrQty})`);
               modifyCount++;
             } else {
-              // 일치 → V 체크
               const entry = { id: itemId, emr: 'match' };
               if (inFb.qty !== undefined) entry.qty = inFb.qty;
               newItems.push(entry);
               matchCount++;
             }
           } else if (inEmr && !inFb) {
-            // EMR에만 있음 → 추가
             const entry = { id: itemId, emr: 'added' };
             if (inEmr.qty !== undefined) entry.qty = inEmr.qty;
             newItems.push(entry);
             console.log(`  ${monthKey}/${dayStr} ${itemId}: ➕ 추가${inEmr.qty ? ' ('+inEmr.qty+')' : ''}`);
             addCount++;
           } else if (!inEmr && inFb) {
-            // Firebase에만 있음
             if (itemId === 'hyperbaric') {
-              // 고압산소치료는 EMR 연동 제외 (치료실 현황에서만 관리)
               newItems.push({ ...inFb });
+            } else if (isTodayOrFuture) {
+              // 오늘 이후: 삭제 태깅 금지. 기존 emr 태그는 제거해 원본으로 복원
+              const { emr, ...rest } = inFb;
+              newItems.push(rest);
             } else {
-              // 그 외 항목 → 삭제 표시
-              const entry = { ...inFb, emr: 'removed' };
-              newItems.push(entry);
+              newItems.push({ ...inFb, emr: 'removed' });
               console.log(`  ${monthKey}/${dayStr} ${itemId}: ➖ 삭제 표시`);
               removeCount++;
             }
           }
         }
 
-        // Firebase 경로에 업데이트 등록
         fbUpdates[`treatmentPlans/${pat.slotKey}/${monthKey}/${dayStr}`] = newItems;
       }
     }
   }
 
-  // Firebase 반영
+  // ── 6) Firebase 반영 ──
   const entries = Object.entries(fbUpdates);
   if (entries.length > 0) {
     console.log('\n' + '─'.repeat(50));
-    console.log(`🔥 Firebase 업데이트: ${entries.length}개 날짜`);
+    console.log(`🔥 Firebase 업데이트: ${entries.length}개 경로`);
     for (let i = 0; i < entries.length; i += 500) {
       await db.ref('/').update(Object.fromEntries(entries.slice(i, i + 500)));
     }
   }
 
-  console.log('\n' + '═'.repeat(50));
-  // EMR 싱크 완료 시간 기록
+  // ── 7) 싱크 로그 ──
   await db.ref('emrSyncLog/lastSync').set(new Date().toISOString());
+  await db.ref('emrSyncLog/lastCounts').set({
+    match: matchCount, added: addCount, removed: removeCount, modified: modifyCount,
+    patients: patients.length,
+  });
 
+  console.log('\n' + '═'.repeat(50));
   console.log('✅ 치료계획표 EMR 연동 완료');
   console.log(`   ✅ 일치:  ${matchCount}건`);
   console.log(`   ➕ 추가:  ${addCount}건`);
-  console.log(`   ➖ 삭제:  ${removeCount}건`);
+  console.log(`   ➖ 삭제:  ${removeCount}건 (어제 이전만)`);
   console.log(`   ✏️  수정:  ${modifyCount}건`);
 
   await sql.close();

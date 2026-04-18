@@ -62,6 +62,30 @@ function itemLabel(e) {
   return item.name;
 }
 
+const ATT_COLORS = {
+  "강국형": { bg:"#dbeafe", fg:"#1d4ed8", border:"#60a5fa" },
+  "이숙경": { bg:"#fce7f3", fg:"#be185d", border:"#f472b6" },
+};
+
+const EMR_BADGE = {
+  match:    { sym:"✓", color:"#059669", title:"EMR 일치" },
+  added:    { sym:"＋", color:"#2563eb", title:"EMR에만 있음" },
+  removed:  { sym:"−", color:"#dc2626", title:"계획에만 있음(EMR 미입력)" },
+  modified: { sym:"✎", color:"#d97706", title:"수량 수정됨" },
+};
+
+function formatSyncAgo(iso) {
+  if (!iso) return "아직 없음";
+  const diff = Date.now() - new Date(iso).getTime();
+  if (!isFinite(diff) || diff < 0) return "—";
+  const min = Math.round(diff / 60000);
+  if (min < 1) return "방금 전";
+  if (min < 60) return `${min}분 전`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h}시간 전`;
+  return new Date(iso).toLocaleString("ko-KR");
+}
+
 export default function DailyPage() {
   const router = useRouter();
   const today  = new Date();
@@ -73,8 +97,10 @@ export default function DailyPage() {
   const [treatPlans,   setTreatPlans]   = useState({});
   const [loading,      setLoading]      = useState(true);
   // 필터
-  const [filterGroup,  setFilterGroup]  = useState(null);
-  const [filterName,   setFilterName]   = useState("");
+  const [filterGroup,     setFilterGroup]     = useState(null);
+  const [filterName,      setFilterName]      = useState("");
+  const [filterAttending, setFilterAttending] = useState(null);
+  const [emrSyncTime,     setEmrSyncTime]     = useState(null);
   const [physSched,    setPhysSched]    = useState({});
   const [hyperSched,   setHyperSched]   = useState({});
   const [therapists,   setTherapists]   = useState(["치료사1","치료사2"]);
@@ -85,7 +111,8 @@ export default function DailyPage() {
     const unsubP  = onValue(ref(db, "physicalSchedule"),      snap => setPhysSched(snap.val() || {}));
     const unsubH  = onValue(ref(db, "hyperthermiaSchedule"),  snap => setHyperSched(snap.val() || {}));
     const unsubSt = onValue(ref(db, "settings"),              snap => { const v=snap.val()||{}; setTherapists([v.therapist1||"치료사1",v.therapist2||"치료사2"]); });
-    return () => { unsubS(); unsubT(); unsubP(); unsubH(); unsubSt(); };
+    const unsubE  = onValue(ref(db, "emrSyncLog/lastSync"),   snap => setEmrSyncTime(snap.val()));
+    return () => { unsubS(); unsubT(); unsubP(); unsubH(); unsubSt(); unsubE(); };
   }, []);
 
   // 사이드바 환자 이름 검색
@@ -157,7 +184,8 @@ export default function DailyPage() {
       for (let b = 1; b <= room.capacity; b++) {
         const slotKey = `${room.id}-${b}`;
         // 현재 입원 환자 이름
-        const patientName = slots[slotKey]?.current?.name;
+        const current = slots[slotKey]?.current;
+        const patientName = current?.name;
         if (!patientName) continue;
         // 치료 계획 확인
         const items = treatPlans[slotKey]?.[monthKey]?.[dayKey];
@@ -168,6 +196,7 @@ export default function DailyPage() {
           bedNum:   b,
           slotKey,
           patientName,
+          attending: current?.attending || "",
           items,
           times: timeMap[slotKey] || {},
         });
@@ -178,13 +207,27 @@ export default function DailyPage() {
   // 필터 적용
   const filtered = dailyList
     .filter(p => !filterGroup || p.items.some(e => TREATMENT_GROUPS.find(g => g.group === filterGroup)?.items.some(i => i.id === e.id)))
-    .filter(p => !filterName || p.patientName.includes(filterName));
+    .filter(p => !filterName || p.patientName.includes(filterName))
+    .filter(p => !filterAttending || p.attending === filterAttending);
 
   // 치료 종류별 집계 (당일 몇 명)
   const groupCounts = TREATMENT_GROUPS.map(g => ({
     group: g.group, color: g.color, bg: g.bg,
     count: dailyList.filter(p => p.items.some(e => g.items.some(i => i.id === e.id))).length,
   })).filter(g => g.count > 0);
+
+  // 주치의별 집계
+  const attCounts = ["강국형", "이숙경"].map(att => ({
+    att, count: dailyList.filter(p => p.attending === att).length,
+  })).filter(a => a.count > 0);
+  const unassignedCount = dailyList.filter(p => !p.attending).length;
+
+  // EMR 플래그 집계 (필터 적용 후)
+  const emrCounts = { match:0, added:0, removed:0, modified:0 };
+  filtered.forEach(p => p.items.forEach(e => {
+    if (e.emr && emrCounts[e.emr] !== undefined) emrCounts[e.emr]++;
+  }));
+  const hasEmrFlags = Object.values(emrCounts).some(v => v > 0);
 
   const isToday = selectedDate.getTime() === today.getTime();
 
@@ -245,6 +288,46 @@ export default function DailyPage() {
         </div>
       </div>
 
+      {/* 주치의 필터 + EMR 검증 상태 */}
+      <div style={DS.emrBar}>
+        <div style={DS.attFilters}>
+          <span style={DS.attLabel}>주치의</span>
+          <button
+            style={{ ...DS.attBtn, background: filterAttending===null?"#0f2744":"#f1f5f9", color: filterAttending===null?"#fff":"#64748b", borderColor: filterAttending===null?"#0f2744":"#e2e8f0" }}
+            onClick={() => setFilterAttending(null)}>전체</button>
+          {attCounts.map(a => {
+            const c = ATT_COLORS[a.att] || { bg:"#f1f5f9", fg:"#334155", border:"#cbd5e1" };
+            const active = filterAttending === a.att;
+            return (
+              <button key={a.att}
+                style={{ ...DS.attBtn, background: active ? c.fg : c.bg, color: active ? "#fff" : c.fg, borderColor: c.border }}
+                onClick={() => setFilterAttending(active ? null : a.att)}>
+                {a.att} ({a.count})
+              </button>
+            );
+          })}
+          {unassignedCount > 0 && (
+            <span style={DS.attUnassigned}>미지정 {unassignedCount}명</span>
+          )}
+        </div>
+        <div style={DS.emrStatus}>
+          <span style={DS.emrSyncLabel}>
+            EMR 검증 <strong style={{ color:"#0f2744" }}>{formatSyncAgo(emrSyncTime)}</strong>
+          </span>
+          {hasEmrFlags && (
+            <div style={DS.emrCounts}>
+              {Object.entries(emrCounts).filter(([, v]) => v > 0).map(([k, v]) => (
+                <span key={k}
+                  title={EMR_BADGE[k].title}
+                  style={{ ...DS.emrCountBadge, color: EMR_BADGE[k].color, borderColor: EMR_BADGE[k].color }}>
+                  <span style={{ fontWeight:900 }}>{EMR_BADGE[k].sym}</span> {v}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 본문 */}
       <main style={DS.main}>
         {loading ? (
@@ -270,6 +353,11 @@ export default function DailyPage() {
                       <div style={DS.cardHeader}>
                         <div style={DS.roomBadge}>{p.roomId}호 {p.bedNum}번</div>
                         <div style={DS.patientName}>{p.patientName}님</div>
+                        {p.attending && ATT_COLORS[p.attending] && (
+                          <div style={{ ...DS.attBadge, background: ATT_COLORS[p.attending].bg, color: ATT_COLORS[p.attending].fg, borderColor: ATT_COLORS[p.attending].border }}>
+                            {p.attending}
+                          </div>
+                        )}
                         <button style={DS.btnDetail}
                           onClick={() => router.push(`/treatment?slotKey=${encodeURIComponent(p.slotKey)}&name=${encodeURIComponent(p.patientName)}`)}>
                           일정표 →
@@ -279,8 +367,14 @@ export default function DailyPage() {
                       <div style={DS.itemList}>
                         {p.items.map(e => {
                           const grp = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === e.id));
+                          const badge = e.emr && EMR_BADGE[e.emr];
                           return (
                             <span key={e.id} style={{ ...DS.itemTag, background: grp?.bg, color: grp?.color, borderColor: grp?.color }}>
+                              {badge && (
+                                <span title={badge.title} style={{ color: badge.color, fontWeight:900, marginRight:3 }}>
+                                  {badge.sym}
+                                </span>
+                              )}
                               {itemLabel(e)}
                               {e.id==="pain"||e.id==="manip1"||e.id==="manip2" ? (p.times.physical ? <span style={{fontSize:9,opacity:0.75,marginLeft:3}}>({p.times.physical})</span> : null) : null}
                               {e.id==="hyperthermia" && p.times.hyperthermia ? <span style={{fontSize:9,opacity:0.75,marginLeft:3}}>({p.times.hyperthermia})</span> : null}
@@ -357,6 +451,16 @@ const DS = {
   summaryTotal: { fontSize:15, fontWeight:700, color:"#0f2744", flexShrink:0 },
   groupFilters: { display:"flex", gap:6, flexWrap:"wrap" },
   filterBtn: { border:"1.5px solid #e2e8f0", borderRadius:7, padding:"4px 12px", cursor:"pointer", fontSize:12, fontWeight:700 },
+  emrBar: { background:"#f8fafc", borderBottom:"1px solid #e2e8f0", padding:"8px 20px", display:"flex", alignItems:"center", gap:16, flexWrap:"wrap", justifyContent:"space-between" },
+  attFilters: { display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" },
+  attLabel: { fontSize:12, fontWeight:700, color:"#475569", marginRight:2 },
+  attBtn: { border:"1.5px solid #e2e8f0", borderRadius:7, padding:"3px 10px", cursor:"pointer", fontSize:12, fontWeight:700 },
+  attUnassigned: { fontSize:11, color:"#94a3b8", marginLeft:4 },
+  attBadge: { fontSize:10, fontWeight:800, borderRadius:5, padding:"1px 6px", border:"1px solid", flexShrink:0 },
+  emrStatus: { display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" },
+  emrSyncLabel: { fontSize:11, color:"#64748b", fontWeight:600 },
+  emrCounts: { display:"flex", gap:5 },
+  emrCountBadge: { fontSize:11, fontWeight:700, borderRadius:5, padding:"1px 7px", border:"1px solid", background:"#fff" },
   main: { padding:"20px" },
   empty: { textAlign:"center", color:"#94a3b8", fontSize:15, marginTop:60 },
   wardBlock: { marginBottom:24 },
