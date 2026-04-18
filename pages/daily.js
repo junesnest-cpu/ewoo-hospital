@@ -75,6 +75,8 @@ const EMR_BADGE = {
   missing:  { label:"EMR-", color:"#ef4444", title:"계획에만 있음(EMR 미입력·미래, 입력 누락)" },
 };
 
+const ROOM_BADGE = { label:"치료실-", color:"#7c2d12", title:"치료계획에 있으나 치료실 미반영(금액 제외, EMR 검증 제외)" };
+
 function formatSyncAgo(iso) {
   if (!iso) return "아직 없음";
   const diff = Date.now() - new Date(iso).getTime();
@@ -102,6 +104,7 @@ export default function DailyPage() {
   const [filterName,      setFilterName]      = useState("");
   const [filterAttending, setFilterAttending] = useState(null);
   const [emrSyncTime,     setEmrSyncTime]     = useState(null);
+  const [roomSyncTime,    setRoomSyncTime]    = useState(null);
   const [physSched,    setPhysSched]    = useState({});
   const [hyperSched,   setHyperSched]   = useState({});
   const [therapists,   setTherapists]   = useState(["치료사1","치료사2"]);
@@ -113,7 +116,8 @@ export default function DailyPage() {
     const unsubH  = onValue(ref(db, "hyperthermiaSchedule"),  snap => setHyperSched(snap.val() || {}));
     const unsubSt = onValue(ref(db, "settings"),              snap => { const v=snap.val()||{}; setTherapists([v.therapist1||"치료사1",v.therapist2||"치료사2"]); });
     const unsubE  = onValue(ref(db, "emrSyncLog/lastSync"),   snap => setEmrSyncTime(snap.val()));
-    return () => { unsubS(); unsubT(); unsubP(); unsubH(); unsubSt(); unsubE(); };
+    const unsubR  = onValue(ref(db, "roomSyncLog/lastSync"),  snap => setRoomSyncTime(snap.val()));
+    return () => { unsubS(); unsubT(); unsubP(); unsubH(); unsubSt(); unsubE(); unsubR(); };
   }, []);
 
   // 사이드바 환자 이름 검색
@@ -224,18 +228,31 @@ export default function DailyPage() {
   const unassignedCount = dailyList.filter(p => !p.attending).length;
 
   // EMR 플래그 집계 (3가지 배지로 묶음): EMR / EMR+ / EMR-
+  // 치료실 미반영(room:"removed")은 EMR 검증 대상에서 제외하고 별도 집계
   const emrSummary = { match:0, plus:0, minus:0 };
+  const roomSummary = { removed: 0 };
   filtered.forEach(p => p.items.forEach(e => {
+    if (e.room === "removed") { roomSummary.removed++; return; }
     if (e.emr === "match") emrSummary.match++;
     else if (e.emr === "added" || e.emr === "modified") emrSummary.plus++;
     else if (e.emr === "removed" || e.emr === "missing") emrSummary.minus++;
   }));
   const hasEmrFlags = emrSummary.match > 0 || emrSummary.plus > 0 || emrSummary.minus > 0;
 
-  // 치료별 불일치 집계: { itemId: [{환자정보, emrType}] }
+  // 치료별 EMR 불일치 집계 (room:"removed"는 제외)
   const mismatchByItem = {};
+  // 치료실 미반영 집계 (별도 섹션)
+  const roomMismatchByItem = {};
   filtered.forEach(p => {
     (p.items || []).forEach(e => {
+      if (e.room === "removed") {
+        if (!roomMismatchByItem[e.id]) roomMismatchByItem[e.id] = [];
+        roomMismatchByItem[e.id].push({
+          slotKey: p.slotKey, roomId: p.roomId, bedNum: p.bedNum,
+          patientName: p.patientName, attending: p.attending,
+        });
+        return;
+      }
       const type =
         (e.emr === "added" || e.emr === "modified") ? "plus" :
         (e.emr === "removed" || e.emr === "missing") ? "minus" : null;
@@ -250,6 +267,8 @@ export default function DailyPage() {
   });
   const itemOrder = Object.fromEntries(ALL_ITEMS.map((it, i) => [it.id, i]));
   const mismatchEntries = Object.entries(mismatchByItem)
+    .sort((a, b) => (itemOrder[a[0]] ?? 999) - (itemOrder[b[0]] ?? 999));
+  const roomMismatchEntries = Object.entries(roomMismatchByItem)
     .sort((a, b) => (itemOrder[a[0]] ?? 999) - (itemOrder[b[0]] ?? 999));
 
   const isToday = selectedDate.getTime() === today.getTime();
@@ -337,7 +356,10 @@ export default function DailyPage() {
           <span style={DS.emrSyncLabel}>
             EMR 검증 <strong style={{ color:"#0f2744" }}>{formatSyncAgo(emrSyncTime)}</strong>
           </span>
-          {hasEmrFlags && (
+          <span style={DS.emrSyncLabel}>
+            치료실 검증 <strong style={{ color:"#0f2744" }}>{formatSyncAgo(roomSyncTime)}</strong>
+          </span>
+          {(hasEmrFlags || roomSummary.removed > 0) && (
             <div style={DS.emrCounts}>
               {emrSummary.match > 0 && (
                 <span title="EMR 일치" style={{ ...DS.emrCountBadge, color: "#10b981", borderColor: "#10b981" }}>
@@ -352,6 +374,11 @@ export default function DailyPage() {
               {emrSummary.minus > 0 && (
                 <span title="계획에만 있음(EMR 미입력)" style={{ ...DS.emrCountBadge, color: "#ef4444", borderColor: "#ef4444" }}>
                   EMR- {emrSummary.minus}
+                </span>
+              )}
+              {roomSummary.removed > 0 && (
+                <span title="치료계획에 있으나 치료실 미반영(EMR 검증 제외)" style={{ ...DS.emrCountBadge, color: "#7c2d12", borderColor: "#7c2d12" }}>
+                  치료실- {roomSummary.removed}
                 </span>
               )}
             </div>
@@ -414,6 +441,50 @@ export default function DailyPage() {
             </div>
           </div>
         )}
+
+        {/* 계획/치료실 불일치 (치료실 미반영) */}
+        {roomMismatchEntries.length > 0 && (
+          <div style={DS.mismatchSection}>
+            <div style={DS.mismatchTitle}>
+              <span style={{ color:"#7c2d12", fontWeight:900, marginRight:6 }}>🛑</span>
+              계획 / 치료실 불일치
+              <span style={{ color:"#64748b", fontWeight:600, marginLeft:6, fontSize:12 }}>
+                ({roomMismatchEntries.length}개 치료, 금액·EMR 검증 제외)
+              </span>
+            </div>
+            <div style={DS.mismatchItemList}>
+              {roomMismatchEntries.map(([itemId, patients]) => {
+                const item = ALL_ITEMS.find(i => i.id === itemId);
+                const grp = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === itemId));
+                return (
+                  <div key={itemId} style={DS.mismatchItemRow}>
+                    <span style={{ ...DS.mismatchItemName, color: grp?.color, background: grp?.bg, borderColor: grp?.color }}>
+                      {item?.name || itemId}
+                    </span>
+                    <div style={DS.mismatchItemPats}>
+                      {patients.map((p, idx) => (
+                        <span key={`${p.slotKey}-${idx}`} style={DS.mismatchChip}
+                          onClick={() => router.push(`/treatment?slotKey=${encodeURIComponent(p.slotKey)}&name=${encodeURIComponent(p.patientName)}`)}
+                          title="치료 일정표로 이동">
+                          <span style={DS.mismatchRoom}>{p.roomId}-{p.bedNum}</span>
+                          <span style={DS.mismatchName}>{p.patientName}</span>
+                          {p.attending && ATT_COLORS[p.attending] && (
+                            <span style={{ ...DS.mismatchAtt, background: ATT_COLORS[p.attending].bg, color: ATT_COLORS[p.attending].fg, borderColor: ATT_COLORS[p.attending].border }}>
+                              {p.attending}
+                            </span>
+                          )}
+                          <span style={{ ...DS.mismatchBadge, background: "#7c2d12" }}>
+                            치료실-
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
           {/* 병동별로 묶어서 표시 */}
           {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => {
             const wardPatients = filtered.filter(p => p.wardName === ward.name);
@@ -443,12 +514,20 @@ export default function DailyPage() {
                         {p.items.map(e => {
                           const grp = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === e.id));
                           const badge = e.emr && EMR_BADGE[e.emr];
+                          const isRoomRemoved = e.room === "removed";
                           return (
-                            <span key={e.id} style={{ ...DS.itemTag, background: grp?.bg, color: grp?.color, borderColor: grp?.color }}>
+                            <span key={e.id} style={{ ...DS.itemTag, background: grp?.bg, color: grp?.color, borderColor: grp?.color,
+                              opacity: isRoomRemoved ? 0.4 : 1 }}>
                               {badge && (
                                 <span title={badge.title}
                                   style={{ background:badge.color, color:"#fff", fontWeight:800, borderRadius:3, padding:"0 4px", fontSize:9, marginRight:4, letterSpacing:0.2 }}>
                                   {badge.label}
+                                </span>
+                              )}
+                              {isRoomRemoved && (
+                                <span title={ROOM_BADGE.title}
+                                  style={{ background:ROOM_BADGE.color, color:"#fff", fontWeight:800, borderRadius:3, padding:"0 4px", fontSize:9, marginRight:4, letterSpacing:0.2 }}>
+                                  {ROOM_BADGE.label}
                                 </span>
                               )}
                               {itemLabel(e)}

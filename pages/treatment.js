@@ -213,7 +213,7 @@ export default function TreatmentPage() {
       const md = plan[`${year}-${String(month + 1).padStart(2, "0")}`] || {};
       const days = Object.keys(md).map(Number).filter(d => {
         const items = md[String(d)] || [];
-        return items.length > 0 && items.some(e => e.emr !== "removed");
+        return items.length > 0 && items.some(e => e.emr !== "removed" && e.room !== "removed" && e.room !== "removed");
       }).sort((a, b) => a - b);
       if (days.length > 0) endDate = `${month + 1}/${days[days.length - 1]}`;
     }
@@ -336,7 +336,7 @@ export default function TreatmentPage() {
       const mk = `${cy}-${String(cm).padStart(2, "0")}`;
       const dayItems = (plan[mk] || {})[String(cd)] || [];
       totalActual += dayItems
-        .filter(e => e.emr !== "removed" && !ALL_ITEMS.find(i => i.id === e.id)?.dischargeMed)
+        .filter(e => e.emr !== "removed" && e.room !== "removed" && !ALL_ITEMS.find(i => i.id === e.id)?.dischargeMed)
         .reduce((s, e) => s + calcPrice(ALL_ITEMS.find(i => i.id === e.id), e.qty, cur), 0);
       cur = new Date(cur.getTime() + 86400000);
     }
@@ -371,7 +371,7 @@ export default function TreatmentPage() {
       const mk = `${cy}-${String(cm).padStart(2, "0")}`;
       const items = (plan[mk] || {})[String(cd)] || [];
 
-      const dayTreat = items.filter(e => e.emr !== "removed").reduce((s, e) => {
+      const dayTreat = items.filter(e => e.emr !== "removed" && e.room !== "removed").reduce((s, e) => {
         const item = ALL_ITEMS.find(i => i.id === e.id);
         if (item?.dischargeMed) return s + (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0);
         return s + calcPrice(item, e.qty, cur);
@@ -405,7 +405,7 @@ export default function TreatmentPage() {
 
   // ── dayTotal / dayTreatTotal (퇴원약은 자동계산 금액 사용) ──
   const dayTotal = (day) => {
-    const treatTotal = (monthData[String(day)] || []).filter(e => e.emr !== "removed").reduce((s, e) => {
+    const treatTotal = (monthData[String(day)] || []).filter(e => e.emr !== "removed" && e.room !== "removed").reduce((s, e) => {
       const item = ALL_ITEMS.find(i => i.id === e.id);
       if (item?.dischargeMed) return s + (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0);
       return s + calcPrice(item, e.qty);
@@ -415,7 +415,7 @@ export default function TreatmentPage() {
 
   const dayTreatTotal = (day) => {
     const dateObj = new Date(year, month, day);
-    return (monthData[String(day)] || []).filter(e => e.emr !== "removed").reduce((s, e) => {
+    return (monthData[String(day)] || []).filter(e => e.emr !== "removed" && e.room !== "removed").reduce((s, e) => {
       const item = ALL_ITEMS.find(i => i.id === e.id);
       if (item?.dischargeMed) return s + (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0);
       return s + calcPrice(item, e.qty, dateObj);
@@ -623,7 +623,7 @@ export default function TreatmentPage() {
                 if (inStay) {
                   const doneMap = {};
                   rowDays.forEach(d => {
-                    (monthData[String(d)] || []).filter(e => e.emr !== "removed" && weeklyPlan[e.id])
+                    (monthData[String(d)] || []).filter(e => e.emr !== "removed" && e.room !== "removed" && weeklyPlan[e.id])
                       .forEach(e => { doneMap[e.id] = (doneMap[e.id] || 0) + parseInt(e.qty || 1); });
                   });
                   const allDone = Object.entries(weeklyPlan).every(([id, p]) => (doneMap[id] || 0) >= p.count);
@@ -700,15 +700,19 @@ export default function TreatmentPage() {
                     const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
                     const label = item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?(effectiveQty>1?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name):item.name;
                     const isMissing = e.emr==="missing";
-                    const isRemoved = e.emr==="removed" || isMissing;
-                    const badge = e.emr==="match"?"EMR":isRemoved?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
-                    const badgeColor = e.emr==="match"?"#10b981":isRemoved?"#ef4444":"#3b82f6";
+                    const isRoomRemoved = e.room==="removed";
+                    const isEmrRemoved = e.emr==="removed";
+                    const isRemoved = isEmrRemoved || isMissing || isRoomRemoved;
+                    const emrBadge = e.emr==="match"?"EMR":(isEmrRemoved||isMissing)?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
+                    const emrBadgeColor = e.emr==="match"?"#10b981":(isEmrRemoved||isMissing)?"#ef4444":"#3b82f6";
                     return (
                       <span key={e.id} style={{ ...TS.tag, background:grp.bg, color:grp.color, borderColor:grp.color,
-                        opacity:e.emr==="removed"?0.4:(isMissing?0.7:1), position:"relative" }}>
+                        opacity:(isEmrRemoved||isRoomRemoved)?0.4:(isMissing?0.7:1), position:"relative" }}>
                         {label}
-                        {badge && <span style={{ fontSize:7, fontWeight:800, color:"#fff", background:badgeColor,
-                          borderRadius:3, padding:"0 3px", marginLeft:3, lineHeight:"14px", verticalAlign:"middle", whiteSpace:"nowrap" }}>{badge}</span>}
+                        {emrBadge && <span style={{ fontSize:7, fontWeight:800, color:"#fff", background:emrBadgeColor,
+                          borderRadius:3, padding:"0 3px", marginLeft:3, lineHeight:"14px", verticalAlign:"middle", whiteSpace:"nowrap" }}>{emrBadge}</span>}
+                        {isRoomRemoved && <span style={{ fontSize:7, fontWeight:800, color:"#fff", background:"#7c2d12",
+                          borderRadius:3, padding:"0 3px", marginLeft:3, lineHeight:"14px", verticalAlign:"middle", whiteSpace:"nowrap" }}>치료실-</span>}
                       </span>
                     );
                   })}
@@ -744,7 +748,7 @@ export default function TreatmentPage() {
                       <td style={TS.td}>{month+1}/{day} ({DAY_KO[(firstDow+parseInt(day)-1)%7]})</td>
                       <td style={TS.td}>{admitDate?`${getWeekNumber(admitDate, new Date(year,month,parseInt(day)))}주차`:"-"}</td>
                       <td style={TS.td}>
-                        {(items||[]).filter(e => e.emr !== "removed").map(e => {
+                        {(items||[]).filter(e => e.emr !== "removed" && e.room !== "removed").map(e => {
                           const item = ALL_ITEMS.find(i => i.id === e.id);
                           const grp  = getItemGroup(e.id);
                           if (!item) return null;
@@ -867,20 +871,27 @@ export default function TreatmentPage() {
                   const grp  = getItemGroup(e.id);
                   if (!item) return null;
                   const isMissing = e.emr==="missing";
-                  const isRemoved = e.emr==="removed" || isMissing;
-                  const badge = e.emr==="match"?"EMR":isRemoved?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
-                  const badgeColor = e.emr==="match"?"#10b981":isRemoved?"#ef4444":"#3b82f6";
+                  const isRoomRemoved = e.room==="removed";
+                  const isEmrRemoved = e.emr==="removed";
+                  const emrBadge = e.emr==="match"?"EMR":(isEmrRemoved||isMissing)?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
+                  const emrBadgeColor = e.emr==="match"?"#10b981":(isEmrRemoved||isMissing)?"#ef4444":"#3b82f6";
                   const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
-                  const effectivePrice = item.dischargeMed ? (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0) : calcPrice(item,e.qty,new Date(year,month,modalDay));
+                  const effectivePrice = (item.dischargeMed
+                    ? (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0)
+                    : calcPrice(item,e.qty,new Date(year,month,modalDay))
+                  );
+                  // room:"removed" 이거나 emr:"removed"면 금액 0 취급 (가격 필터와 일관)
+                  const displayPrice = (isEmrRemoved || isRoomRemoved) ? 0 : effectivePrice;
                   return (
-                    <div key={e.id} style={{ ...TS.regItem, borderLeftColor: grp.color, opacity:e.emr==="removed"?0.4:(isMissing?0.7:1) }}>
+                    <div key={e.id} style={{ ...TS.regItem, borderLeftColor: grp.color, opacity:(isEmrRemoved||isRoomRemoved)?0.4:(isMissing?0.7:1) }}>
                       <div style={{ flex:1 }}>
                         <span style={{ fontWeight:700, color:grp.color }}>
                           {item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?(effectiveQty>1?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name):item.name}
                         </span>
-                        <span style={{ color:"#64748b", fontSize:12, marginLeft:8 }}>{effectivePrice.toLocaleString()}원</span>
+                        <span style={{ color:"#64748b", fontSize:12, marginLeft:8 }}>{displayPrice.toLocaleString()}원</span>
                         {item.dischargeMed && <span style={{ fontSize:10, fontWeight:700, color:"#92400e", marginLeft:6 }}>자동계산</span>}
-                        {badge && <span style={{ fontSize:10, fontWeight:800, color:"#fff", background:badgeColor, borderRadius:3, padding:"1px 5px", marginLeft:8 }}>{badge}</span>}
+                        {emrBadge && <span style={{ fontSize:10, fontWeight:800, color:"#fff", background:emrBadgeColor, borderRadius:3, padding:"1px 5px", marginLeft:8 }}>{emrBadge}</span>}
+                        {isRoomRemoved && <span style={{ fontSize:10, fontWeight:800, color:"#fff", background:"#7c2d12", borderRadius:3, padding:"1px 5px", marginLeft:6 }}>치료실-</span>}
                       </div>
                       <button style={TS.btnRemove} onClick={() => removeItem(modalDay, e.id)}>✕</button>
                     </div>
@@ -945,7 +956,7 @@ export default function TreatmentPage() {
                         const cy=c.getFullYear(),cm=c.getMonth()+1,cd=c.getDate();
                         const mk=`${cy}-${String(cm).padStart(2,"0")}`;
                         const di = (plan[mk]||{})[String(cd)]||[];
-                        actual += di.filter(e=>e.emr!=="removed"&&!ALL_ITEMS.find(i=>i.id===e.id)?.dischargeMed)
+                        actual += di.filter(e=>e.emr!=="removed"&&e.room!=="removed"&&!ALL_ITEMS.find(i=>i.id===e.id)?.dischargeMed)
                           .reduce((s,e)=>s+calcPrice(ALL_ITEMS.find(i=>i.id===e.id),e.qty,c),0);
                         c = new Date(c.getTime()+86400000);
                       }
@@ -1097,7 +1108,7 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                         {isDisch && <span style={{ fontSize:Math.max(10,dayNumFontPx*0.5), fontWeight:700, color:"#d97706", marginLeft:4 }}>퇴원</span>}
                       </div>
                       {/* 치료 항목 — 입원 전 제외, EMR 삭제 항목 제외, EMR 배지 미표시 */}
-                      {!isBeforeAdmit && items.filter(e => e.emr !== "removed").map(e => {
+                      {!isBeforeAdmit && items.filter(e => e.emr !== "removed" && e.room !== "removed").map(e => {
                         const item = allItems.find(i => i.id === e.id);
                         if (!item) return null;
                         const grp = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === e.id));

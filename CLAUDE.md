@@ -64,6 +64,17 @@
 [3]   과거 입원이력 동기화 (전체모드)
 ```
 
+### 검증 스케줄러 (2원화)
+- **EMR 검증** — 라즈베리파이 cron `scripts/syncTreatmentEMR.js`, 10분마다. 치료계획 ↔ EMR(BrOcs.Oidam) 비교해 `item.emr` 태그 갱신
+- **치료실 검증** — **Firebase Cloud Functions** `functions/index.js > scheduledTreatmentRoomSync`, 매일 20:00 Asia/Seoul. 당일 치료실(physicalSchedule/hyperthermiaSchedule) 미반영 pain/manip1/manip2/hyperthermia에 `item.room:"removed"` 태깅. RPi 의존성 없음
+- 수동 복구용: `scripts/syncTreatmentRoom.js` (과거 백필·스케줄러 실패 복구용)
+- 두 스케줄러는 서로의 태그를 보존하며 금액·UI·EMR 검증에서 각각 제외 처리됨 (자세한 규칙은 INTEGRATION.md 4장 참고)
+
+### Firebase Cloud Functions 배포
+- 루트 `firebase.json`, `.firebaserc`(default=ewoo-hospital-ward), `functions/` 디렉토리
+- 배포: `cd functions && npm install && firebase deploy --only functions`
+- 전제: ewoo-hospital-ward 프로젝트가 Blaze 플랜이어야 함
+
 ## Claude Code 제한사항
 
 ### Firebase DB 직접 확인 불가

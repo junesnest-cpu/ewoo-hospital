@@ -84,9 +84,9 @@ Promise.all([
 - BrOcs.Oidam에는 `.` placeholder 레코드 혼재 — `EMR_TO_PLAN` 매핑으로 자동 스킵됨
 - 크로스 DB 조인은 `BrOcs.dbo.Oidam` fully-qualified 참조로 가능
 
-## 4. 치료계획 ↔ EMR 검증 시스템
+## 4. 치료계획 ↔ EMR / 치료실 검증 시스템
 
-### 태그 체계 (`treatmentPlans/{slotKey}/{YYYY-MM}/{D}` 의 각 item)
+### EMR 태그 (`item.emr`) — `treatmentPlans/{slotKey}/{YYYY-MM}/{D}` 의 각 item
 | 태그 | 의미 | UI 배지 | 흐리기 | 금액 계산 |
 |---|---|---|---|---|
 | `match` | 계획 = EMR | 초록 `EMR` | 없음 | 포함 |
@@ -94,10 +94,23 @@ Promise.all([
 | `removed` | 과거 날짜, 계획만 있고 EMR 미입력 | 빨강 `EMR-` | `0.4` | **제외** (실제 미시행) |
 | `missing` | 오늘/미래 날짜, 계획만 있고 EMR 미입력 | 빨강 `EMR-` | `0.7` | 포함 (입력 누락 알림) |
 
-### 운영
-- 라즈베리파이 cron: `syncTreatmentEMR.js`가 `sync.sh` 안에서 10분마다 실행 (`:03,:13,:23,:33,:43,:53`)
-- `emrSyncLog/lastSync` 에 ISO 타임스탬프 기록, UI가 "N분 전" 표시
-- 현재 Firebase `slots/{sk}/current`에 있는 입원환자만 처리 — 퇴원자의 잔존 태그는 스크립트가 건드리지 않음
+### 치료실 태그 (`item.room`) — 물리치료·고주파 전용
+EMR 주문과 별개로 **치료실에서의 실시행** 여부를 검증한다. 대상: `pain`·`manip1`·`manip2`·`hyperthermia`.
+| 태그 | 의미 | UI 배지 | 흐리기 | 금액 계산 | EMR 검증 |
+|---|---|---|---|---|---|
+| _(태그 없음)_ | 치료실에 실제 기록 있음 또는 대상 외 항목 | - | - | 기존 로직 | 기존 로직 |
+| `removed` | 과거 날짜, 계획에 있으나 `physicalSchedule`/`hyperthermiaSchedule`에 미반영 | 갈색 `치료실-` | `0.4` | **제외** | **제외**(EMR 집계에서 빠짐) |
+
+- `emr` 과 `room` 은 **독립** 필드 — 동시에 존재 가능. 한쪽이라도 `removed`면 금액에서 제외되고 흐리게 표시.
+- `room:"removed"` 는 EMR 불일치 목록에서 빠지고, `/daily`·`/forms/treatment-verify` 모두 "치료실 미반영" 별도 섹션/배지로 노출.
+
+### 운영 — 독립된 두 개의 스케줄러
+- **EMR 검증**: 라즈베리파이 cron `syncTreatmentEMR.js` — 10분마다 `sync.sh` 내에서 실행 (`:03,:13,:23,:33,:43,:53`). EMR DB는 내부망이라 RPi에서만 접근 가능
+- **치료실 검증**: Firebase Cloud Functions `scheduledTreatmentRoomSync` (ewoo-hospital/functions/index.js) — 매일 **20:00 Asia/Seoul**에 당일 데이터 처리. RPi 의존성 없음. `firebase.json` + `.firebaserc`(default → ewoo-hospital-ward) + `functions/` 디렉토리로 배포. 수동 복구용 스크립트 `scripts/syncTreatmentRoom.js` 도 별도 보유
+- `emrSyncLog/lastSync` / `roomSyncLog/lastSync` 에 ISO 타임스탬프 기록, UI가 "N분 전" 표시
+- 둘 다 현재 Firebase `slots/{sk}/current` 기반 — 퇴원자의 잔존 태그는 건드리지 않음
+- 두 스케줄러는 **서로의 태그를 건드리지 않는다**. EMR sync는 `{ ...inFb, emr: ... }` 패턴으로 `room` 필드를 보존하고, 치료실 sync는 `room` 필드만 조작하고 `emr` 은 그대로 둔다
+- `ewoo-clinical/forms/treatment-verify`: **오늘 이전 날짜의 `room:"removed"` 항목은 검증 대상에서 완전 제외** (치료실이 과거 사실의 최종 진실). 오늘/미래는 여전히 "치료실-" 배지로 표시
 
 ## 5. 배포 구성
 
@@ -133,3 +146,5 @@ Promise.all([
 | 2026-04-11 | 데이터 연동 리팩토링 (normName 등) | |
 | 2026-04-13 | 입원 예약→입원 전환 흐름 개선 | |
 | 2026-04-18 | 치료계획↔EMR 검증 시스템 (BrOcs.Oidam) + 3프로젝트 사용자 인증 통합 (dual Auth) | |
+| 2026-04-18 | 치료실↔치료계획 검증 (`room:"removed"` 태그, EMR 검증에서도 제외) | |
+| 2026-04-18 | 치료실 검증을 Firebase Cloud Functions(매일 20:00 KST)로 이관 — RPi 의존성 제거 | |

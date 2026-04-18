@@ -323,13 +323,13 @@ async function main() {
 
             if (emrQty !== undefined && fbQty !== undefined &&
                 Number(emrQty) !== Number(fbQty)) {
-              newItems.push({ id: itemId, qty: emrQty, emr: 'modified' });
+              // inFb 전체 복사(room 등 보존) 후 qty/emr 덮어쓰기
+              newItems.push({ ...inFb, qty: emrQty, emr: 'modified' });
               console.log(`  ${monthKey}/${dayStr} ${itemId}: 수량 수정 (${fbQty}→${emrQty})`);
               modifyCount++;
             } else {
-              const entry = { id: itemId, emr: 'match' };
-              if (inFb.qty !== undefined) entry.qty = inFb.qty;
-              newItems.push(entry);
+              // inFb 전체 복사(room 등 보존) 후 emr 덮어쓰기
+              newItems.push({ ...inFb, emr: 'match' });
               matchCount++;
             }
           } else if (inEmr && !inFb) {
