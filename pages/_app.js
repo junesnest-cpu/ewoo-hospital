@@ -2,8 +2,8 @@ import "../styles/globals.css";
 import Head from "next/head";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import { auth, db } from "../lib/firebaseConfig";
-import { signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "firebase/auth";
+import { auth, wardAuth, db } from "../lib/firebaseConfig";
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, signInWithCustomToken } from "firebase/auth";
 import { ref, onValue, set } from "firebase/database";
 import AppSidebar from "../components/AppSidebar";
 import AvailPanel from "../components/AvailPanel";
@@ -21,10 +21,41 @@ function LoginScreen() {
     if (!name.trim() || !password.trim()) { setError("이름과 비밀번호를 입력해 주세요."); return; }
     setLoading(true); setError("");
     const email = `${name.trim()}@ewoo.com`;
+
+    // approval(로그인 세션) + ward(RTDB 접근) 양쪽 signIn
+    const trySignIn = async () => {
+      const [a, w] = await Promise.allSettled([
+        signInWithEmailAndPassword(auth, email, password),
+        signInWithEmailAndPassword(wardAuth, email, password),
+      ]);
+      return { approvalOk: a.status === "fulfilled", wardOk: w.status === "fulfilled" };
+    };
+
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (err) {
-      setError("이름 또는 비밀번호가 올바르지 않습니다.");
+      let { approvalOk, wardOk } = await trySignIn();
+
+      if (!approvalOk && !wardOk) {
+        setError("이름 또는 비밀번호가 올바르지 않습니다.");
+        return;
+      }
+
+      // 한쪽만 성공 → 서버에서 반대쪽 동기화 후 재시도
+      if (!approvalOk || !wardOk) {
+        const r = await fetch("/api/auth/migrate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        if (!r.ok) {
+          setError("이름 또는 비밀번호가 올바르지 않습니다.");
+          return;
+        }
+        ({ approvalOk, wardOk } = await trySignIn());
+        if (!approvalOk || !wardOk) {
+          setError("로그인 동기화 실패. 잠시 후 다시 시도해 주세요.");
+          return;
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -97,7 +128,7 @@ function ChangePasswordModal({ user, onClose }) {
       await set(ref(db, `userPwChangedAt/${user.uid}`), Date.now());
       setSuccess(true);
       // 현재 기기도 2초 후 로그아웃
-      setTimeout(() => signOut(auth), 2000);
+      setTimeout(() => Promise.all([signOut(auth), signOut(wardAuth)]), 2000);
     } catch (err) {
       if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
         setError("현재 비밀번호가 올바르지 않습니다.");
@@ -175,7 +206,7 @@ export default function App({ Component, pageProps }) {
       const pwChangedAt = snap.val();
       if (!pwChangedAt) return;
       const lastSignIn = new Date(user.metadata.lastSignInTime).getTime();
-      if (pwChangedAt > lastSignIn) signOut(auth);
+      if (pwChangedAt > lastSignIn) Promise.all([signOut(auth), signOut(wardAuth)]);
     });
     return () => unsub();
   }, [user?.uid]);
@@ -218,7 +249,7 @@ export default function App({ Component, pageProps }) {
             style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:5, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:600 }}>
             🔑 <span className="user-bar-name">비밀번호 변경</span>
           </button>
-          <button onClick={()=>signOut(auth)}
+          <button onClick={()=>Promise.all([signOut(auth), signOut(wardAuth)])}
             style={{ background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#e2e8f0", borderRadius:5, padding:"2px 8px", cursor:"pointer", fontSize:11, fontWeight:600 }}>
             로그아웃
           </button>
