@@ -171,7 +171,9 @@ async function main() {
     }
   }
 
-  // ── 4) Widam 벌크 쿼리 ──
+  // ── 4) 진료실 원본 처방(BrOcs.Oidam) 벌크 쿼리 ──
+  // 원무과 BrWonmu.Widam은 청구 확정 후 복사본이라 미래 RO/미확정 오더가 누락됨.
+  // 의사가 입력한 원본은 BrOcs.Oidam 에 있음.
   const emrByPat = {};
   if (chartNos.length && minAdmitYMD) {
     const inList = chartNos.map(c => `'${c}'`).join(',');
@@ -180,7 +182,7 @@ async function main() {
              d.idam_in_date AS inDate, d.idam_date AS dt,
              d.idam_momn AS code,
              d.idam_dosage AS dosage, d.idam_times AS times
-      FROM Widam d
+      FROM BrOcs.dbo.Oidam d
       WHERE d.idam_cham IN (${inList})
         AND d.idam_bigub = 1
         AND d.idam_date >= '${minAdmitYMD}'
