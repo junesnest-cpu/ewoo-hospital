@@ -26,9 +26,23 @@
 
 ### EMR DB
 - 서버: 192.168.0.253:1433 (병원 내부망 SQL Server)
-- DB: BrWonmu (브레인 닥터스 EMR)
 - 인증: SQL Server 인증 (sa)
-- 주요 테이블: Wbedm(병상배치), VIEWJUBLIST(환자마스터), SILVER_PATIENT_INFO(입원이력)
+- **2개 DB 분리**:
+  - **BrWonmu** (원무): 청구·수납 확정 데이터. 주요 테이블 Wbedm(병상배치), VIEWJUBLIST(환자마스터), SILVER_PATIENT_INFO(입원이력), Widam(확정 처방), Wodam(외래), Wmomm(약품명)
+  - **BrOcs** (진료실, Order Communication System): 의사 입력 원본. 주요 테이블 Oidam(진료실 처방), Oidamsub, Onote(SOAP), Oworkmemo(업무메모), Onotem(의사메모)
+- 테이블 대응: `Widam↔Oidam`, `Widamsub↔Oidamsub`, `Wodam↔Oodam` (W=원무, O=OCS)
+
+### DB 선택 기준 (용도별)
+| 용도 | 권장 DB·테이블 | 근거 |
+|---|---|---|
+| 치료계획표 ↔ EMR 비교 (`syncTreatmentEMR.js`) | **BrOcs.Oidam** | RO(반복처방)·미래 예정 오더·당일 입력분까지 실시간 반영 |
+| 경영현황 수가·매출 집계 (`syncDirectorStats.js`) | **BrWonmu.Widam** | 청구 확정 기준이 맞음, 미청구 RO 제외해야 과대추정 방지 |
+| 소견서·환자 처방이력 (`emr-proxy-server.js` opinion-data, `pages/api/emr/patients.js`) | **BrWonmu.Widam** | 실제 시행·청구된 치료만 포함해야 적절 |
+
+### EMR DB 주의사항
+- **BrWonmu.Widam은 청구 확정 시점에 복사되므로** 미래 RO·당일 미확정 오더 누락. 치료계획표 검증용으로 부적합 (2026-04-18 발견)
+- **BrOcs.Oidam은 `.` placeholder 레코드 혼재** — `EMR_TO_PLAN` 매핑으로 자동 스킵됨
+- 크로스 DB 조인 시 `BrOcs.dbo.Oidam` 형식으로 fully-qualified 참조 가능
 
 ### 라즈베리파이 연동
 - 병원 내부 네트워크에 라즈베리파이 설치
