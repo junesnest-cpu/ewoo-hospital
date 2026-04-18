@@ -68,10 +68,10 @@ const ATT_COLORS = {
 };
 
 const EMR_BADGE = {
-  match:    { sym:"✓", color:"#059669", title:"EMR 일치" },
-  added:    { sym:"＋", color:"#2563eb", title:"EMR에만 있음" },
-  removed:  { sym:"−", color:"#dc2626", title:"계획에만 있음(EMR 미입력)" },
-  modified: { sym:"✎", color:"#d97706", title:"수량 수정됨" },
+  match:    { label:"EMR",  color:"#10b981", title:"EMR 일치" },
+  added:    { label:"EMR+", color:"#3b82f6", title:"EMR에만 있음(계획 대비 추가)" },
+  modified: { label:"EMR+", color:"#3b82f6", title:"수량 불일치(EMR 기준으로 수정됨)" },
+  removed:  { label:"EMR-", color:"#ef4444", title:"계획에만 있음(EMR 미입력)" },
 };
 
 function formatSyncAgo(iso) {
@@ -222,12 +222,24 @@ export default function DailyPage() {
   })).filter(a => a.count > 0);
   const unassignedCount = dailyList.filter(p => !p.attending).length;
 
-  // EMR 플래그 집계 (필터 적용 후)
-  const emrCounts = { match:0, added:0, removed:0, modified:0 };
+  // EMR 플래그 집계 (3가지 배지로 묶음): EMR / EMR+ / EMR-
+  const emrSummary = { match:0, plus:0, minus:0 };
   filtered.forEach(p => p.items.forEach(e => {
-    if (e.emr && emrCounts[e.emr] !== undefined) emrCounts[e.emr]++;
+    if (e.emr === "match") emrSummary.match++;
+    else if (e.emr === "added" || e.emr === "modified") emrSummary.plus++;
+    else if (e.emr === "removed") emrSummary.minus++;
   }));
-  const hasEmrFlags = Object.values(emrCounts).some(v => v > 0);
+  const hasEmrFlags = emrSummary.match > 0 || emrSummary.plus > 0 || emrSummary.minus > 0;
+
+  // 불일치 환자 (주치의·이름·치료군 필터 적용 후)
+  const mismatchPatients = filtered.map(p => {
+    let plus = 0, minus = 0;
+    (p.items || []).forEach(e => {
+      if (e.emr === "added" || e.emr === "modified") plus++;
+      else if (e.emr === "removed") minus++;
+    });
+    return { ...p, _plus:plus, _minus:minus };
+  }).filter(p => p._plus > 0 || p._minus > 0);
 
   const isToday = selectedDate.getTime() === today.getTime();
 
@@ -316,13 +328,21 @@ export default function DailyPage() {
           </span>
           {hasEmrFlags && (
             <div style={DS.emrCounts}>
-              {Object.entries(emrCounts).filter(([, v]) => v > 0).map(([k, v]) => (
-                <span key={k}
-                  title={EMR_BADGE[k].title}
-                  style={{ ...DS.emrCountBadge, color: EMR_BADGE[k].color, borderColor: EMR_BADGE[k].color }}>
-                  <span style={{ fontWeight:900 }}>{EMR_BADGE[k].sym}</span> {v}
+              {emrSummary.match > 0 && (
+                <span title="EMR 일치" style={{ ...DS.emrCountBadge, color: "#10b981", borderColor: "#10b981" }}>
+                  EMR {emrSummary.match}
                 </span>
-              ))}
+              )}
+              {emrSummary.plus > 0 && (
+                <span title="EMR에만 있음(계획 대비 추가)" style={{ ...DS.emrCountBadge, color: "#3b82f6", borderColor: "#3b82f6" }}>
+                  EMR+ {emrSummary.plus}
+                </span>
+              )}
+              {emrSummary.minus > 0 && (
+                <span title="계획에만 있음(EMR 미입력)" style={{ ...DS.emrCountBadge, color: "#ef4444", borderColor: "#ef4444" }}>
+                  EMR- {emrSummary.minus}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -339,8 +359,42 @@ export default function DailyPage() {
               : "선택한 치료 종류의 환자가 없습니다."}
           </div>
         ) : (
-          // 병동별로 묶어서 표시
-          Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => {
+        <>
+        {/* 계획/EMR 불일치 환자 요약 (2병동 상단) */}
+        {mismatchPatients.length > 0 && (
+          <div style={DS.mismatchSection}>
+            <div style={DS.mismatchTitle}>
+              <span style={{ color:"#b45309", fontWeight:900, marginRight:6 }}>⚠</span>
+              계획 / EMR 불일치 환자
+              <span style={{ color:"#64748b", fontWeight:600, marginLeft:6, fontSize:12 }}>
+                ({mismatchPatients.length}명)
+              </span>
+            </div>
+            <div style={DS.mismatchList}>
+              {mismatchPatients.map(p => (
+                <div key={p.slotKey} style={DS.mismatchChip}
+                  onClick={() => router.push(`/treatment?slotKey=${encodeURIComponent(p.slotKey)}&name=${encodeURIComponent(p.patientName)}`)}
+                  title="치료 일정표로 이동">
+                  <span style={DS.mismatchRoom}>{p.roomId}-{p.bedNum}</span>
+                  <span style={DS.mismatchName}>{p.patientName}</span>
+                  {p.attending && ATT_COLORS[p.attending] && (
+                    <span style={{ ...DS.mismatchAtt, background: ATT_COLORS[p.attending].bg, color: ATT_COLORS[p.attending].fg, borderColor: ATT_COLORS[p.attending].border }}>
+                      {p.attending}
+                    </span>
+                  )}
+                  {p._plus > 0 && (
+                    <span style={{ ...DS.mismatchBadge, background:"#3b82f6" }}>EMR+ {p._plus}</span>
+                  )}
+                  {p._minus > 0 && (
+                    <span style={{ ...DS.mismatchBadge, background:"#ef4444" }}>EMR- {p._minus}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+          {/* 병동별로 묶어서 표시 */}
+          {Object.entries(WARD_STRUCTURE).map(([wardNo, ward]) => {
             const wardPatients = filtered.filter(p => p.wardName === ward.name);
             if (wardPatients.length === 0) return null;
             return (
@@ -371,8 +425,9 @@ export default function DailyPage() {
                           return (
                             <span key={e.id} style={{ ...DS.itemTag, background: grp?.bg, color: grp?.color, borderColor: grp?.color }}>
                               {badge && (
-                                <span title={badge.title} style={{ color: badge.color, fontWeight:900, marginRight:3 }}>
-                                  {badge.sym}
+                                <span title={badge.title}
+                                  style={{ background:badge.color, color:"#fff", fontWeight:800, borderRadius:3, padding:"0 4px", fontSize:9, marginRight:4, letterSpacing:0.2 }}>
+                                  {badge.label}
                                 </span>
                               )}
                               {itemLabel(e)}
@@ -388,7 +443,8 @@ export default function DailyPage() {
                 </div>
               </div>
             );
-          })
+          })}
+        </>
         )}
       </main>
 
@@ -463,6 +519,14 @@ const DS = {
   emrCountBadge: { fontSize:11, fontWeight:700, borderRadius:5, padding:"1px 7px", border:"1px solid", background:"#fff" },
   main: { padding:"20px" },
   empty: { textAlign:"center", color:"#94a3b8", fontSize:15, marginTop:60 },
+  mismatchSection: { background:"#fffbeb", border:"1.5px solid #fbbf24", borderRadius:10, padding:"12px 16px", marginBottom:18 },
+  mismatchTitle: { fontSize:14, fontWeight:800, color:"#92400e", marginBottom:10, display:"flex", alignItems:"center" },
+  mismatchList: { display:"flex", flexWrap:"wrap", gap:8 },
+  mismatchChip: { display:"inline-flex", alignItems:"center", gap:6, background:"#fff", border:"1px solid #fde68a", borderRadius:8, padding:"5px 10px", cursor:"pointer", fontSize:12, fontWeight:700, color:"#0f172a" },
+  mismatchRoom: { background:"#0f2744", color:"#fff", borderRadius:4, padding:"1px 6px", fontSize:10, fontWeight:700 },
+  mismatchName: { fontSize:13, fontWeight:800 },
+  mismatchAtt: { fontSize:10, fontWeight:800, borderRadius:4, padding:"1px 5px", border:"1px solid" },
+  mismatchBadge: { color:"#fff", fontSize:10, fontWeight:800, borderRadius:4, padding:"1px 6px", letterSpacing:0.2 },
   wardBlock: { marginBottom:24 },
   wardTitle: { fontSize:15, fontWeight:800, color:"#0f2744", borderLeft:"4px solid #0ea5e9", paddingLeft:10, marginBottom:12 },
   cardGrid: { display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:10 },
