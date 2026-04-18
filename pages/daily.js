@@ -232,15 +232,25 @@ export default function DailyPage() {
   }));
   const hasEmrFlags = emrSummary.match > 0 || emrSummary.plus > 0 || emrSummary.minus > 0;
 
-  // 불일치 환자 (주치의·이름·치료군 필터 적용 후)
-  const mismatchPatients = filtered.map(p => {
-    let plus = 0, minus = 0;
+  // 치료별 불일치 집계: { itemId: [{환자정보, emrType}] }
+  const mismatchByItem = {};
+  filtered.forEach(p => {
     (p.items || []).forEach(e => {
-      if (e.emr === "added" || e.emr === "modified") plus++;
-      else if (e.emr === "removed" || e.emr === "missing") minus++;
+      const type =
+        (e.emr === "added" || e.emr === "modified") ? "plus" :
+        (e.emr === "removed" || e.emr === "missing") ? "minus" : null;
+      if (!type) return;
+      if (!mismatchByItem[e.id]) mismatchByItem[e.id] = [];
+      mismatchByItem[e.id].push({
+        slotKey: p.slotKey, roomId: p.roomId, bedNum: p.bedNum,
+        patientName: p.patientName, attending: p.attending,
+        emrType: type,
+      });
     });
-    return { ...p, _plus:plus, _minus:minus };
-  }).filter(p => p._plus > 0 || p._minus > 0);
+  });
+  const itemOrder = Object.fromEntries(ALL_ITEMS.map((it, i) => [it.id, i]));
+  const mismatchEntries = Object.entries(mismatchByItem)
+    .sort((a, b) => (itemOrder[a[0]] ?? 999) - (itemOrder[b[0]] ?? 999));
 
   const isToday = selectedDate.getTime() === today.getTime();
 
@@ -361,36 +371,46 @@ export default function DailyPage() {
           </div>
         ) : (
         <>
-        {/* 계획/EMR 불일치 환자 요약 (2병동 상단) */}
-        {mismatchPatients.length > 0 && (
+        {/* 계획/EMR 불일치 치료 목록 (2병동 상단) */}
+        {mismatchEntries.length > 0 && (
           <div style={DS.mismatchSection}>
             <div style={DS.mismatchTitle}>
               <span style={{ color:"#b45309", fontWeight:900, marginRight:6 }}>⚠</span>
-              계획 / EMR 불일치 환자
+              계획 / EMR 불일치
               <span style={{ color:"#64748b", fontWeight:600, marginLeft:6, fontSize:12 }}>
-                ({mismatchPatients.length}명)
+                ({mismatchEntries.length}개 치료)
               </span>
             </div>
-            <div style={DS.mismatchList}>
-              {mismatchPatients.map(p => (
-                <div key={p.slotKey} style={DS.mismatchChip}
-                  onClick={() => router.push(`/treatment?slotKey=${encodeURIComponent(p.slotKey)}&name=${encodeURIComponent(p.patientName)}`)}
-                  title="치료 일정표로 이동">
-                  <span style={DS.mismatchRoom}>{p.roomId}-{p.bedNum}</span>
-                  <span style={DS.mismatchName}>{p.patientName}</span>
-                  {p.attending && ATT_COLORS[p.attending] && (
-                    <span style={{ ...DS.mismatchAtt, background: ATT_COLORS[p.attending].bg, color: ATT_COLORS[p.attending].fg, borderColor: ATT_COLORS[p.attending].border }}>
-                      {p.attending}
+            <div style={DS.mismatchItemList}>
+              {mismatchEntries.map(([itemId, patients]) => {
+                const item = ALL_ITEMS.find(i => i.id === itemId);
+                const grp = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === itemId));
+                return (
+                  <div key={itemId} style={DS.mismatchItemRow}>
+                    <span style={{ ...DS.mismatchItemName, color: grp?.color, background: grp?.bg, borderColor: grp?.color }}>
+                      {item?.name || itemId}
                     </span>
-                  )}
-                  {p._plus > 0 && (
-                    <span style={{ ...DS.mismatchBadge, background:"#3b82f6" }}>EMR+ {p._plus}</span>
-                  )}
-                  {p._minus > 0 && (
-                    <span style={{ ...DS.mismatchBadge, background:"#ef4444" }}>EMR- {p._minus}</span>
-                  )}
-                </div>
-              ))}
+                    <div style={DS.mismatchItemPats}>
+                      {patients.map((p, idx) => (
+                        <span key={`${p.slotKey}-${idx}`} style={DS.mismatchChip}
+                          onClick={() => router.push(`/treatment?slotKey=${encodeURIComponent(p.slotKey)}&name=${encodeURIComponent(p.patientName)}`)}
+                          title="치료 일정표로 이동">
+                          <span style={DS.mismatchRoom}>{p.roomId}-{p.bedNum}</span>
+                          <span style={DS.mismatchName}>{p.patientName}</span>
+                          {p.attending && ATT_COLORS[p.attending] && (
+                            <span style={{ ...DS.mismatchAtt, background: ATT_COLORS[p.attending].bg, color: ATT_COLORS[p.attending].fg, borderColor: ATT_COLORS[p.attending].border }}>
+                              {p.attending}
+                            </span>
+                          )}
+                          <span style={{ ...DS.mismatchBadge, background: p.emrType === "plus" ? "#3b82f6" : "#ef4444" }}>
+                            {p.emrType === "plus" ? "EMR+" : "EMR-"}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -522,10 +542,13 @@ const DS = {
   empty: { textAlign:"center", color:"#94a3b8", fontSize:15, marginTop:60 },
   mismatchSection: { background:"#fffbeb", border:"1.5px solid #fbbf24", borderRadius:10, padding:"12px 16px", marginBottom:18 },
   mismatchTitle: { fontSize:14, fontWeight:800, color:"#92400e", marginBottom:10, display:"flex", alignItems:"center" },
-  mismatchList: { display:"flex", flexWrap:"wrap", gap:8 },
-  mismatchChip: { display:"inline-flex", alignItems:"center", gap:6, background:"#fff", border:"1px solid #fde68a", borderRadius:8, padding:"5px 10px", cursor:"pointer", fontSize:12, fontWeight:700, color:"#0f172a" },
+  mismatchItemList: { display:"flex", flexDirection:"column", gap:6 },
+  mismatchItemRow: { display:"flex", alignItems:"flex-start", gap:10, flexWrap:"wrap" },
+  mismatchItemName: { flexShrink:0, minWidth:130, fontSize:12, fontWeight:800, borderRadius:6, padding:"4px 10px", border:"1.5px solid", textAlign:"center" },
+  mismatchItemPats: { display:"flex", flexWrap:"wrap", gap:6, flex:1 },
+  mismatchChip: { display:"inline-flex", alignItems:"center", gap:5, background:"#fff", border:"1px solid #fde68a", borderRadius:8, padding:"3px 8px", cursor:"pointer", fontSize:12, fontWeight:700, color:"#0f172a" },
   mismatchRoom: { background:"#0f2744", color:"#fff", borderRadius:4, padding:"1px 6px", fontSize:10, fontWeight:700 },
-  mismatchName: { fontSize:13, fontWeight:800 },
+  mismatchName: { fontSize:12, fontWeight:800 },
   mismatchAtt: { fontSize:10, fontWeight:800, borderRadius:4, padding:"1px 5px", border:"1px solid" },
   mismatchBadge: { color:"#fff", fontSize:10, fontWeight:800, borderRadius:4, padding:"1px 6px", letterSpacing:0.2 },
   wardBlock: { marginBottom:24 },
