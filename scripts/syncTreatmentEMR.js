@@ -48,6 +48,7 @@ const EMR_TO_PLAN = {
   '053100060':   { id: 'iscador_q' }, '053100080': { id: 'iscador_q' },
   '053100030':   { id: 'iscador_q' }, '053100070': { id: 'iscador_q' },
   '645905861':   { id: 'glutathione' },
+  '662502981':   { id: 'glutathione' },  // 바이온주(G+T용 글루타치온)
   '678900490':   { id: 'dramin', combo: true },
   '681100281':   { id: 'dramin', combo: true },
   '654004501':   { id: 'thioctic' },
