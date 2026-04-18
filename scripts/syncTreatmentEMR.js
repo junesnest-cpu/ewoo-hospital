@@ -2,8 +2,8 @@
  * EMR → Firebase 치료계획표 동기화
  *
  * 규칙:
- *   - 어제까지: EMR 우선. EMR에만 있음=added, Firebase에만 있음=removed, 수량 불일치=modified
- *   - 오늘 이후: 삭제 로직 없이 일치 여부만 표시. Firebase에만 있으면 원본 유지(태그 제거)
+ *   - 어제까지: EMR 우선. EMR에만 있음=added, Firebase에만 있음=removed(금액 제외), 수량 불일치=modified
+ *   - 오늘 이후: EMR에만 있음=added, Firebase에만 있음=missing(금액 포함·누락 알림)
  *   - hyperbaric(고압산소)는 EMR 연동 제외
  *   - 주치의(VIEWJUBLIST.dctrName): 강국형/이숙경만 인정, slots/{sk}/current/attending 갱신
  *   - Widam/VIEWJUBLIST 쿼리는 IN 절 벌크화
@@ -199,7 +199,7 @@ async function main() {
 
   // ── 5) 환자별 처리 ──
   const fbUpdates = {};
-  let matchCount = 0, addCount = 0, removeCount = 0, modifyCount = 0;
+  let matchCount = 0, addCount = 0, removeCount = 0, modifyCount = 0, missingCount = 0;
 
   for (const pat of patients) {
     const chart = (pat.chartNo || '').toString().trim();
@@ -342,10 +342,12 @@ async function main() {
             if (itemId === 'hyperbaric') {
               newItems.push({ ...inFb });
             } else if (isTodayOrFuture) {
-              // 오늘 이후: 삭제 태깅 금지. 기존 emr 태그는 제거해 원본으로 복원
-              const { emr, ...rest } = inFb;
-              newItems.push(rest);
+              // 오늘/미래: "missing" 태그 — UI 빨간색 표시, 금액은 포함
+              newItems.push({ ...inFb, emr: 'missing' });
+              console.log(`  ${monthKey}/${dayStr} ${itemId}: ⚠ 미래 누락`);
+              missingCount++;
             } else {
+              // 과거: "removed" 태그 — UI 빨간색+흐리게, 금액 제외
               newItems.push({ ...inFb, emr: 'removed' });
               console.log(`  ${monthKey}/${dayStr} ${itemId}: ➖ 삭제 표시`);
               removeCount++;
@@ -372,15 +374,16 @@ async function main() {
   await db.ref('emrSyncLog/lastSync').set(new Date().toISOString());
   await db.ref('emrSyncLog/lastCounts').set({
     match: matchCount, added: addCount, removed: removeCount, modified: modifyCount,
-    patients: patients.length,
+    missing: missingCount, patients: patients.length,
   });
 
   console.log('\n' + '═'.repeat(50));
   console.log('✅ 치료계획표 EMR 연동 완료');
-  console.log(`   ✅ 일치:  ${matchCount}건`);
-  console.log(`   ➕ 추가:  ${addCount}건`);
-  console.log(`   ➖ 삭제:  ${removeCount}건 (어제 이전만)`);
-  console.log(`   ✏️  수정:  ${modifyCount}건`);
+  console.log(`   ✅ 일치:    ${matchCount}건`);
+  console.log(`   ➕ 추가:    ${addCount}건`);
+  console.log(`   ➖ 삭제:    ${removeCount}건 (어제 이전, 금액 제외)`);
+  console.log(`   ⚠ 미래 누락: ${missingCount}건 (오늘/미래, 금액 포함)`);
+  console.log(`   ✏️  수정:    ${modifyCount}건`);
 
   await sql.close();
   process.exit(0);

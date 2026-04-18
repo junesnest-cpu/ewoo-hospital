@@ -699,12 +699,13 @@ export default function TreatmentPage() {
                     if (!item) return null;
                     const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
                     const label = item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?(effectiveQty>1?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name):item.name;
-                    const isRemoved = e.emr==="removed";
-                    const badge = e.emr==="match"?"EMR":e.emr==="removed"?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
-                    const badgeColor = e.emr==="match"?"#10b981":e.emr==="removed"?"#ef4444":"#3b82f6";
+                    const isMissing = e.emr==="missing";
+                    const isRemoved = e.emr==="removed" || isMissing;
+                    const badge = e.emr==="match"?"EMR":isRemoved?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
+                    const badgeColor = e.emr==="match"?"#10b981":isRemoved?"#ef4444":"#3b82f6";
                     return (
                       <span key={e.id} style={{ ...TS.tag, background:grp.bg, color:grp.color, borderColor:grp.color,
-                        opacity:isRemoved?0.4:1, position:"relative" }}>
+                        opacity:e.emr==="removed"?0.4:(isMissing?0.7:1), position:"relative" }}>
                         {label}
                         {badge && <span style={{ fontSize:7, fontWeight:800, color:"#fff", background:badgeColor,
                           borderRadius:3, padding:"0 3px", marginLeft:3, lineHeight:"14px", verticalAlign:"middle", whiteSpace:"nowrap" }}>{badge}</span>}
@@ -865,13 +866,14 @@ export default function TreatmentPage() {
                   const item = ALL_ITEMS.find(i => i.id === e.id);
                   const grp  = getItemGroup(e.id);
                   if (!item) return null;
-                  const isRemoved = e.emr==="removed";
-                  const badge = e.emr==="match"?"EMR":e.emr==="removed"?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
-                  const badgeColor = e.emr==="match"?"#10b981":e.emr==="removed"?"#ef4444":"#3b82f6";
+                  const isMissing = e.emr==="missing";
+                  const isRemoved = e.emr==="removed" || isMissing;
+                  const badge = e.emr==="match"?"EMR":isRemoved?"EMR-":(e.emr==="added"||e.emr==="modified")?"EMR+":null;
+                  const badgeColor = e.emr==="match"?"#10b981":isRemoved?"#ef4444":"#3b82f6";
                   const effectiveQty = (item.dischargeMed && dischargeMedInfo?.itemId === e.id) ? dischargeMedInfo.qty : e.qty;
                   const effectivePrice = item.dischargeMed ? (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0) : calcPrice(item,e.qty,new Date(year,month,modalDay));
                   return (
-                    <div key={e.id} style={{ ...TS.regItem, borderLeftColor: grp.color, opacity:isRemoved?0.4:1 }}>
+                    <div key={e.id} style={{ ...TS.regItem, borderLeftColor: grp.color, opacity:e.emr==="removed"?0.4:(isMissing?0.7:1) }}>
                       <div style={{ flex:1 }}>
                         <span style={{ fontWeight:700, color:grp.color }}>
                           {item.custom==="vitc"?`비타민C ${effectiveQty}g`:item.custom==="qty"?(effectiveQty>1?`${item.name} ${effectiveQty}${item.unit||"개"}`:item.name):item.name}

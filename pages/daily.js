@@ -71,7 +71,8 @@ const EMR_BADGE = {
   match:    { label:"EMR",  color:"#10b981", title:"EMR 일치" },
   added:    { label:"EMR+", color:"#3b82f6", title:"EMR에만 있음(계획 대비 추가)" },
   modified: { label:"EMR+", color:"#3b82f6", title:"수량 불일치(EMR 기준으로 수정됨)" },
-  removed:  { label:"EMR-", color:"#ef4444", title:"계획에만 있음(EMR 미입력)" },
+  removed:  { label:"EMR-", color:"#ef4444", title:"계획에만 있음(EMR 미입력·과거, 금액 제외)" },
+  missing:  { label:"EMR-", color:"#ef4444", title:"계획에만 있음(EMR 미입력·미래, 입력 누락)" },
 };
 
 function formatSyncAgo(iso) {
@@ -227,7 +228,7 @@ export default function DailyPage() {
   filtered.forEach(p => p.items.forEach(e => {
     if (e.emr === "match") emrSummary.match++;
     else if (e.emr === "added" || e.emr === "modified") emrSummary.plus++;
-    else if (e.emr === "removed") emrSummary.minus++;
+    else if (e.emr === "removed" || e.emr === "missing") emrSummary.minus++;
   }));
   const hasEmrFlags = emrSummary.match > 0 || emrSummary.plus > 0 || emrSummary.minus > 0;
 
@@ -236,7 +237,7 @@ export default function DailyPage() {
     let plus = 0, minus = 0;
     (p.items || []).forEach(e => {
       if (e.emr === "added" || e.emr === "modified") plus++;
-      else if (e.emr === "removed") minus++;
+      else if (e.emr === "removed" || e.emr === "missing") minus++;
     });
     return { ...p, _plus:plus, _minus:minus };
   }).filter(p => p._plus > 0 || p._minus > 0);
