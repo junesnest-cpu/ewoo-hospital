@@ -11,9 +11,10 @@
  * 이 엔드포인트 호출 후 클라이언트는 두 auth에 signInWithEmailAndPassword 재시도.
  */
 import { approvalAdminAuth, approvalAdminDb, wardAdminAuth } from "../../../lib/firebaseAdmin";
+import publicConfig from "../../../lib/firebasePublicConfig.json";
 
-const APPROVAL_API_KEY = "AIzaSyCajixUUY0le1NhvO2hMCJoPA_pffjs1rE";
-const WARD_API_KEY     = "AIzaSyAgr-alU71ZZj12S3MvCQKJQVdS6w-G3E4";
+const APPROVAL_API_KEY = publicConfig.approval.apiKey;
+const WARD_API_KEY     = publicConfig.ward.apiKey;
 
 async function signInREST(apiKey, email, password) {
   const res = await fetch(

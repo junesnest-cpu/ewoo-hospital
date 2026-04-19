@@ -13,12 +13,7 @@ const { initializeApp }    = require("firebase/app");
 const { getDatabase, ref, push, set, get } = require("firebase/database");
 const { getAuth, signInWithEmailAndPassword } = require("firebase/auth");
 
-const firebaseConfig = {
-  apiKey:      "AIzaSyAgr-alU71ZZj12S3MvCQKJQVdS6w-G3E4",
-  authDomain:  "ewoo-hospital-ward.firebaseapp.com",
-  databaseURL: "https://ewoo-hospital-ward-default-rtdb.firebaseio.com",
-  projectId:   "ewoo-hospital-ward",
-};
+const firebaseConfig = require("../lib/firebasePublicConfig.json").ward;
 
 const app  = initializeApp(firebaseConfig);
 const db   = getDatabase(app);

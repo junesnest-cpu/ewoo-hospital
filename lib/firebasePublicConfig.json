@@ -1,0 +1,20 @@
+{
+  "ward": {
+    "apiKey": "AIzaSyAgr-alU71ZZj12S3MvCQKJQVdS6w-G3E4",
+    "authDomain": "ewoo-hospital-ward.firebaseapp.com",
+    "databaseURL": "https://ewoo-hospital-ward-default-rtdb.firebaseio.com",
+    "projectId": "ewoo-hospital-ward",
+    "storageBucket": "ewoo-hospital-ward.firebasestorage.app",
+    "messagingSenderId": "678990173440",
+    "appId": "1:678990173440:web:2fa6878d9dff7d4039cfe5"
+  },
+  "approval": {
+    "apiKey": "AIzaSyCajixUUY0le1NhvO2hMCJoPA_pffjs1rE",
+    "authDomain": "ewoo-approval.firebaseapp.com",
+    "databaseURL": "https://ewoo-approval-default-rtdb.firebaseio.com",
+    "projectId": "ewoo-approval",
+    "storageBucket": "ewoo-approval.firebasestorage.app",
+    "messagingSenderId": "100727939665",
+    "appId": "1:100727939665:web:d5778c183f7bd2586a8e70"
+  }
+}

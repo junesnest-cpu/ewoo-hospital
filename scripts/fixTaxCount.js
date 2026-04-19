@@ -15,12 +15,7 @@ const { getAuth, signInWithEmailAndPassword } = require("firebase/auth");
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
-const firebaseConfig = {
-  apiKey:      "AIzaSyAgr-alU71ZZj12S3MvCQKJQVdS6w-G3E4",
-  authDomain:  "ewoo-hospital-ward.firebaseapp.com",
-  databaseURL: "https://ewoo-hospital-ward-default-rtdb.firebaseio.com",
-  projectId:   "ewoo-hospital-ward",
-};
+const firebaseConfig = require("../lib/firebasePublicConfig.json").ward;
 const app  = initializeApp(firebaseConfig);
 const db   = getDatabase(app);
 const auth = getAuth(app);
