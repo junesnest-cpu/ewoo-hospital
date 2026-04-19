@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
@@ -164,6 +164,8 @@ export default function TreatmentPage() {
   const [roomFree,  setRoomFree]  = useState(false); // 병실료 프리 옵션
   const [weeklyPlan,setWeeklyPlan]= useState({}); // {itemId: {count:N, price:P}} 주N회 계획
   const [showWkPlan,setShowWkPlan]= useState(false); // 주간 계획 패널 토글
+  const [admissionPlan,setAdmissionPlan] = useState({}); // {itemId: {count:N, price:P}} 입원 총 N회 계획
+  const [showAdPlan,setShowAdPlan] = useState(false); // 총 N회 계획 패널 토글
   const [sending, setSending] = useState(false); // 공지 발송 중
   const [resolvedPatientId, setResolvedPatientId] = useState(""); // URL에 없으면 슬롯에서 조회
 
@@ -171,6 +173,7 @@ export default function TreatmentPage() {
     if (!slotKey) return;
     const unsub1 = onValue(ref(db, `treatmentPlans/${slotKey}`), snap => setPlan(snap.val() || {}));
     const unsub2 = onValue(ref(db, `weeklyPlans/${slotKey}`), snap => setWeeklyPlan(snap.val() || {}));
+    const unsub2b = onValue(ref(db, `admissionPlans/${slotKey}`), snap => setAdmissionPlan(snap.val() || {}));
     const unsub3 = onValue(ref(db, `treatmentSettings/${slotKey}`), snap => {
       const s = snap.val();
       if (s?.roomFree !== undefined) setRoomFree(s.roomFree);
@@ -184,12 +187,17 @@ export default function TreatmentPage() {
         if (pid) setResolvedPatientId(pid);
       });
     }
-    return () => { unsub1(); unsub2(); unsub3(); };
+    return () => { unsub1(); unsub2(); unsub2b(); unsub3(); };
   }, [slotKey, patientId]);
 
   const saveWeeklyPlan = useCallback(async (newPlan) => {
     setWeeklyPlan(newPlan);
     await set(ref(db, `weeklyPlans/${slotKey}`), newPlan);
+  }, [slotKey]);
+
+  const saveAdmissionPlan = useCallback(async (newPlan) => {
+    setAdmissionPlan(newPlan);
+    await set(ref(db, `admissionPlans/${slotKey}`), newPlan);
   }, [slotKey]);
 
   const handleRoomFreeChange = useCallback(async (checked) => {
@@ -293,6 +301,53 @@ export default function TreatmentPage() {
     if (!item) return sum;
     return sum + (item.price || 0) * (p.count || 0);
   }, 0);
+
+  const admissionPlanTotal = Object.entries(admissionPlan).reduce((sum, [itemId, p]) => {
+    const item = ALL_ITEMS.find(i => i.id === itemId);
+    if (!item) return sum;
+    return sum + (item.price || 0) * (p.count || 0);
+  }, 0);
+
+  // 입원 누적 done (admitDate ~ 퇴원일 or 오늘) — ymdKey별 누적 스냅샷
+  // { "YYYYMMDD": { itemId: totalDoneInclusive } } — 주N회 override와 패널 진행률 모두 사용
+  const admissionCumulativeByDate = useMemo(() => {
+    const result = {};
+    const admit = parseDateStr(admitDate);
+    if (!admit) return result;
+    const endD = dischargeDate || new Date();
+    let cur = new Date(dateOnly(admit));
+    const end = dateOnly(endD);
+    const running = {};
+    while (cur <= end) {
+      const mk = `${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,"0")}`;
+      const dk = String(cur.getDate());
+      const raw = plan[mk]?.[dk];
+      const items = Array.isArray(raw) ? raw : raw ? Object.values(raw) : [];
+      for (const e of items) {
+        if (!e || !e.id) continue;
+        if (e.emr === "removed" || e.room === "removed") continue;
+        running[e.id] = (running[e.id] || 0) + parseInt(e.qty || 1);
+      }
+      const ymd = `${cur.getFullYear()}${String(cur.getMonth()+1).padStart(2,"0")}${String(cur.getDate()).padStart(2,"0")}`;
+      result[ymd] = { ...running };
+      cur = new Date(cur.getTime() + 86400000);
+    }
+    return result;
+  }, [plan, admitDate, dischargeDate?.getTime?.()]);
+
+  // 오늘까지 실행 누적 (패널 진행률 표시용)
+  const admissionDone = useMemo(() => {
+    const keys = Object.keys(admissionCumulativeByDate);
+    if (!keys.length) return {};
+    return admissionCumulativeByDate[keys.sort().pop()] || {};
+  }, [admissionCumulativeByDate]);
+
+  // 특정 날짜 이전(exclusive) 누적 조회 — weekly override용
+  const getCumulativeBefore = (itemId, date) => {
+    const prev = new Date(date.getTime() - 86400000);
+    const ymd = `${prev.getFullYear()}${String(prev.getMonth()+1).padStart(2,"0")}${String(prev.getDate()).padStart(2,"0")}`;
+    return admissionCumulativeByDate[ymd]?.[itemId] || 0;
+  };
 
   // 주차별 하한선 계산
   const calcWeekMin = (weekNum, hospDays) => {
@@ -522,6 +577,12 @@ export default function TreatmentPage() {
             fontSize:12, fontWeight:700, flexShrink:0 }}>
           📋 주N회 계획 {Object.keys(weeklyPlan).length>0?`(${Object.keys(weeklyPlan).length}종)`:""} {showWkPlan?"▲":"▼"}
         </button>
+        <button onClick={()=>setShowAdPlan(p=>!p)}
+          style={{ background:showAdPlan?"#7c2d12":"#f1f5f9", color:showAdPlan?"#fff":"#475569",
+            border:"1px solid #e2e8f0", borderRadius:7, padding:"3px 12px", cursor:"pointer",
+            fontSize:12, fontWeight:700, flexShrink:0 }}>
+          🎯 총 N회 계획 {Object.keys(admissionPlan).length>0?`(${Object.keys(admissionPlan).length}종)`:""} {showAdPlan?"▲":"▼"}
+        </button>
         {totalTreatMin > 0 && (() => {
           const ok = totalTreatActual >= totalTreatMin;
           return (
@@ -602,6 +663,61 @@ export default function TreatmentPage() {
         </div>
       )}
 
+      {/* 총 N회 계획 패널 */}
+      {showAdPlan && (
+        <div style={{ background:"#fef2f2", borderBottom:"1px solid #fecaca", padding:"12px 20px" }}>
+          <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:10, marginBottom:10 }}>
+            <span style={{ fontSize:14, fontWeight:800, color:"#7c2d12" }}>🎯 입원 총 N회 계획</span>
+            <span style={{ fontSize:12, color:"#64748b" }}>— 입원 기간 동안 총 수행 횟수 상한 (주N회보다 우선 적용)</span>
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 }}>
+            {TREATMENT_GROUPS.flatMap(g=>g.items).filter(item=>
+              ["hyperthermia","pain","manip2","manip1","hyperbaric"].includes(item.id)
+            ).map(item=>{
+              const aPlan = admissionPlan[item.id];
+              const done = admissionDone[item.id] || 0;
+              const total = aPlan?.count || 0;
+              const reached = total > 0 && done >= total;
+              const grp = getItemGroup(item.id);
+              return (
+                <div key={item.id} style={{ display:"flex", alignItems:"center", gap:6,
+                  background:"#fff", border:`1.5px solid ${grp?.color||"#e2e8f0"}`,
+                  borderRadius:8, padding:"6px 12px" }}>
+                  <span style={{ fontSize:13, fontWeight:700, color:grp?.color }}>{item.name}</span>
+                  <span style={{ fontSize:12, color:"#64748b" }}>총</span>
+                  <select value={total}
+                    onChange={e=>{
+                      const v=parseInt(e.target.value);
+                      const newP={...admissionPlan};
+                      if(v===0) delete newP[item.id];
+                      else newP[item.id]={count:v, price:item.price};
+                      saveAdmissionPlan(newP);
+                    }}
+                    style={{ border:"1px solid #e2e8f0", borderRadius:5, padding:"2px 6px", fontSize:13, outline:"none" }}>
+                    {[0,1,2,3,4,5,6,7,8,9,10,12,15,18,20,24,30,40,50].map(n=><option key={n} value={n}>{n===0?"미설정":`${n}회`}</option>)}
+                  </select>
+                  {total>0 && (
+                    <>
+                      <span style={{ fontSize:11, fontWeight:700, color: reached ? "#16a34a" : "#7c2d12" }}>
+                        {done}/{total}회{reached?" ✓":""}
+                      </span>
+                      <span style={{ fontSize:11, color:"#64748b" }}>
+                        = {(item.price*total).toLocaleString()}원
+                      </span>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {admissionPlanTotal>0 && (
+            <div style={{ fontSize:13, fontWeight:700, color:"#7c2d12" }}>
+              입원 총 계획 합계: <strong>{admissionPlanTotal.toLocaleString()}원</strong>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 달력 */}
       <div style={TS.calWrap}>
         <div style={TS.calGrid}>
@@ -626,7 +742,18 @@ export default function TreatmentPage() {
                     (monthData[String(d)] || []).filter(e => e.emr !== "removed" && e.room !== "removed" && weeklyPlan[e.id])
                       .forEach(e => { doneMap[e.id] = (doneMap[e.id] || 0) + parseInt(e.qty || 1); });
                   });
-                  const allDone = Object.entries(weeklyPlan).every(([id, p]) => (doneMap[id] || 0) >= p.count);
+                  // 총 N회 override: 이번 주 시작 전까지 누적을 계산해서 effective count 산출
+                  const effectiveWeekly = (itemId) => {
+                    const wk = weeklyPlan[itemId]?.count || 0;
+                    const adm = admissionPlan[itemId]?.count;
+                    if (!adm) return wk;
+                    const remaining = adm - getCumulativeBefore(itemId, firstD);
+                    return Math.max(0, Math.min(wk, remaining));
+                  };
+                  const allDone = Object.entries(weeklyPlan).every(([id]) => {
+                    const eff = effectiveWeekly(id);
+                    return eff === 0 || (doneMap[id] || 0) >= eff;
+                  });
                   _r.push(
                     <div key={`wkplan-${idx}`} className="wkplan-bar" style={{
                       gridColumn: "1 / -1", background: allDone ? "#f0fdf4" : "#f0f9ff",
@@ -638,13 +765,16 @@ export default function TreatmentPage() {
                         const item = ALL_ITEMS.find(i => i.id === itemId);
                         const grp = getItemGroup(itemId);
                         const done = doneMap[itemId] || 0;
-                        const ok = done >= p.count;
+                        const eff = effectiveWeekly(itemId);
+                        const capped = admissionPlan[itemId] && eff < p.count;
+                        const reached = eff === 0 && admissionPlan[itemId];
+                        const ok = eff === 0 ? true : done >= eff;
                         return (
                           <span key={itemId} style={{
                             background: ok ? "#dcfce7" : "#fff", border: `1px solid ${grp?.color || "#e2e8f0"}`,
                             borderRadius: 4, padding: "1px 6px", color: grp?.color, fontWeight: 600, fontSize: 10,
-                          }}>
-                            {item?.name} {done}/{p.count}{ok ? " ✓" : ""}
+                          }} title={capped ? `총 ${admissionPlan[itemId].count}회 상한 적용 (원래 주${p.count}회)` : ""}>
+                            {item?.name} {reached ? "상한도달 ✓" : `${done}/${eff}${capped ? "🎯" : ""}${ok ? " ✓" : ""}`}
                           </span>
                         );
                       })}

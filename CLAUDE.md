@@ -96,6 +96,7 @@
 - `consultations/{id}`: 상담일지
 - `treatmentPlans/{slotKey}/{YYYY-MM}/{day}`: 치료 계획
 - `weeklyPlans/{slotKey}`: 주N회 치료 계획
+- `admissionPlans/{slotKey}`: 입원 기간 총 N회 치료 계획 (주N회보다 우선 적용, 5종 한정)
 - `monthlyBoards/{YYYY-MM}/{YYYY-MM-DD}`: 월간 입퇴원 기록
 - `dailyBoards/{YYYY-MM-DD}`: 일일 현황판
 - `physicalSchedule/`, `hyperthermiaSchedule/`: 치료실 일정
