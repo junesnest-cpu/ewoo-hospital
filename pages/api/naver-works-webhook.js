@@ -1,4 +1,36 @@
 import admin from 'firebase-admin';
+import crypto from 'crypto';
+
+// ── Naver Works 시그니처 검증 ────────────────────────────────────────────────
+// Naver Works는 X-WORKS-Signature 헤더에 HMAC-SHA256(secret, rawBody) base64 전송.
+// 참고: https://developers.worksmobile.com/jp/document/100500403
+//
+// 동작 모드:
+//   audit  (기본)  — 결과를 webhookLogs에 기록, 요청은 항상 통과
+//   enforce        — env NAVER_WORKS_ENFORCE_SIGNATURE=true 시 mismatch면 401
+//
+// env NAVER_WORKS_BOT_SECRET 미설정 시 검증 스킵(레거시 동작 유지).
+// ────────────────────────────────────────────────────────────────────────────
+export const config = {
+  api: { bodyParser: false },
+};
+
+async function readRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+function verifyWorksSignature(rawBody, headerSig) {
+  const secret = process.env.NAVER_WORKS_BOT_SECRET;
+  if (!secret) return { mode: 'skipped', reason: 'no-secret' };
+  if (!headerSig) return { mode: 'missing', valid: false };
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('base64');
+  const a = Buffer.from(expected);
+  const b = Buffer.from(String(headerSig));
+  const valid = a.length === b.length && crypto.timingSafeEqual(a, b);
+  return { mode: 'checked', valid };
+}
 
 // ── Firebase Admin SDK 초기화 (싱글턴) ───────────────────────────────────────
 function getAdminDb() {
@@ -333,10 +365,26 @@ export default async function handler(req, res) {
   const changeId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const ts = new Date().toISOString();
 
-  // raw body를 최대한 파싱
+  // raw body 읽기 (bodyParser 비활성화 상태) + 시그니처 검증
+  let rawBody = Buffer.alloc(0);
+  try { rawBody = await readRawBody(req); } catch { /* 빈 body */ }
+
+  const sigHeader = req.headers['x-works-signature'] || req.headers['X-WORKS-Signature'];
+  const sigResult = verifyWorksSignature(rawBody, sigHeader);
+
+  // enforce 모드: 시그니처 mismatch 시 401 (기본 off)
+  if (
+    process.env.NAVER_WORKS_ENFORCE_SIGNATURE === 'true' &&
+    sigResult.mode === 'checked' &&
+    !sigResult.valid
+  ) {
+    console.error('[webhook] signature mismatch (enforced)');
+    return res.status(401).json({ error: 'invalid signature' });
+  }
+
   let payload;
   try {
-    payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    payload = rawBody.length ? JSON.parse(rawBody.toString('utf8')) : null;
   } catch {
     payload = null;
   }
@@ -360,6 +408,7 @@ export default async function handler(req, res) {
       rawPayload:  payload ? JSON.stringify(payload).slice(0, 2000) : null,
       payloadType: payload?.type || null,
       contentSubType: payload?.content?.type || null,
+      signature:   sigResult,
     });
   } catch (logErr) {
     // 로그 실패는 무시하고 계속

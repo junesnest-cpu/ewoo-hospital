@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set, get, update } from "firebase/database";
-import { db } from "../lib/firebaseConfig";
+import { db, auth } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 import PatientSearchModal from "../components/PatientSearchModal";
 import { searchPatientsByName } from "../lib/patientSearch";
@@ -135,9 +135,13 @@ const INIT_SLOTS = {
 };
 
 async function analyzeMessengerText(text) {
+  const token = await auth.currentUser?.getIdToken();
   const res = await fetch("/api/analyze", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ text }),
   });
   const data = await res.json();
