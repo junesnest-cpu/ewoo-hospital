@@ -153,7 +153,7 @@ async function analyzeMessengerText(text) {
 export default function HospitalWardManager() {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { slots, setSlots, consultations, logs, setLogs, pendingCount, emrSyncTime, saveSlots, addLog, recordDischarge, cleanupDailyBoards } = useWardData();
+  const { slots, setSlots, consultations, logs, setLogs, pendingCount, emrSyncTime, saveSlots, addLog, recordDischarge, cleanupDailyBoards, syncConsultationOnSlotChange } = useWardData();
   const [view,           setView]           = useState("ward");
   const [selectedRoom,   setSelectedRoom]   = useState(null);
   const [editingSlot,    setEditingSlot]    = useState(null);
@@ -748,7 +748,12 @@ export default function HospitalWardManager() {
   const cancelReservation = async (slotKey, resIndex) => {
     if (!window.confirm("예약을 취소하시겠습니까?")) return;
     const oldSlot = slots[slotKey] || { current: null, reservations: [] };
-    const name = oldSlot.reservations?.[resIndex]?.name;
+    const cancelledRes = oldSlot.reservations?.[resIndex];
+    const name = cancelledRes?.name;
+    // 예약 취소: consultation 먼저(reservedSlot=null) → slots 나중. auto-restore 레이스 방지.
+    if (cancelledRes) {
+      await syncConsultationOnSlotChange(slotKey, name, cancelledRes.consultationId, null);
+    }
     const delName = (name||'').trim().toLowerCase();
     const reservations = (oldSlot.reservations || []).filter((r, i) => {
       if (i === resIndex) return false;
@@ -756,8 +761,6 @@ export default function HospitalWardManager() {
       return true;
     });
     await saveSlots({ ...slots, [slotKey]: { ...oldSlot, reservations } }, [slotKey]);
-    // 취소 시 dailyBoards 항목 정리
-    const cancelledRes = oldSlot.reservations?.[resIndex];
     if (cancelledRes) {
       await cleanupDailyBoards(cancelledRes.name, cancelledRes, {});
     }

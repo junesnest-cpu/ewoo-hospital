@@ -841,15 +841,15 @@ export default function WardTimeline() {
           await recordDischarge(cur.name, slotKey, disDate);
         }
         ns[slotKey].current = null;
-      } else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
-      await saveSlots(ns, [slotKey]);
-      // 삭제 시 dailyBoards 항목 정리
+        await saveSlots(ns, [slotKey]);
+      } else {
+        // 예약 삭제: consultation 먼저(reservedSlot=null) → slots 나중. auto-restore 레이스 방지.
+        await syncConsultationOnSlotChange(slotKey, data.name, data.consultationId, null);
+        ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
+        await saveSlots(ns, [slotKey]);
+      }
       if (data) {
         await cleanupDailyBoards(data.name, data, {});
-      }
-      // 예약 삭제 시 상담일지 연동 (현재 입원 정보 삭제는 연동 제외)
-      if (mode === "reservation") {
-        await syncConsultationOnSlotChange(slotKey, data.name, data.consultationId, null);
       }
       setEditModal(null); setPopover(null);
     } finally { setSaving(false); }
@@ -894,11 +894,12 @@ export default function WardTimeline() {
         await recordDischarge(cur.name, slotKey, disDate);
       }
       ns[slotKey].current = null;
-    } else ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==bar.resIndex);
-    await saveSlots(ns, [slotKey]);
-    // 예약 삭제 시 상담일지 연동
-    if (bar.type === "reservation") {
+      await saveSlots(ns, [slotKey]);
+    } else {
+      // 예약 삭제: consultation 먼저(reservedSlot=null) → slots 나중. auto-restore 레이스 방지.
       await syncConsultationOnSlotChange(slotKey, bar.person.name, bar.person.consultationId, null);
+      ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==bar.resIndex);
+      await saveSlots(ns, [slotKey]);
     }
     setPopover(null);
   }, [popover, slots, saveSlots, recordDischarge, syncConsultationOnSlotChange]);
