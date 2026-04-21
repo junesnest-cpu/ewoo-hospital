@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 // 점검 모드 토글 — 컷오버 진행 중에만 true, 정상 운영 시 false.
 // 활성화 시 모든 페이지는 /maintenance 로 rewrite 되고 /api/* 는 503 반환.
 // Cloud Functions·RPi admin SDK는 Firebase 직접 접근이라 영향 없음.
-const MAINTENANCE = true;
+const MAINTENANCE = false;
 
 export function middleware(request) {
   if (!MAINTENANCE) return NextResponse.next();
