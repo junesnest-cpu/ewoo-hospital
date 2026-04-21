@@ -663,6 +663,41 @@ async function main() {
 
     slotUpdates[`slots/${slotKey}/current`] = newCurrent;
     setCount++;
+
+    // OLD → NEW 치료계획 스키마 이관 (patient-keyed 전환 후)
+    //   history.js 예약 승인 시 OLD path(treatmentPlans/{slotKey})에 쓴 플랜을
+    //   EMR 입원 감지 시점에 NEW path(treatmentPlansV2/{pid}/{admissionKey})로 이동.
+    //   NEW path 기존 데이터가 없을 때만 이관 (중복 방지).
+    try {
+      const pid = newCurrent.patientId;
+      const admStr = newCurrent.admitDate || '';
+      let admKey = null;
+      const isoM2 = admStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (isoM2) admKey = `${isoM2[1]}-${isoM2[2]}-${isoM2[3]}`;
+      else {
+        const mdM2 = admStr.match(/^(\d{1,2})\/(\d{1,2})$/);
+        if (mdM2) admKey = `${new Date().getFullYear()}-${String(mdM2[1]).padStart(2,'0')}-${String(mdM2[2]).padStart(2,'0')}`;
+      }
+      if (pid && admKey) {
+        const [oldTpSnap, oldWpSnap, oldApSnap, newTpSnap] = await Promise.all([
+          db.ref(`treatmentPlans/${slotKey}`).once('value'),
+          db.ref(`weeklyPlans/${slotKey}`).once('value'),
+          db.ref(`admissionPlans/${slotKey}`).once('value'),
+          db.ref(`treatmentPlansV2/${pid}/${admKey}`).once('value'),
+        ]);
+        // NEW path가 비어 있을 때만 이관 (이미 이관된 환자 재이관 방지)
+        if (!newTpSnap.exists()) {
+          if (oldTpSnap.exists()) slotUpdates[`treatmentPlansV2/${pid}/${admKey}`] = oldTpSnap.val();
+          if (oldWpSnap.exists()) slotUpdates[`weeklyPlansV2/${pid}/${admKey}`]    = oldWpSnap.val();
+          if (oldApSnap.exists()) slotUpdates[`admissionPlansV2/${pid}/${admKey}`] = oldApSnap.val();
+          if (oldTpSnap.exists() || oldWpSnap.exists() || oldApSnap.exists()) {
+            console.log(`  🔄 OLD→NEW 플랜 이관: ${slotKey} → ${pid}/${admKey}`);
+          }
+        }
+      }
+    } catch (migErr) {
+      console.error(`  ⚠ 플랜 이관 실패 ${slotKey}: ${migErr.message}`);
+    }
   }
 
   // 퇴원 감지: Firebase에 있지만 EMR에 없는 환자

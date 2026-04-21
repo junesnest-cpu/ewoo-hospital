@@ -14,6 +14,20 @@ require('dotenv').config({ path: '.env.local' });
 const sql   = require('mssql');
 const admin = require('firebase-admin');
 
+// admissionKey: admitDate → YYYY-MM-DD (patient-keyed 스키마 경로 구성용)
+function admissionKey(admitDate) {
+  if (!admitDate) return null;
+  const s = String(admitDate).trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const md = /^(\d{1,2})\/(\d{1,2})$/.exec(s);
+  if (md) {
+    const y = new Date().getFullYear();
+    return `${y}-${String(md[1]).padStart(2, '0')}-${String(md[2]).padStart(2, '0')}`;
+  }
+  return null;
+}
+
 const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 admin.initializeApp({
   credential: admin.credential.cert({
@@ -133,9 +147,18 @@ async function main() {
 
   console.log(`환자 ${patients.length}명: ${patients.map(p => `${p.slotKey} ${p.name}`).join(', ')}\n`);
 
-  // ── 2) Firebase 치료계획표 사전 로드 + maxPlanYMD 계산 ──
+  // ── 2) Firebase 치료계획표 사전 로드 + maxPlanYMD 계산 (patient-keyed) ──
+  //  새 스키마: treatmentPlansV2/{patientId}/{admissionKey}/{YYYY-MM}/{day}
   await Promise.all(patients.map(async pat => {
-    const fbSnap = await db.ref(`treatmentPlans/${pat.slotKey}`).once('value');
+    pat.admissionKey = admissionKey(pat.admitDate);
+    if (!pat.patientId || !pat.admissionKey) {
+      console.warn(`  ⚠ ${pat.slotKey} ${pat.name}: patientId/admitDate 누락 — 스킵`);
+      pat.fbPlan = {};
+      pat.maxPlanYMD = TODAY;
+      pat.skipSync = true;
+      return;
+    }
+    const fbSnap = await db.ref(`treatmentPlansV2/${pat.patientId}/${pat.admissionKey}`).once('value');
     pat.fbPlan = fbSnap.val() || {};
     pat.maxPlanYMD = computeMaxPlanYMD(pat.fbPlan);
   }));
@@ -207,9 +230,15 @@ async function main() {
     console.log('─'.repeat(50));
     console.log(`[${pat.slotKey}] ${pat.name} (입원:${pat.admitDate}) 주치의:${att || '-'}`);
 
-    // 주치의 갱신
+    // 주치의 갱신 (patientId 없어도 실행 — slot.current에 attending만 기록)
     if (pat.chartNo) {
       fbUpdates[`slots/${pat.slotKey}/current/attending`] = att;
+    }
+
+    // patient-keyed 플랜 경로 구성 불가 시 EMR 동기화 스킵
+    if (pat.skipSync) {
+      console.log(`  ⚠ patientId/admissionKey 없어 치료계획 동기화 스킵`);
+      continue;
     }
 
     const admitYMD = (pat.admitDate || '').replace(/-/g, '');
@@ -355,7 +384,8 @@ async function main() {
           }
         }
 
-        fbUpdates[`treatmentPlans/${pat.slotKey}/${monthKey}/${dayStr}`] = newItems;
+        if (pat.skipSync) continue;
+        fbUpdates[`treatmentPlansV2/${pat.patientId}/${pat.admissionKey}/${monthKey}/${dayStr}`] = newItems;
       }
     }
   }

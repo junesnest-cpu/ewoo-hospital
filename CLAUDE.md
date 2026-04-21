@@ -94,9 +94,11 @@
 - `patientByChartNo/{normChart}`: 차트번호 → internalId 인덱스
 - `patientByPhone/{digits}`: 전화번호 → internalId 인덱스
 - `consultations/{id}`: 상담일지
-- `treatmentPlans/{slotKey}/{YYYY-MM}/{day}`: 치료 계획
-- `weeklyPlans/{slotKey}`: 주N회 치료 계획
-- `admissionPlans/{slotKey}`: 입원 기간 총 N회 치료 계획 (주N회보다 우선 적용, 5종 한정)
+- `treatmentPlansV2/{patientId}/{admissionKey}/{YYYY-MM}/{day}`: 치료 계획 (patient-keyed, 2026-04-21 전환)
+- `weeklyPlansV2/{patientId}/{admissionKey}`: 주N회 치료 계획
+- `admissionPlansV2/{patientId}/{admissionKey}`: 입원 기간 총 N회 치료 계획 (주N회보다 우선 적용, 5종 한정)
+- `treatmentPlans/{slotKey}/...` (구): 2026-04-21 이전 스키마. history.js 웹훅 승인 경로에서 아직 쓰임 → syncEMR Phase 2에서 입원 감지 시 V2로 자동 이관. 마이그레이션 완료 후 제거 예정.
+- `admissionKey`: 입원일을 `YYYY-MM-DD`로 정규화한 값. 재입원 시 에피소드 분리용.
 - `monthlyBoards/{YYYY-MM}/{YYYY-MM-DD}`: 월간 입퇴원 기록
 - `dailyBoards/{YYYY-MM-DD}`: 일일 현황판
 - `physicalSchedule/`, `hyperthermiaSchedule/`: 치료실 일정

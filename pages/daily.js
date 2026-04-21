@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { ref, onValue } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
+import { admissionKey } from "../lib/planPaths";
 
 const WARD_STRUCTURE = {
   2: { name: "2병동", rooms: [
@@ -111,7 +112,7 @@ export default function DailyPage() {
 
   useEffect(() => {
     const unsubS  = onValue(ref(db, "slots"),                snap => setSlots(snap.val() || {}));
-    const unsubT  = onValue(ref(db, "treatmentPlans"),        snap => { setTreatPlans(snap.val() || {}); setLoading(false); });
+    const unsubT  = onValue(ref(db, "treatmentPlansV2"),      snap => { setTreatPlans(snap.val() || {}); setLoading(false); });
     const unsubP  = onValue(ref(db, "physicalSchedule"),      snap => setPhysSched(snap.val() || {}));
     const unsubH  = onValue(ref(db, "hyperthermiaSchedule"),  snap => setHyperSched(snap.val() || {}));
     const unsubSt = onValue(ref(db, "settings"),              snap => { const v=snap.val()||{}; setTherapists([v.therapist1||"치료사1",v.therapist2||"치료사2"]); });
@@ -192,8 +193,10 @@ export default function DailyPage() {
         const current = slots[slotKey]?.current;
         const patientName = current?.name;
         if (!patientName) continue;
-        // 치료 계획 확인
-        const items = treatPlans[slotKey]?.[monthKey]?.[dayKey];
+        // 치료 계획 확인 (patient-keyed: treatPlans[patientId][admissionKey][YYYY-MM][day])
+        const pid  = current?.patientId;
+        const aKey = admissionKey(current?.admitDate);
+        const items = (pid && aKey) ? treatPlans[pid]?.[aKey]?.[monthKey]?.[dayKey] : null;
         if (!items || items.length === 0) continue;
         dailyList.push({
           wardName: ward.name,

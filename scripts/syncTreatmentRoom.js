@@ -35,6 +35,20 @@ const db = admin.database();
 // 치료실에서 실시행 기록이 남는 항목 (EMR 처방과 별개)
 const ROOM_ITEMS = new Set(['pain', 'manip1', 'manip2', 'hyperthermia']);
 
+// admissionKey: admitDate → YYYY-MM-DD (patient-keyed 스키마)
+function admissionKey(admitDate) {
+  if (!admitDate) return null;
+  const s = String(admitDate).trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const md = /^(\d{1,2})\/(\d{1,2})$/.exec(s);
+  if (md) {
+    const y = new Date().getFullYear();
+    return `${y}-${String(md[1]).padStart(2, '0')}-${String(md[2]).padStart(2, '0')}`;
+  }
+  return null;
+}
+
 function getWeekStart(d) {
   const x = new Date(d);
   const dw = x.getDay();
@@ -79,62 +93,78 @@ async function processDate(targetDate, slots, allPlans) {
   const phys = physSnap.val() || {};
   const hyper = hyperSnap.val() || {};
 
-  // 해당 날짜에 실제로 수행된 (slotKey, treatmentId) 수집
+  // slotKey → {patientId, admissionKey} (현재 입원환자 기준)
+  const slotToPatient = {};
+  for (const [sk, slot] of Object.entries(slots)) {
+    const cur = slot?.current;
+    if (!cur?.patientId) continue;
+    const aKey = admissionKey(cur?.admitDate);
+    if (!aKey) continue;
+    slotToPatient[sk] = { patientId: cur.patientId, admissionKey: aKey };
+  }
+
+  // 해당 날짜에 실제로 수행된 (patientId, admissionKey, treatmentId) 수집
   const performed = new Set();
+  const addPerformed = (rawSlotKey, treatmentId) => {
+    const sk = resolveSlotKey(rawSlotKey, slots);
+    if (!sk) return;
+    const pa = slotToPatient[sk];
+    if (!pa) return;
+    performed.add(`${pa.patientId}|${pa.admissionKey}|${treatmentId}`);
+  };
+
   for (const roomId of ['th1', 'th2']) {
     const daySlots = phys[roomId]?.[dayIdx] || {};
     for (const time of Object.keys(daySlots)) {
       const entry = daySlots[time];
       if (!entry?.slotKey || !entry?.treatmentId) continue;
-      const sk = resolveSlotKey(entry.slotKey, slots);
-      if (!sk) continue;
-      performed.add(`${sk}|${entry.treatmentId}`);
+      addPerformed(entry.slotKey, entry.treatmentId);
     }
   }
   const hyperDay = hyper.hyperthermia?.[dayIdx] || {};
   for (const time of Object.keys(hyperDay)) {
     const entry = hyperDay[time];
     if (!entry?.slotKey) continue;
-    const sk = resolveSlotKey(entry.slotKey, slots);
-    if (!sk) continue;
-    performed.add(`${sk}|hyperthermia`);
+    addPerformed(entry.slotKey, 'hyperthermia');
   }
 
-  // 치료계획 순회
+  // 치료계획 순회 (patient-keyed)
   const fbUpdates = {};
   let removedCount = 0, restoredCount = 0;
 
-  for (const sk of Object.keys(allPlans)) {
-    const raw = allPlans[sk]?.[monthKey]?.[dayStr];
-    if (!raw) continue;
-    const items = Array.isArray(raw) ? raw : Object.values(raw);
-    if (!items.length) continue;
+  for (const [pid, byAdmission] of Object.entries(allPlans)) {
+    for (const [aKey, byMonth] of Object.entries(byAdmission || {})) {
+      const raw = byMonth?.[monthKey]?.[dayStr];
+      if (!raw) continue;
+      const items = Array.isArray(raw) ? raw : Object.values(raw);
+      if (!items.length) continue;
 
-    let changed = false;
-    const newItems = items.map(item => {
-      if (!item || !item.id) return item;
-      if (!ROOM_ITEMS.has(item.id)) return item;
+      let changed = false;
+      const newItems = items.map(item => {
+        if (!item || !item.id) return item;
+        if (!ROOM_ITEMS.has(item.id)) return item;
 
-      const key = `${sk}|${item.id}`;
-      if (performed.has(key)) {
-        // 실시행 됨 → stale room:"removed" 제거
-        if (item.room === 'removed') {
-          const { room, ...rest } = item;
+        const key = `${pid}|${aKey}|${item.id}`;
+        if (performed.has(key)) {
+          // 실시행 됨 → stale room:"removed" 제거
+          if (item.room === 'removed') {
+            const { room, ...rest } = item;
+            changed = true;
+            restoredCount++;
+            return rest;
+          }
+          return item;
+        } else {
+          // 미반영 → room:"removed" 태그
+          if (item.room === 'removed') return item;
           changed = true;
-          restoredCount++;
-          return rest;
+          removedCount++;
+          return { ...item, room: 'removed' };
         }
-        return item;
-      } else {
-        // 미반영 → room:"removed" 태그
-        if (item.room === 'removed') return item;
-        changed = true;
-        removedCount++;
-        return { ...item, room: 'removed' };
+      });
+      if (changed) {
+        fbUpdates[`treatmentPlansV2/${pid}/${aKey}/${monthKey}/${dayStr}`] = newItems;
       }
-    });
-    if (changed) {
-      fbUpdates[`treatmentPlans/${sk}/${monthKey}/${dayStr}`] = newItems;
     }
   }
 
@@ -173,7 +203,7 @@ async function main() {
 
   const [slotsSnap, plansSnap] = await Promise.all([
     db.ref('slots').once('value'),
-    db.ref('treatmentPlans').once('value'),
+    db.ref('treatmentPlansV2').once('value'),
   ]);
   const slots = slotsSnap.val() || {};
   const plans = plansSnap.val() || {};
