@@ -822,11 +822,8 @@ export default function TreatmentPage() {
             const isDisch   = dischargeDate && dateOnly(dischargeDate).getTime()===dateOnly(thisDate).getTime();
             const admitParsed = parseDateStr(admitDate);
             const isAdmit   = admitParsed && dateOnly(admitParsed).getTime()===dateOnly(thisDate).getTime();
-            const isBeforeAdmit = admitParsed && dateOnly(thisDate) < dateOnly(admitParsed);
-            // 입원일 이전 데이터는 표시만 비움 (과거 slotKey 시대에 섞여 들어온 잔존물 가능성).
-            // 셀 자체는 일반 빈 셀로 보이게 — 흐림 처리는 하지 않음.
-            const items     = isBeforeAdmit ? [] : (monthData[String(day)] || []);
-            const total     = isBeforeAdmit ? 0 : dayTotal(day);
+            const items     = monthData[String(day)] || [];
+            const total     = dayTotal(day);
             const isCopied  = copiedDay && copiedDay.monthKey===monthKey && copiedDay.day===day;
             const wkNum     = admitDate ? getWeekNumber(admitDate, thisDate) : null;
 
@@ -1249,7 +1246,6 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                   const thisDate = new Date(year, month, day);
                   const isAdmit = admitParsed && dateOnly(admitParsed).getTime()===dateOnly(thisDate).getTime();
                   const isDisch = dischargeParsed && dateOnly(dischargeParsed).getTime()===dateOnly(thisDate).getTime();
-                  const isBeforeAdmit = admitParsed && dateOnly(thisDate) < dateOnly(admitParsed);
                   return (
                     <td key={di} style={{ border:"1px solid #ddd", verticalAlign:"top",
                       padding:"3px 5px", background: isAdmit?"#f0fdf4":isDisch?"#fffbeb":"#fff" }}>
@@ -1260,8 +1256,8 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                         {isAdmit && <span style={{ fontSize:Math.max(10,dayNumFontPx*0.5), fontWeight:700, color:"#16a34a", marginLeft:4 }}>입원</span>}
                         {isDisch && <span style={{ fontSize:Math.max(10,dayNumFontPx*0.5), fontWeight:700, color:"#d97706", marginLeft:4 }}>퇴원</span>}
                       </div>
-                      {/* 치료 항목 — 입원 전 제외(마이그레이션 잔존물), EMR 삭제 항목 제외, EMR 배지 미표시 */}
-                      {!isBeforeAdmit && items.filter(e => e.emr !== "removed" && e.room !== "removed").map(e => {
+                      {/* 치료 항목 — EMR 삭제 항목 제외, EMR 배지 미표시 */}
+                      {items.filter(e => e.emr !== "removed" && e.room !== "removed").map(e => {
                         const item = allItems.find(i => i.id === e.id);
                         if (!item) return null;
                         const grp = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === e.id));
