@@ -732,7 +732,7 @@ export default function HospitalWardManager() {
     const name = cancelledRes?.name;
     // 예약 취소: consultation 먼저(reservedSlot=null) → slots 나중. auto-restore 레이스 방지.
     if (cancelledRes) {
-      await syncConsultationOnSlotChange(slotKey, name, cancelledRes.consultationId, null);
+      await syncConsultationOnSlotChange(slotKey, name, cancelledRes.consultationId, null, undefined, 'cancel');
     }
     const delName = (name||'').trim().toLowerCase();
     const reservations = (oldSlot.reservations || []).filter((r, i) => {

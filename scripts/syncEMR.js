@@ -732,6 +732,26 @@ async function main() {
     console.log(`  🚪 퇴원 처리: ${slotKey} (${cur.name})`);
     slotUpdates[`slots/${slotKey}/current`] = null;
     clearCount++;
+
+    // 연결된 consultations 도 "입원완료" + reservedSlot=null 로 갱신
+    // (이 작업을 누락하면 consultation.js auto-restore 가 예약을 되돌리고
+    //  index.js 자동승격이 다시 current 로 올려 유령 환자가 생김)
+    const normName = (n) => (n || '').replace(/^신\)\s*/, '').replace(/\s/g, '').trim().toLowerCase();
+    const curCid = cur.consultationId;
+    const curNameN = normName(cur.name);
+    let cleared = 0;
+    for (const [conId, con] of Object.entries(conRaw)) {
+      if (!con) continue;
+      if (con.status === '취소' || con.status === '입원완료') continue;
+      const byId   = curCid && conId === curCid;
+      const bySlot = con.reservedSlot === slotKey && normName(con.name) === curNameN;
+      if (byId || bySlot) {
+        slotUpdates[`consultations/${conId}/status`]       = '입원완료';
+        slotUpdates[`consultations/${conId}/reservedSlot`] = null;
+        cleared++;
+      }
+    }
+    if (cleared > 0) console.log(`    ↳ 상담일지 ${cleared}건 "입원완료" 처리 (auto-restore 차단)`);
   }
 
   // 신규 입원 감지: EMR에 있지만 Firebase에 없거나 다른 환자가 있는 슬롯

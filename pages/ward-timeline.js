@@ -832,9 +832,10 @@ export default function WardTimeline() {
     try {
       const ns = JSON.parse(JSON.stringify(slots));
       if (mode === "current") {
-        // 퇴원 기록을 dailyBoards에 저장
+        // 퇴원: consultation 상태를 "입원완료"로 먼저 (auto-restore 차단), dailyBoards 기록, current 비우기
         const cur = slots[slotKey]?.current;
         if (cur?.name) {
+          await syncConsultationOnSlotChange(slotKey, cur.name, cur.consultationId, null, undefined, 'discharge');
           const d = cur.discharge;
           const disDate = d?.match(/^(\d{4})-(\d{2})-(\d{2})/) ? d.split("T")[0]
             : d?.match(/(\d{1,2})\/(\d{1,2})/) ? `${new Date().getFullYear()}-${d.match(/(\d{1,2})\/(\d{1,2})/)[1].padStart(2,"0")}-${d.match(/(\d{1,2})\/(\d{1,2})/)[2].padStart(2,"0")}` : null;
@@ -843,8 +844,8 @@ export default function WardTimeline() {
         ns[slotKey].current = null;
         await saveSlots(ns, [slotKey]);
       } else {
-        // 예약 삭제: consultation 먼저(reservedSlot=null) → slots 나중. auto-restore 레이스 방지.
-        await syncConsultationOnSlotChange(slotKey, data.name, data.consultationId, null);
+        // 예약 취소: consultation 먼저(reservedSlot=null, status=상담중) → slots 나중. auto-restore 레이스 방지.
+        await syncConsultationOnSlotChange(slotKey, data.name, data.consultationId, null, undefined, 'cancel');
         ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
         await saveSlots(ns, [slotKey]);
       }
@@ -888,6 +889,8 @@ export default function WardTimeline() {
     if (bar.type==="current") {
       const cur = slots[slotKey]?.current;
       if (cur?.name) {
+        // 퇴원: consultation 상태 "입원완료" (auto-restore 차단)
+        await syncConsultationOnSlotChange(slotKey, cur.name, cur.consultationId, null, undefined, 'discharge');
         const d = cur.discharge;
         const disDate = d?.match(/^(\d{4})-(\d{2})-(\d{2})/) ? d.split("T")[0]
           : d?.match(/(\d{1,2})\/(\d{1,2})/) ? `${new Date().getFullYear()}-${d.match(/(\d{1,2})\/(\d{1,2})/)[1].padStart(2,"0")}-${d.match(/(\d{1,2})\/(\d{1,2})/)[2].padStart(2,"0")}` : null;
@@ -896,8 +899,8 @@ export default function WardTimeline() {
       ns[slotKey].current = null;
       await saveSlots(ns, [slotKey]);
     } else {
-      // 예약 삭제: consultation 먼저(reservedSlot=null) → slots 나중. auto-restore 레이스 방지.
-      await syncConsultationOnSlotChange(slotKey, bar.person.name, bar.person.consultationId, null);
+      // 예약 취소: consultation 먼저(reservedSlot=null, status=상담중) → slots 나중. auto-restore 레이스 방지.
+      await syncConsultationOnSlotChange(slotKey, bar.person.name, bar.person.consultationId, null, undefined, 'cancel');
       ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==bar.resIndex);
       await saveSlots(ns, [slotKey]);
     }

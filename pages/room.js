@@ -623,9 +623,10 @@ export default function RoomPage() {
             const sk=editingSlot.slotKey;
             const newSlots=JSON.parse(JSON.stringify(slots));
             if(editingSlot.mode==="current") {
-              // 퇴원 기록을 dailyBoards에 저장
+              // 퇴원: consultation 상태 "입원완료" (auto-restore 차단) + dailyBoards 기록
               const cur = slots[sk]?.current;
               if (cur?.name) {
+                await syncConsultationOnSlotChange(sk, cur.name, cur.consultationId, null, undefined, 'discharge');
                 const d = cur.discharge;
                 const disDate = d?.match(/^(\d{4})-(\d{2})-(\d{2})/) ? d.split("T")[0]
                   : d?.match(/(\d{1,2})\/(\d{1,2})/) ? `${new Date().getFullYear()}-${d.match(/(\d{1,2})\/(\d{1,2})/)[1].padStart(2,"0")}-${d.match(/(\d{1,2})\/(\d{1,2})/)[2].padStart(2,"0")}` : null;
@@ -634,8 +635,8 @@ export default function RoomPage() {
               newSlots[sk].current=null;
               await saveSlots(newSlots, [sk]);
             } else {
-              // 예약 삭제: consultation 먼저(reservedSlot=null) → slots 나중. auto-restore 레이스 방지.
-              await syncConsultationOnSlotChange(sk, editingSlot.data.name, editingSlot.data.consultationId, null);
+              // 예약 취소: consultation 먼저(reservedSlot=null, status=상담중) → slots 나중. auto-restore 레이스 방지.
+              await syncConsultationOnSlotChange(sk, editingSlot.data.name, editingSlot.data.consultationId, null, undefined, 'cancel');
               const delName = (editingSlot.data.name||'').trim().toLowerCase();
               newSlots[sk].reservations=newSlots[sk].reservations.filter((r,i)=> {
                 if (i === editingSlot.resIndex) return false;
