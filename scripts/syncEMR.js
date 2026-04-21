@@ -121,19 +121,17 @@ async function cleanupDuplicates(db) {
   console.log('─'.repeat(50));
   console.log('[0] 차트번호 중복 정리 시작');
 
-  const [pSnap, phoneSnap, chartSnap, sSnap, cSnap, pendSnap] = await Promise.all([
+  const [pSnap, phoneSnap, chartSnap, sSnap, cSnap] = await Promise.all([
     db.ref('patients').once('value'),
     db.ref('patientByPhone').once('value'),
     db.ref('patientByChartNo').once('value'),
     db.ref('slots').once('value'),
     db.ref('consultations').once('value'),
-    db.ref('pendingChanges').once('value'),
   ]);
 
   const pRaw    = pSnap.val()    || {};
   const slots   = sSnap.val()    || {};
   const conRaw  = cSnap.val()    || {};
-  const pending = pendSnap.val() || {};
 
   // 환자 레코드 수집 (슬래시 경로로 중첩 저장된 레코드 포함)
   const allPatients = [];
@@ -252,13 +250,6 @@ async function cleanupDuplicates(db) {
   for (const [key, con] of Object.entries(conRaw)) {
     if (con?.patientId && idRemap[con.patientId]) {
       updates[`consultations/${key}/patientId`] = idRemap[con.patientId];
-    }
-  }
-
-  // 승인대기 patientId 참조 갱신
-  for (const [key, item] of Object.entries(pending)) {
-    if (item?.patientId && idRemap[item.patientId]) {
-      updates[`pendingChanges/${key}/patientId`] = idRemap[item.patientId];
     }
   }
 

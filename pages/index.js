@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set, get, update } from "firebase/database";
-import { db, auth } from "../lib/firebaseConfig";
+import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 import PatientSearchModal from "../components/PatientSearchModal";
 import { searchPatientsByName } from "../lib/patientSearch";
@@ -134,36 +134,17 @@ const INIT_SLOTS = {
     reservations: [{ name: "김예약", admitDate: "3/18", discharge: "3/25", note: "예약 입원 샘플", scheduleAlert: false, bedPosition: 2 }] },
 };
 
-async function analyzeMessengerText(text) {
-  const token = await auth.currentUser?.getIdToken();
-  const res = await fetch("/api/analyze", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ text }),
-  });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-  return data.result;
-}
-
 // ════════════════════════════════════════════════════════════════════════════════
 export default function HospitalWardManager() {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { slots, setSlots, consultations, logs, setLogs, pendingCount, emrSyncTime, saveSlots, addLog, recordDischarge, cleanupDailyBoards, syncConsultationOnSlotChange } = useWardData();
+  const { slots, setSlots, consultations, logs, setLogs, emrSyncTime, saveSlots, addLog, recordDischarge, cleanupDailyBoards, syncConsultationOnSlotChange } = useWardData();
   const [view,           setView]           = useState("ward");
   const [selectedRoom,   setSelectedRoom]   = useState(null);
   const [editingSlot,    setEditingSlot]    = useState(null);
   const [addingTo,       setAddingTo]       = useState(null);
   const [patientPickFor, setPatientPickFor] = useState(null); // { slotKey, mode } — 환자 검색 선행
   const [movingPatient,  setMovingPatient]  = useState(null); // { slotKey, mode, data, resIndex }
-  const [uploading,      setUploading]      = useState(false);
-  const [uploadResult,   setUploadResult]   = useState(null);
-  const [jsonPasteOpen,  setJsonPasteOpen]  = useState(false);
-  const [jsonPasteText,  setJsonPasteText]  = useState("");
   const [lastSync,       setLastSync]       = useState(null);
   const [syncing,        setSyncing]        = useState(false);
   const [previewDate,    setPreviewDate]    = useState(null);
@@ -172,7 +153,6 @@ export default function HospitalWardManager() {
   // 빈 병상 하이라이트
   const [highlightEmpty, setHighlightEmpty] = useState(false);
   const [emptySlotIdx,   setEmptySlotIdx]   = useState(0); // 현재 포커스된 빈 병상 인덱스
-  const fileInputRef = useRef();
 
   // ── 환자 검색 ────────────────────────────────────────────────────────────
   const [highlightSlotKey, setHighlightSlotKey] = useState(null);
@@ -183,7 +163,7 @@ export default function HospitalWardManager() {
   const isPreview = previewDate !== null;
   const viewDate  = previewDate || todayDate();
 
-  // slots, consultations, logs, pendingCount, emrSyncTime → WardDataContext에서 공급
+  // slots, consultations, logs, emrSyncTime → WardDataContext에서 공급
   useEffect(() => {
     if (Object.keys(slots).length > 0) { setLastSync(new Date()); setSyncing(false); }
   }, [slots]);
@@ -768,41 +748,6 @@ export default function HospitalWardManager() {
     setEditingSlot(null);
   };
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    setUploading(true); setUploadResult(null);
-    try { setUploadResult({ results: await analyzeMessengerText(await file.text()) }); }
-    catch (err) { setUploadResult({ error: "분석 실패: " + err.message }); }
-    setUploading(false); e.target.value = "";
-  };
-
-  const applyAnalysis = async (results) => {
-    const newSlots = { ...slots }; let applied = 0;
-    const changed = new Set();
-    results.forEach(r => {
-      if (!r.room || !r.name) return;
-      let cap = 4;
-      for (const ward of Object.values(WARD_STRUCTURE)) { const rm = ward.rooms.find(x => x.id === r.room); if (rm) { cap = rm.capacity; break; } }
-      for (let i = 1; i <= cap; i++) {
-        const key = `${r.room}-${i}`;
-        if (newSlots[key]?.current?.name === r.name) {
-          newSlots[key] = { ...newSlots[key], current: { ...newSlots[key].current, discharge: r.discharge, note: r.note, scheduleAlert: r.scheduleAlert } };
-          changed.add(key); applied++; return;
-        }
-      }
-      for (let i = 1; i <= cap; i++) {
-        const key = `${r.room}-${i}`;
-        if (!newSlots[key]?.current) {
-          newSlots[key] = { current: { name: r.name, bedPosition: i, discharge: r.discharge || "미정", note: r.note || "", scheduleAlert: r.scheduleAlert || false }, reservations: [] };
-          changed.add(key); applied++; return;
-        }
-      }
-    });
-    await saveSlots(newSlots, [...changed]);
-    await addLog({ type: "upload", msg: `메신저 분석 완료: ${applied}명 반영` });
-    setUploadResult(null);
-  };
-
   const currentEmptySlotKey = highlightEmpty && emptySlots.length > 0 ? emptySlots[emptySlotIdx % emptySlots.length]?.slotKey : null;
 
   if (syncing && Object.keys(slots).length === 0) return (
@@ -872,18 +817,6 @@ export default function HospitalWardManager() {
       </div>
 
 
-      {/* 업로드 바 — 일시 숨김 */}
-      {false && !isPreview && (
-        <div style={S.uploadBar}>
-          <span style={S.uploadLabel}>📩 메신저 파일 분석</span>
-          <input ref={fileInputRef} type="file" accept=".txt" style={{ display:"none" }} onChange={handleFileUpload} />
-          <button style={S.btnUpload} onClick={() => fileInputRef.current.click()} disabled={uploading}>{uploading ? "⏳ 분석 중...":"📂 파일 업로드"}</button>
-          <button style={{ ...S.btnUpload, background:"#7c3aed" }} onClick={() => setJsonPasteOpen(true)}>📋 JSON 붙여넣기</button>
-          {uploadResult?.error && <span style={{ color:"#dc2626", fontSize:13 }}>❌ {uploadResult.error}</span>}
-        </div>
-      )}
-      {false && uploadResult?.results && <AnalysisPreview results={uploadResult.results} onApply={() => applyAnalysis(uploadResult.results)} onDiscard={() => setUploadResult(null)} />}
-
       {/* 본문 */}
       <main style={S.main}>
         {view === "ward" && (
@@ -950,38 +883,6 @@ export default function HospitalWardManager() {
           onSave={data => saveReservation(addingTo.slotKey, data, undefined)} onClose={() => setAddingTo(null)} />
       )}
 
-      {/* JSON 붙여넣기 모달 */}
-      {jsonPasteOpen && (
-        <div style={S.modalOverlay}>
-          <div style={{ ...S.modal, maxWidth:540 }}>
-            <div style={{ ...S.modalTitle, color:"#7c3aed" }}>📋 Claude.ai JSON 붙여넣기</div>
-            <div style={{ fontSize:13, color:"#64748b", marginBottom:12, lineHeight:1.7 }}>
-              1. <a href="https://claude.ai" target="_blank" rel="noreferrer" style={{ color:"#7c3aed" }}>claude.ai</a>에서 아래 프롬프트와 메신저 내용을 함께 붙여넣으세요.<br/>
-              2. 반환된 JSON을 아래에 붙여넣고 "반영하기" 클릭.
-            </div>
-            <div style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, padding:12, fontSize:12, color:"#475569", marginBottom:12, lineHeight:1.8, userSelect:"all" }}>
-              아래 병원 메신저 내용 분석해서 JSON만 출력해줘. 다른 말 없이 JSON만.<br/>
-              병실: 2병동(201~206), 3병동(301~306), 5병동(501~506), 6병동(601~603)<br/>
-              형식: [{"{"}"room":"201","name":"홍길동","discharge":"3/20","note":"요약","scheduleAlert":false{"}"}]<br/>
-              메신저 내용: (여기에 붙여넣기)
-            </div>
-            <label style={S.label}>Claude가 반환한 JSON</label>
-            <textarea style={{ ...S.input, height:160, resize:"vertical", fontFamily:"monospace", fontSize:12 }}
-              value={jsonPasteText} onChange={e => setJsonPasteText(e.target.value)}
-              placeholder={'[{"room":"201","name":"홍길동","discharge":"3/20","note":"페인2회","scheduleAlert":false}]'} />
-            <div style={S.modalBtns}>
-              <button style={{ ...S.btnModal, background:"#f1f5f9", color:"#64748b" }} onClick={() => { setJsonPasteOpen(false); setJsonPasteText(""); }}>취소</button>
-              <button style={{ ...S.btnModal, background:"#7c3aed", color:"#fff" }} onClick={() => {
-                try {
-                  const results = JSON.parse(jsonPasteText.replace(/```json|```/g, "").trim());
-                  if (!Array.isArray(results)) throw new Error("배열 형식이 아닙니다.");
-                  setUploadResult({ results }); setJsonPasteOpen(false); setJsonPasteText("");
-                } catch(e) { alert("JSON 오류: " + e.message); }
-              }}>반영하기</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1437,27 +1338,6 @@ function PatientModal({ title, data, mode, isNew, onSave, onDelete, onClose, all
             취소
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function AnalysisPreview({ results, onApply, onDiscard }) {
-  return (
-    <div style={S.analysisBar}>
-      <div style={S.analysisTitle}>🤖 AI 분석 결과 — {results.length}명 감지됨</div>
-      <div style={S.analysisList}>
-        {results.map((r, i) => (
-          <div key={i} style={S.analysisItem}>
-            <strong>{r.room}호 {r.name}</strong><span style={{ color:"#64748b", marginLeft:8 }}>퇴원: {r.discharge}</span>
-            {r.scheduleAlert && <span style={{ color:"#f59e0b", marginLeft:6 }}>⚠</span>}
-            <div style={{ fontSize:12, color:"#94a3b8" }}>{r.note}</div>
-          </div>
-        ))}
-      </div>
-      <div style={S.analysisBtns}>
-        <button style={{ ...S.btnModal, background:"#dcfce7", color:"#16a34a" }} onClick={onApply}>✓ 반영</button>
-        <button style={{ ...S.btnModal, background:"#f1f5f9", color:"#64748b" }} onClick={onDiscard}>취소</button>
       </div>
     </div>
   );

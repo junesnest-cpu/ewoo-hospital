@@ -5,8 +5,11 @@
 > **작성일**: 2026-04-20
 
 ## 목표
-이미 토큰 검증이 적용된 2개 엔드포인트(`/api/analyze`, `/api/generate`) 외에,
-나머지 **민감 엔드포인트 전부**에 Firebase ID Token 검증 미들웨어를 적용한다.
+이미 토큰 검증이 적용된 `/api/generate` 외에, 나머지 **민감 엔드포인트 전부**에
+Firebase ID Token 검증 미들웨어를 적용한다.
+
+> 참고: `/api/analyze`·`/api/naver-works-webhook`·`pages/history.js` 는 2026-04-21
+> AI 자동 입력 기능 철회와 함께 제거됨. 관련 작업 항목 취소선 처리.
 
 ## 대상 엔드포인트
 
@@ -22,8 +25,8 @@
 - [ ] `/api/auth/migrate` — 이미 이메일+비밀번호로 자체 보호, 우선순위 낮음
 
 ### ewoo-hospital
-- [x] `/api/analyze` — 완료 (2026-04-20, commit `4b1fed5`)
-- [x] `/api/naver-works-webhook` — 시그니처 audit 모드 완료 (同 커밋)
+- ~~`/api/analyze`~~ — 엔드포인트 삭제 (2026-04-21, AI 자동입력 기능 철회)
+- ~~`/api/naver-works-webhook`~~ — 엔드포인트 삭제 (同 이유)
 - [ ] `/api/naver-works-send` — 봇 발송 (토큰 검증 추가)
 - [ ] `/api/inquiry` — **예외 유지** (외부 공개 폼, reCAPTCHA 등 별도 보호 권장)
 
@@ -72,7 +75,7 @@ export async function apiFetch(url, opts = {}) {
 또는 환경변수 `AUTH_ENFORCE=false`로 즉시 관찰 모드 전환.
 
 ## 사전 체크리스트 (토요일 시작 전)
-- [ ] 수요일(04-22)부터 /api/analyze, /api/generate 배포본 사용자 피드백 수집
+- [ ] 수요일(04-22)부터 /api/generate 배포본 사용자 피드백 수집
 - [ ] 네이버 웍스 봇 담당자에게 `NAVER_WORKS_BOT_SECRET` 환경변수 Vercel에 등록 요청 (clinical/hospital 프로젝트 모두)
 - [ ] 토요일 당일 병동·임상 사용자 알림 — "오전 점검" 공지
 

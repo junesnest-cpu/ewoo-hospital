@@ -97,13 +97,12 @@
 - `treatmentPlansV2/{patientId}/{admissionKey}/{YYYY-MM}/{day}`: 치료 계획 (patient-keyed, 2026-04-21 전환)
 - `weeklyPlansV2/{patientId}/{admissionKey}`: 주N회 치료 계획
 - `admissionPlansV2/{patientId}/{admissionKey}`: 입원 기간 총 N회 치료 계획 (주N회보다 우선 적용, 5종 한정)
-- `treatmentPlans/{slotKey}/...` (구): 2026-04-21 이전 스키마. history.js 웹훅 승인 경로에서 아직 쓰임 → syncEMR Phase 2에서 입원 감지 시 V2로 자동 이관. 마이그레이션 완료 후 제거 예정.
+- `treatmentPlans/{slotKey}/...` (구): 2026-04-21 이전 스키마. patient-keyed V2 전환 후 백업(`_backup_2026-04-21_1753/`)만 보존. 이후 제거 예정.
 - `admissionKey`: 입원일을 `YYYY-MM-DD`로 정규화한 값. 재입원 시 에피소드 분리용.
 - `monthlyBoards/{YYYY-MM}/{YYYY-MM-DD}`: 월간 입퇴원 기록
 - `dailyBoards/{YYYY-MM-DD}`: 일일 현황판
 - `physicalSchedule/`, `hyperthermiaSchedule/`: 치료실 일정
 - `logs`: 변경 이력 (최대 200건)
-- `pendingChanges/{id}`: 웹훅 대기 변경사항
 - `settings`: 치료사 이름 등
 
 ## 병동 구조 (WARD_ROOMS)
@@ -124,11 +123,9 @@
 - `pages/ward-timeline.js` - 병동 타임라인
 - `pages/patients.js` - 환자 DB + 데이터 진단
 - `pages/settings.js` - 설정
-- `pages/history.js` - 웹훅 승인 대기 UI
 
 ## API 엔드포인트
-- `POST /api/analyze` - Claude로 메시지 텍스트 분석
-- `POST /api/naver-works-webhook` - 네이버 웍스 봇 웹훅 수신
+- `POST /api/naver-works-send` - 네이버 웍스 봇으로 공지 메시지 단방향 발송 (치료계획 입력 완료 알림 등)
 - `POST /api/inquiry` - 외부 웹사이트 문의 접수
 
 ## 주요 규칙
