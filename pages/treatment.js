@@ -794,14 +794,15 @@ export default function TreatmentPage() {
             }
             if (!day) { _r.push(<div key={`e${idx}`} style={TS.emptyCell}>{_printPlan}</div>); return _r; }
             const dow       = (firstDow + day - 1) % 7;
-            const items     = monthData[String(day)] || [];
-            const total     = dayTotal(day);
             const isToday   = year===today.getFullYear() && month===today.getMonth() && day===today.getDate();
             const thisDate  = new Date(year, month, day);
             const isDisch   = dischargeDate && dateOnly(dischargeDate).getTime()===dateOnly(thisDate).getTime();
             const admitParsed = parseDateStr(admitDate);
             const isAdmit   = admitParsed && dateOnly(admitParsed).getTime()===dateOnly(thisDate).getTime();
             const isBeforeAdmit = admitParsed && dateOnly(thisDate) < dateOnly(admitParsed);
+            // 입원일 이전에는 이전 환자의 잔존 데이터를 표시하지 않음 (같은 slotKey 재사용)
+            const items     = isBeforeAdmit ? [] : (monthData[String(day)] || []);
+            const total     = isBeforeAdmit ? 0 : dayTotal(day);
             const isCopied  = copiedDay && copiedDay.monthKey===monthKey && copiedDay.day===day;
             const wkNum     = admitDate ? getWeekNumber(admitDate, thisDate) : null;
 
