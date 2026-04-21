@@ -642,6 +642,25 @@ async function main() {
       }
     }
 
+    // 예약·fbCurrent에서 퇴원일을 못 찾은 경우: consultations에서 fallback 검색
+    // (예약이 다른 slot에 있었거나, 이미 정리됐거나, 이름 정규화 mismatch 대비)
+    if (!newCurrent.discharge) {
+      const emrNorm = (emrData.name || '').trim().toLowerCase();
+      for (const c of Object.values(conRaw)) {
+        if (!c || !c.dischargeDate || c.status === '취소') continue;
+        const chartMatch   = c.chartNo && emrData.chartNo && c.chartNo === emrData.chartNo;
+        const pidMatch     = c.patientId && slotPatientId && c.patientId === slotPatientId;
+        const slotNameMatch = c.reservedSlot === slotKey &&
+          (c.name || '').trim().toLowerCase() === emrNorm;
+        if (chartMatch || pidMatch || slotNameMatch) {
+          newCurrent.discharge = c.dischargeDate;
+          if (!newCurrent.dischargeTime && c.dischargeTime) newCurrent.dischargeTime = c.dischargeTime;
+          console.log(`  🔗 consultations에서 퇴원일 복원: ${slotKey} ${emrData.name} → ${c.dischargeDate}`);
+          break;
+        }
+      }
+    }
+
     slotUpdates[`slots/${slotKey}/current`] = newCurrent;
     setCount++;
   }
