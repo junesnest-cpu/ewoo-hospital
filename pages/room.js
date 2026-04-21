@@ -632,24 +632,22 @@ export default function RoomPage() {
                 await recordDischarge(cur.name, sk, disDate);
               }
               newSlots[sk].current=null;
+              await saveSlots(newSlots, [sk]);
             } else {
+              // 예약 삭제: consultation 먼저(reservedSlot=null) → slots 나중. auto-restore 레이스 방지.
+              await syncConsultationOnSlotChange(sk, editingSlot.data.name, editingSlot.data.consultationId, null);
               const delName = (editingSlot.data.name||'').trim().toLowerCase();
               newSlots[sk].reservations=newSlots[sk].reservations.filter((r,i)=> {
                 if (i === editingSlot.resIndex) return false;
                 if (delName && (r.name||'').trim().toLowerCase() === delName) return false;
                 return true;
               });
+              await saveSlots(newSlots, [sk]);
             }
-            await saveSlots(newSlots, [sk]);
-            // 삭제 시 dailyBoards 항목 정리
             if (editingSlot.data) {
               await cleanupDailyBoards(editingSlot.data.name, editingSlot.data, {});
             }
             await addLog({action:"삭제",slotKey:sk,name:editingSlot.data.name});
-            // 예약 삭제 시 상담일지 연동
-            if (editingSlot.mode === "reservation") {
-              await syncConsultationOnSlotChange(sk, editingSlot.data.name, editingSlot.data.consultationId, null);
-            }
             setEditingSlot(null);
           }:undefined}
         />

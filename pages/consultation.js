@@ -376,14 +376,18 @@ export default function ConsultationPage() {
       const prev = consultations[editId] || {};
       const reservedSlot = prev.reservedSlot;
       // 입원일 삭제 시 병상 배정 제거
+      // 쓰기 순서: consultation 먼저 (reservedSlot=null) → slots 나중.
+      // 반대로 하면 slots 변경을 본 auto-restore(line 247) 가 아직 reservedSlot이 남은
+      // consultation 상태를 보고 예약을 되돌려 놓는 레이스가 생김.
       if (reservedSlot && !data.admitDate) {
+        data.reservedSlot = null;
+        data.status = "상담중";
+        await set(ref(db,`consultations/${editId}`), {...prev, ...data});
         const slotData = slots[reservedSlot] || { current: null, reservations: [] };
         const newReservations = (slotData.reservations||[]).filter(r =>
           r.consultationId ? r.consultationId !== editId : r.name !== prev.name
         );
         await set(ref(db,`slots/${reservedSlot}`), {...slotData, reservations: newReservations});
-        data.reservedSlot = null;
-        data.status = "상담중";
       }
       // 입원일·퇴원일 변경 시 병상 예약 데이터 동기화
       else if (reservedSlot && (data.admitDate !== prev.admitDate || data.dischargeDate !== prev.dischargeDate)) {
@@ -398,8 +402,11 @@ export default function ConsultationPage() {
           };
         });
         await set(ref(db,`slots/${reservedSlot}`), {...slotData, reservations: newReservations});
+        await set(ref(db,`consultations/${editId}`), {...prev, ...data});
       }
-      await set(ref(db,`consultations/${editId}`), {...prev, ...data});
+      else {
+        await set(ref(db,`consultations/${editId}`), {...prev, ...data});
+      }
     } else {
       data.createdAt = today();
       data.status = data.status || "상담중";
@@ -412,6 +419,8 @@ export default function ConsultationPage() {
     if (!confirm("이 상담 기록을 삭제하시겠습니까?")) return;
     const target = consultations[id] || {};
     const reservedSlot = target.reservedSlot;
+    // 삭제 순서: consultation 먼저 → slots 나중. auto-restore 레이스 방지.
+    await remove(ref(db,`consultations/${id}`));
     if (reservedSlot) {
       const slotData = slots[reservedSlot] || { current: null, reservations: [] };
       const newReservations = (slotData.reservations||[]).filter(r =>
@@ -419,7 +428,6 @@ export default function ConsultationPage() {
       );
       await set(ref(db,`slots/${reservedSlot}`), {...slotData, reservations: newReservations});
     }
-    await remove(ref(db,`consultations/${id}`));
     setView("list"); setEditId(null);
   };
 
