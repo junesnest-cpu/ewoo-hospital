@@ -822,10 +822,8 @@ export default function TreatmentPage() {
             const isDisch   = dischargeDate && dateOnly(dischargeDate).getTime()===dateOnly(thisDate).getTime();
             const admitParsed = parseDateStr(admitDate);
             const isAdmit   = admitParsed && dateOnly(admitParsed).getTime()===dateOnly(thisDate).getTime();
-            const isBeforeAdmit = admitParsed && dateOnly(thisDate) < dateOnly(admitParsed);
-            // 입원일 이전에는 이전 환자의 잔존 데이터를 표시하지 않음 (같은 slotKey 재사용)
-            const items     = isBeforeAdmit ? [] : (monthData[String(day)] || []);
-            const total     = isBeforeAdmit ? 0 : dayTotal(day);
+            const items     = monthData[String(day)] || [];
+            const total     = dayTotal(day);
             const isCopied  = copiedDay && copiedDay.monthKey===monthKey && copiedDay.day===day;
             const wkNum     = admitDate ? getWeekNumber(admitDate, thisDate) : null;
 
@@ -834,7 +832,6 @@ export default function TreatmentPage() {
                 style={{ ...TS.dayCell,
                   border: isAdmit ? "2px solid #16a34a" : isDisch ? "2px solid #f59e0b" : isToday ? "2px solid #0ea5e9" : isCopied ? "2px dashed #7c3aed" : "1px solid #e2e8f0",
                   background: isAdmit ? "#f0fdf4" : isDisch ? "#fffbeb" : items.length>0 ? "#fff" : "#fafafa",
-                  opacity: isBeforeAdmit ? 0.4 : 1,
                 }}
                 onClick={() => { setModalDay(day); setSelection({}); }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -1249,11 +1246,9 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                   const thisDate = new Date(year, month, day);
                   const isAdmit = admitParsed && dateOnly(admitParsed).getTime()===dateOnly(thisDate).getTime();
                   const isDisch = dischargeParsed && dateOnly(dischargeParsed).getTime()===dateOnly(thisDate).getTime();
-                  const isBeforeAdmit = admitParsed && dateOnly(thisDate) < dateOnly(admitParsed);
                   return (
                     <td key={di} style={{ border:"1px solid #ddd", verticalAlign:"top",
-                      padding:"3px 5px", background: isAdmit?"#f0fdf4":isDisch?"#fffbeb":"#fff",
-                      opacity: isBeforeAdmit?0.4:1 }}>
+                      padding:"3px 5px", background: isAdmit?"#f0fdf4":isDisch?"#fffbeb":"#fff" }}>
                       {/* 날짜 */}
                       <div style={{ fontSize:dayNumFontPx, fontWeight:900, marginBottom:2,
                         color: dow===0?"#cc0000":dow===6?"#0033cc":"#222" }}>
@@ -1261,8 +1256,8 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                         {isAdmit && <span style={{ fontSize:Math.max(10,dayNumFontPx*0.5), fontWeight:700, color:"#16a34a", marginLeft:4 }}>입원</span>}
                         {isDisch && <span style={{ fontSize:Math.max(10,dayNumFontPx*0.5), fontWeight:700, color:"#d97706", marginLeft:4 }}>퇴원</span>}
                       </div>
-                      {/* 치료 항목 — 입원 전 제외, EMR 삭제 항목 제외, EMR 배지 미표시 */}
-                      {!isBeforeAdmit && items.filter(e => e.emr !== "removed" && e.room !== "removed").map(e => {
+                      {/* 치료 항목 — EMR 삭제 항목 제외, EMR 배지 미표시 */}
+                      {items.filter(e => e.emr !== "removed" && e.room !== "removed").map(e => {
                         const item = allItems.find(i => i.id === e.id);
                         if (!item) return null;
                         const grp = TREATMENT_GROUPS.find(g => g.items.some(i => i.id === e.id));
