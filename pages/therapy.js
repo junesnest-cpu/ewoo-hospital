@@ -4,6 +4,7 @@ import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
 import PatientSearchModal from "../components/PatientSearchModal";
+import { admissionKey } from "../lib/planPaths";
 
 const DAYS  = ["월","화","수","목","금","토","일"];
 const TIMES = ["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"];
@@ -121,11 +122,11 @@ export default function TherapyPage() {
   useEffect(()=>{
     const u0=onValue(ref(db,"consultations"),        s=>setConsultations(s.val()||{}));
     const u1=onValue(ref(db,"slots"),               s=>{ const v=s.val()||{}; setSlots(v); slotsRef.current=v; });
-    const u2=onValue(ref(db,"treatmentPlans"),      s=>{ const v=s.val()||{}; setTreatPlans(v); treatRef.current=v; });
+    const u2=onValue(ref(db,"treatmentPlansV2"),    s=>{ const v=s.val()||{}; setTreatPlans(v); treatRef.current=v; });
     const u3=onValue(ref(db,"physicalSchedule"),    s=>{ const v=s.val()||{}; setPhysSched(v);  physRef.current=v; });
     const u4=onValue(ref(db,"hyperthermiaSchedule"),s=>{ const v=s.val()||{}; setHyperSched(v); hyperRef.current=v; });
     const u5=onValue(ref(db,"settings"),            s=>{ const v=s.val()||{}; setTherapists([v.therapist1||"치료사1",v.therapist2||"치료사2"]); });
-    const u6=onValue(ref(db,"weeklyPlans"),         s=>{ weeklyPlansRef.current=s.val()||{}; });
+    const u6=onValue(ref(db,"weeklyPlansV2"),       s=>{ weeklyPlansRef.current=s.val()||{}; });
     return ()=>{ u0();u1();u2();u3();u4();u5();u6(); };
   },[]);
 
@@ -177,7 +178,7 @@ export default function TherapyPage() {
     return Array.from(s).sort((a,b)=>timeVal(a)-timeVal(b));
   },[physSched,hyperSched,wk]);
 
-  // ── treatmentPlan 동기화 ──────────────────────────────────────────────────
+  // ── treatmentPlan 동기화 (patient-keyed: treatmentPlansV2/{pid}/{aKey}/{YYYY-MM}/{day}) ──
   const syncTreat=useCallback(async(slotKey,dayIdx,treatmentId,action)=>{
     if(!slotKey||slotKey.startsWith("pending_")||slotKey==="__pending__") return;
     // db_ 슬롯키 → 실제 병실 슬롯키로 변환
@@ -188,16 +189,23 @@ export default function TherapyPage() {
       if(!found) return; // 현재 입원 중이 아니면 스킵
       resolvedKey=found[0];
     }
+    // 실제 병상의 환자 식별 정보 추출
+    const cur = slotsRef.current[resolvedKey]?.current;
+    const pid = cur?.patientId;
+    const aKey = admissionKey(cur?.admitDate);
+    if(!pid||!aKey) return; // 환자 정보 없으면 스킵 (치료 계획 연결 불가)
+
     const date=addDays(weekStartRef.current,parseInt(dayIdx));
     const mKey=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
     const dKey=String(date.getDate());
     const tp=JSON.parse(JSON.stringify(treatRef.current));
-    if(!tp[resolvedKey])       tp[resolvedKey]={};
-    if(!tp[resolvedKey][mKey]) tp[resolvedKey][mKey]={};
-    const ex=tp[resolvedKey][mKey][dKey]||[];
-    tp[resolvedKey][mKey][dKey]=action==="add"?ex.some(e=>e.id===treatmentId)?ex:[...ex,{id:treatmentId,qty:"1"}]:ex.filter(e=>e.id!==treatmentId);
+    if(!tp[pid])            tp[pid]={};
+    if(!tp[pid][aKey])      tp[pid][aKey]={};
+    if(!tp[pid][aKey][mKey])tp[pid][aKey][mKey]={};
+    const ex=tp[pid][aKey][mKey][dKey]||[];
+    tp[pid][aKey][mKey][dKey]=action==="add"?ex.some(e=>e.id===treatmentId)?ex:[...ex,{id:treatmentId,qty:"1"}]:ex.filter(e=>e.id!==treatmentId);
     treatRef.current=tp; setTreatPlans(tp);
-    await set(ref(db,`treatmentPlans/${resolvedKey}/${mKey}/${dKey}`),tp[resolvedKey][mKey][dKey]);
+    await set(ref(db,`treatmentPlansV2/${pid}/${aKey}/${mKey}/${dKey}`),tp[pid][aKey][mKey][dKey]);
   },[]);
 
   // ── 물리치료 저장 (th1/th2 고정 키) ─────────────────────────────────────

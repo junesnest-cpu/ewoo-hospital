@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { ref, onValue, set, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
+import { planPaths } from "../lib/planPaths";
 
 const TREATMENT_GROUPS = [
   {
@@ -168,37 +169,57 @@ export default function TreatmentPage() {
   const [showAdPlan,setShowAdPlan] = useState(false); // 총 N회 계획 패널 토글
   const [sending, setSending] = useState(false); // 공지 발송 중
   const [resolvedPatientId, setResolvedPatientId] = useState(""); // URL에 없으면 슬롯에서 조회
+  const [resolvedAdmitDate, setResolvedAdmitDate] = useState(""); // plan 경로 생성용
 
+  // 1단계: slotKey로부터 patientId + admitDate 해결
   useEffect(() => {
     if (!slotKey) return;
-    const unsub1 = onValue(ref(db, `treatmentPlans/${slotKey}`), snap => setPlan(snap.val() || {}));
-    const unsub2 = onValue(ref(db, `weeklyPlans/${slotKey}`), snap => setWeeklyPlan(snap.val() || {}));
-    const unsub2b = onValue(ref(db, `admissionPlans/${slotKey}`), snap => setAdmissionPlan(snap.val() || {}));
-    const unsub3 = onValue(ref(db, `treatmentSettings/${slotKey}`), snap => {
+    (async () => {
+      let pid = patientId;
+      let adm = admitDate;
+      if (!pid || !adm) {
+        const snap = await get(ref(db, `slots/${slotKey}`));
+        const cur  = snap.val()?.current;
+        if (!pid && cur?.patientId) pid = cur.patientId;
+        if (!adm && cur?.admitDate) adm = cur.admitDate;
+      }
+      if (pid) setResolvedPatientId(pid);
+      if (adm) setResolvedAdmitDate(adm);
+    })();
+    // treatmentSettings는 slot-keyed 유지 (병실료 free 옵션, 슬롯별 설정)
+    const unsub = onValue(ref(db, `treatmentSettings/${slotKey}`), snap => {
       const s = snap.val();
       if (s?.roomFree !== undefined) setRoomFree(s.roomFree);
     });
-    // patientId가 URL에 없으면 슬롯 데이터에서 조회
-    if (patientId) {
-      setResolvedPatientId(patientId);
-    } else {
-      get(ref(db, `slots/${slotKey}`)).then(snap => {
-        const pid = snap.val()?.current?.patientId;
-        if (pid) setResolvedPatientId(pid);
-      });
+    return () => unsub();
+  }, [slotKey, patientId, admitDate]);
+
+  // 2단계: patientId + admitDate 결정되면 환자 기준 plan 경로 구독
+  useEffect(() => {
+    const paths = planPaths(resolvedPatientId, resolvedAdmitDate);
+    if (!paths) {
+      setPlan({}); setWeeklyPlan({}); setAdmissionPlan({});
+      return;
     }
-    return () => { unsub1(); unsub2(); unsub2b(); unsub3(); };
-  }, [slotKey, patientId]);
+    const unsub1 = onValue(ref(db, paths.daily),     snap => setPlan(snap.val()          || {}));
+    const unsub2 = onValue(ref(db, paths.weekly),    snap => setWeeklyPlan(snap.val()    || {}));
+    const unsub3 = onValue(ref(db, paths.admission), snap => setAdmissionPlan(snap.val() || {}));
+    return () => { unsub1(); unsub2(); unsub3(); };
+  }, [resolvedPatientId, resolvedAdmitDate]);
 
   const saveWeeklyPlan = useCallback(async (newPlan) => {
+    const paths = planPaths(resolvedPatientId, resolvedAdmitDate);
+    if (!paths) { alert("환자 정보 또는 입원일이 없어 저장할 수 없습니다."); return; }
     setWeeklyPlan(newPlan);
-    await set(ref(db, `weeklyPlans/${slotKey}`), newPlan);
-  }, [slotKey]);
+    await set(ref(db, paths.weekly), newPlan);
+  }, [resolvedPatientId, resolvedAdmitDate]);
 
   const saveAdmissionPlan = useCallback(async (newPlan) => {
+    const paths = planPaths(resolvedPatientId, resolvedAdmitDate);
+    if (!paths) { alert("환자 정보 또는 입원일이 없어 저장할 수 없습니다."); return; }
     setAdmissionPlan(newPlan);
-    await set(ref(db, `admissionPlans/${slotKey}`), newPlan);
-  }, [slotKey]);
+    await set(ref(db, paths.admission), newPlan);
+  }, [resolvedPatientId, resolvedAdmitDate]);
 
   const handleRoomFreeChange = useCallback(async (checked) => {
     setRoomFree(checked);
@@ -254,10 +275,12 @@ export default function TreatmentPage() {
   }, [sending, plan, year, month, slotKey, name, admitDate, discharge, resolvedPatientId]);
 
   const saveDay = useCallback(async (day, items) => {
+    const paths = planPaths(resolvedPatientId, resolvedAdmitDate);
+    if (!paths) { alert("환자 정보 또는 입원일이 없어 저장할 수 없습니다."); return; }
     const newPlan = { ...plan, [monthKey]: { ...monthData, [String(day)]: items } };
     setPlan(newPlan);
-    await set(ref(db, `treatmentPlans/${slotKey}`), newPlan);
-  }, [plan, monthKey, monthData, slotKey]);
+    await set(ref(db, paths.daily), newPlan);
+  }, [plan, monthKey, monthData, resolvedPatientId, resolvedAdmitDate]);
 
   const registerAll = () => {
     if (Object.keys(selection).length === 0) return;
