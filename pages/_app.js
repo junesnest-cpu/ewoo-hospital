@@ -213,6 +213,11 @@ export default function App({ Component, pageProps }) {
 
   const userName = user?.email?.replace("@ewoo.com","") || "";
 
+  // 점검 모드 페이지: 로그인 가드·레이아웃 모두 우회
+  if (router.pathname === "/maintenance") {
+    return <Component {...pageProps}/>;
+  }
+
   if (loading) return (
     <div style={{ minHeight:"100vh", background:"#0f2744", display:"flex", alignItems:"center", justifyContent:"center" }}>
       <div style={{ color:"#fff", fontSize:16, fontFamily:"'Noto Sans KR',sans-serif" }}>로딩 중...</div>
