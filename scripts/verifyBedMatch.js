@@ -26,13 +26,12 @@ const db = admin.database();
 
 const sqlConfig = {
   user:     process.env.EMR_DB_USER,
-  password: process.env.EMR_DB_PASS,
-  server:   process.env.EMR_DB_HOST || '192.168.0.253',
-  port:     parseInt(process.env.EMR_DB_PORT || '1433'),
-  database: process.env.EMR_DB_NAME || 'BrWonmu',
+  password: process.env.EMR_DB_PASSWORD,
+  database: 'BrWonmu',
+  server:   '192.168.0.253',
+  port:     1433,
+  requestTimeout: 60000,
   options:  { encrypt: false, trustServerCertificate: true },
-  connectionTimeout: 20000,
-  requestTimeout:    20000,
 };
 
 function formatDate(raw) {
