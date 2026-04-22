@@ -1282,13 +1282,79 @@ async function main() {
     }
   }
 
-  // 5) 로그 & emrSyncLog 기록 (P5) ─────────────────────────────────
+  // 5) 오연결 의심 탐지 (P3) ───────────────────────────────────────
+  //   chartNo 가 이미 연결된 상담일지의 phone/birthDate/baseName 을 patByChart 의
+  //   환자 마스터와 교차검증. 불일치가 있으면 suspect 로 기록 (자동 수정은 하지 않음).
+  //   관리자가 emrSyncLog/consultationLinking/suspects 를 보고 조치.
+  //
+  //   severity:
+  //     high   : 2+ 필드 불일치 or baseName 불일치 (다른 환자일 가능성 큼)
+  //     medium : 1 필드만 불일치 (번호 변경·기입 오류 등 일상적 사유일 수도)
+  const suspects = {};
+  let suspectCount = 0;
+  for (const [conId, c] of Object.entries(conAll)) {
+    if (!c?.chartNo || c.status === '취소') continue;
+    const pat = patByChart.get(c.chartNo);
+    if (!pat) continue; // chartNo 가 patMaster 에 없는 경우는 별개 issue (sync 범위 외)
+
+    const issues = {};
+
+    // phone (phone2 도 허용)
+    const cp  = normalizePhone(c.phone);
+    const cp2 = normalizePhone(c.phone2);
+    const pp  = normalizePhone(pat.phone);
+    if (pp && cp && cp !== pp && (!cp2 || cp2 !== pp)) {
+      issues.phone = { con: cp || null, pat: pp };
+    }
+
+    // birthDate 전체 비교 (둘 다 있을 때만)
+    if (c.birthDate && pat.birthDate && c.birthDate !== pat.birthDate) {
+      issues.birthDate = { con: c.birthDate, pat: pat.birthDate };
+    } else if (!c.birthDate && c.birthYear && pat.birthDate) {
+      const py = pat.birthDate.slice(0, 4);
+      if (py && py !== c.birthYear) {
+        issues.birthYear = { con: c.birthYear, pat: py };
+      }
+    }
+
+    // baseName 비교 — suffix/신) 변형 허용 후에도 다르면 다른 사람
+    const cBase = baseName(c.name);
+    const pBase = baseName(pat.name);
+    if (cBase && pBase && cBase !== pBase) {
+      issues.baseName = { con: c.name, pat: pat.name };
+    }
+
+    const keys = Object.keys(issues);
+    if (keys.length === 0) continue;
+
+    const severity = (keys.length >= 2 || issues.baseName) ? 'high' : 'medium';
+    suspects[conId] = {
+      chartNo:  c.chartNo,
+      conName:  c.name || '',
+      patName:  pat.name || '',
+      severity,
+      issues,
+    };
+    suspectCount++;
+  }
+
+  // suspects 갱신 (매 sync 마다 전체 교체 — 과거에 고쳤던 건 자동 제거)
+  try {
+    await db.ref('emrSyncLog/consultationLinking/suspects').set(suspectCount > 0 ? suspects : null);
+  } catch (e) { /* 기록 실패 무시 */ }
+
+  // 6) 로그 & emrSyncLog 기록 (P5) ─────────────────────────────────
   const totalCon    = Object.keys(conAll).length;
-  const linkedCount = Object.values(conAll).filter(c => c?.chartNo).length + stats.byChart + stats.byPhone + stats.byBirthDate + stats.byBirthYear;
   console.log(`  ✅ 상담연결: 총 ${totalCon}건 중 ${conLinkCount}건 신규 매칭 (chart=${stats.byChart} phone=${stats.byPhone} birthDate=${stats.byBirthDate} birthYear=${stats.byBirthYear})`);
   console.log(`     미매칭 ${stats.noMatch}건 / 제외 ${stats.skip}건 / cache=${cacheStatus}`);
+  if (suspectCount > 0) {
+    const highN = Object.values(suspects).filter(s => s.severity === 'high').length;
+    console.log(`  ⚠ 의심 연결 ${suspectCount}건 (high=${highN}) — emrSyncLog/consultationLinking/suspects 참조`);
+  } else {
+    console.log(`  ✅ 의심 연결: 0건`);
+  }
   try {
-    await db.ref('emrSyncLog/consultationLinking').set({
+    await db.ref('emrSyncLog/consultationLinking').update({
       ts: new Date().toISOString(),
       mode: FULL_MODE ? 'full' : 'light',
       total: totalCon,
@@ -1298,6 +1364,7 @@ async function main() {
       byPhone: stats.byPhone,
       byBirthDate: stats.byBirthDate,
       byBirthYear: stats.byBirthYear,
+      suspectCount,
       cacheStatus,
       cacheAgeH: cacheAgeH === null ? null : +cacheAgeH.toFixed(2),
       masterSize: Object.keys(patMaster).length,
