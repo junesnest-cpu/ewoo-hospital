@@ -1196,13 +1196,16 @@ async function main() {
   const conAll   = conSnap2.val() || {};
 
   const patByChart     = new Map(); // chartNo → pat
-  const patByPhone     = new Map(); // phone → pat (첫 번째 등록만, 중복은 무시)
+  const patByPhone     = new Map(); // normalizedPhone → pat (첫 번째 등록만, 중복은 무시)
   const patByBirthBase = new Map(); // "YYYY-MM-DD|baseName" → [pat]
   const patByYearBase  = new Map(); // "YYYY|baseName" → [pat]
   for (const p of Object.values(patMaster)) {
     if (!p?.name) continue;
     if (p.chartNo && !patByChart.has(p.chartNo)) patByChart.set(p.chartNo, p);
-    if (p.phone   && !patByPhone.has(p.phone))   patByPhone.set(p.phone, p);
+    // Firebase patients 의 phone 필드 포맷이 다양(010-..., 01012345678, 공백 포함 등).
+    // 일관되게 normalizePhone 을 거쳐 key 로 저장 → 조회 쪽과 완전 일치.
+    const phoneK = normalizePhone(p.phone);
+    if (phoneK && !patByPhone.has(phoneK)) patByPhone.set(phoneK, p);
     const bn = baseName(p.name);
     if (!bn) continue;
     if (p.birthDate) {
