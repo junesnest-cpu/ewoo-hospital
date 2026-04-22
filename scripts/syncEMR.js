@@ -18,6 +18,42 @@
 require('dotenv').config({ path: '.env.local' });
 const sql   = require('mssql');
 const admin = require('firebase-admin');
+const fs    = require('fs');
+const path  = require('path');
+
+// ── 환자 마스터 로컬 캐시 (P1 상담연결 최적화) ────────────────────
+//   전체 모드(--full) 에서 Phase 2.5 가 Firebase/SQL 에서 구축한 patMaster 를
+//   JSON 으로 저장. 이후 경량 sync 는 이 캐시 + 경량 Phase 1 결과 오버레이로
+//   전체 환자 인덱스를 얻음 → Firebase 추가 다운로드 실질 0.
+const CACHE_DIR       = path.join(__dirname, '..', '.cache');
+const PATIENTS_CACHE  = path.join(CACHE_DIR, 'patients.json');
+const CACHE_TTL_HOURS = 25; // 새벽 2시 full sync 주기 + 1h 여유
+function writePatientsCache(patMaster) {
+  try {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    fs.writeFileSync(PATIENTS_CACHE, JSON.stringify(patMaster), 'utf8');
+    return true;
+  } catch (e) {
+    console.error('  ⚠ 캐시 저장 실패:', e.message);
+    return false;
+  }
+}
+function readPatientsCache() {
+  try {
+    if (!fs.existsSync(PATIENTS_CACHE)) return null;
+    const stat = fs.statSync(PATIENTS_CACHE);
+    const ageH = (Date.now() - stat.mtimeMs) / 3600000;
+    const data = JSON.parse(fs.readFileSync(PATIENTS_CACHE, 'utf8'));
+    return { data, ageH };
+  } catch (e) {
+    console.error('  ⚠ 캐시 읽기 실패:', e.message);
+    return null;
+  }
+}
+// baseName: 신) 접두어 + 끝자리 숫자 suffix + whitespace 제거 (동명이인·표기변형 내성)
+function baseName(n) {
+  return (n || '').replace(/^신\)\s*/, '').replace(/\d+$/, '').replace(/\s/g, '').trim().toLowerCase();
+}
 
 // ── Firebase Admin 초기화 ─────────────────────────────────────────
 const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
@@ -1075,99 +1111,195 @@ async function main() {
   }
 
   // ════════════════════════════════════════════════════════════════
-  // [2.5] 상담일지(consultations) 자동 연결
-  //   EMR 환자와 전화번호/생년으로 매칭하여 이름·chartNo·patientId 갱신
+  // [2.5] 상담일지(consultations) 자동 연결 — P1 재설계
+  //
+  //   환자 마스터 소스:
+  //     전체 모드 : SQL 에서 조회된 patRows 전체 (~7,600명) → patMaster 구축 + 로컬 캐시 저장
+  //     경량 모드 : 로컬 캐시 읽기 (age ≤ 25h) + 경량 Phase 1 신규 51명 오버레이
+  //                 캐시 없거나 stale → Firebase patients 로부터 fallback 로드
+  //   매칭 우선순위 (강→약, P2):
+  //     1) chartNo 직접
+  //     2) phone / phone2 (정규화)
+  //     3) birthDate 전체(YYYY-MM-DD) + baseName 유일
+  //     4) birthYear + baseName 유일
+  //   결과 메트릭은 emrSyncLog/consultationLinking 에 기록 (P5)
   // ════════════════════════════════════════════════════════════════
   console.log('─'.repeat(50));
   console.log('[2.5] 상담일지 자동 연결 시작');
 
-  // 최신 consultations 다시 로드 (Phase 0에서 patientId가 갱신되었을 수 있음)
+  // 1) patMaster 준비 ──────────────────────────────────────────────
+  let patMaster = {}; // { [chartNo]: { chartNo, name, phone, birthDate, internalId } }
+  let cacheStatus = 'none';
+  let cacheAgeH = null;
+
+  if (FULL_MODE) {
+    // patRows 로부터 patMaster 직접 구축 + 캐시 저장
+    for (const row of patRows) {
+      if (skipSet.has(row.chartNo)) continue;
+      const normChart = normalizeChartNo(row.chartNo);
+      patMaster[normChart] = {
+        chartNo:    normChart,
+        name:       String(row.name || '').trim(),
+        phone:      normalizePhone(row.phone),
+        birthDate:  formatDate(row.birthDate),
+        internalId: chartToId[normChart] || '',
+      };
+    }
+    if (writePatientsCache(patMaster)) {
+      cacheStatus = `written(${Object.keys(patMaster).length})`;
+      console.log(`  💾 환자 마스터 캐시 저장: ${Object.keys(patMaster).length}건 → ${PATIENTS_CACHE}`);
+    } else {
+      cacheStatus = 'write-failed';
+    }
+  } else {
+    // 경량 모드: 캐시 우선, 없으면 Firebase fallback
+    const cached = readPatientsCache();
+    if (cached && cached.ageH < CACHE_TTL_HOURS) {
+      patMaster = cached.data || {};
+      cacheAgeH = cached.ageH;
+      cacheStatus = `cache(${cached.ageH.toFixed(1)}h,${Object.keys(patMaster).length}건)`;
+      console.log(`  💾 환자 마스터 캐시 사용: ${Object.keys(patMaster).length}건, age=${cached.ageH.toFixed(1)}h`);
+    } else {
+      if (cached) {
+        console.log(`  ⚠ 캐시 stale ${cached.ageH.toFixed(1)}h > ${CACHE_TTL_HOURS}h → Firebase fallback`);
+        cacheStatus = 'stale-fallback';
+      } else {
+        console.log(`  ⚠ 캐시 파일 없음 → Firebase fallback`);
+        cacheStatus = 'missing-fallback';
+      }
+      const fbSnap = await db.ref('patients').once('value');
+      patMaster = fbSnap.val() || {};
+      console.log(`  📥 Firebase patients 로드: ${Object.keys(patMaster).length}건`);
+      // 다음 sync 를 위해 캐시 갱신 (stale → fresh)
+      if (writePatientsCache(patMaster)) cacheStatus += '+cached';
+    }
+    // 경량 Phase 1 결과(현재 입원환자 51명) 최신으로 오버레이 — 오늘 새 입원환자도 즉시 매칭
+    let overlayCount = 0;
+    for (const row of patRows) {
+      if (skipSet.has(row.chartNo)) continue;
+      const normChart = normalizeChartNo(row.chartNo);
+      patMaster[normChart] = {
+        ...(patMaster[normChart] || {}),
+        chartNo:    normChart,
+        name:       String(row.name || '').trim(),
+        phone:      normalizePhone(row.phone),
+        birthDate:  formatDate(row.birthDate),
+        internalId: chartToId[normChart] || patMaster[normChart]?.internalId || '',
+      };
+      overlayCount++;
+    }
+    if (overlayCount > 0) console.log(`  📥 경량 Phase 1 결과 ${overlayCount}건 오버레이`);
+  }
+
+  // 2) consultations + 인덱스 ──────────────────────────────────────
   const conSnap2 = await db.ref('consultations').once('value');
   const conAll   = conSnap2.val() || {};
 
-  // EMR patients를 전화번호/생년 기준으로 인덱스
-  const patByPhone = new Map(); // normalizedPhone → patient
-  const patByBirth = new Map(); // birthYear → [patient, ...]
-  for (const row of patRows) {
-    if (skipSet.has(row.chartNo)) continue;
-    const normChart = normalizeChartNo(row.chartNo);
-    const phone     = normalizePhone(row.phone);
-    const birth     = formatDate(row.birthDate);
-    const pat = {
-      chartNo:    normChart,
-      name:       String(row.name || '').trim(),
-      phone,
-      birthYear:  birth ? birth.slice(0, 4) : '',
-      internalId: chartToId[normChart] || '',
-    };
-    if (phone) patByPhone.set(phone, pat);
-    if (pat.birthYear) {
-      if (!patByBirth.has(pat.birthYear)) patByBirth.set(pat.birthYear, []);
-      patByBirth.get(pat.birthYear).push(pat);
+  const patByChart     = new Map(); // chartNo → pat
+  const patByPhone     = new Map(); // phone → pat (첫 번째 등록만, 중복은 무시)
+  const patByBirthBase = new Map(); // "YYYY-MM-DD|baseName" → [pat]
+  const patByYearBase  = new Map(); // "YYYY|baseName" → [pat]
+  for (const p of Object.values(patMaster)) {
+    if (!p?.name) continue;
+    if (p.chartNo && !patByChart.has(p.chartNo)) patByChart.set(p.chartNo, p);
+    if (p.phone   && !patByPhone.has(p.phone))   patByPhone.set(p.phone, p);
+    const bn = baseName(p.name);
+    if (!bn) continue;
+    if (p.birthDate) {
+      const k = `${p.birthDate}|${bn}`;
+      if (!patByBirthBase.has(k)) patByBirthBase.set(k, []);
+      patByBirthBase.get(k).push(p);
+      const y = p.birthDate.slice(0, 4);
+      const k2 = `${y}|${bn}`;
+      if (!patByYearBase.has(k2)) patByYearBase.set(k2, []);
+      patByYearBase.get(k2).push(p);
     }
   }
 
+  // 3) 매칭 루프 ───────────────────────────────────────────────────
   const conUpdates = {};
   let conLinkCount = 0;
+  const stats = { byChart: 0, byPhone: 0, byBirthDate: 0, byBirthYear: 0, skip: 0, noMatch: 0 };
 
   for (const [conId, c] of Object.entries(conAll)) {
-    if (!c?.name) continue;
-    // 이미 chartNo가 설정되어 있고, 이름도 일치하면 건너뜀
-    if (c.chartNo && c.name === (patByPhone.get(normalizePhone(c.phone))?.name || '')) continue;
+    if (!c?.name || c.status === '취소') { stats.skip++; continue; }
 
     let matched = null;
+    let matchBy = null;
 
-    // 1순위: 전화번호 매칭
-    const cPhone = normalizePhone(c.phone);
-    const cPhone2 = normalizePhone(c.phone2);
-    if (cPhone && patByPhone.has(cPhone)) {
-      matched = patByPhone.get(cPhone);
-    } else if (cPhone2 && patByPhone.has(cPhone2)) {
-      matched = patByPhone.get(cPhone2);
+    // ① chartNo 직접
+    if (c.chartNo && patByChart.has(c.chartNo)) {
+      matched = patByChart.get(c.chartNo);
+      matchBy = 'byChart';
     }
-
-    // 2순위: 생년 + 이름 유사 매칭 (전화번호 없을 때)
+    // ② phone / phone2
+    if (!matched) {
+      const p1 = normalizePhone(c.phone);
+      const p2 = normalizePhone(c.phone2);
+      if (p1 && patByPhone.has(p1))      { matched = patByPhone.get(p1); matchBy = 'byPhone'; }
+      else if (p2 && patByPhone.has(p2)) { matched = patByPhone.get(p2); matchBy = 'byPhone'; }
+    }
+    // ③ birthDate 전체 + baseName (유일)
+    if (!matched && c.birthDate) {
+      const bn = baseName(c.name);
+      const cands = patByBirthBase.get(`${c.birthDate}|${bn}`) || [];
+      if (cands.length === 1) { matched = cands[0]; matchBy = 'byBirthDate'; }
+    }
+    // ④ birthYear + baseName (유일)
     if (!matched && c.birthYear) {
-      const candidates = patByBirth.get(c.birthYear) || [];
-      const cBase = (c.name || '').replace(/\d+$/, '').trim();
-      for (const p of candidates) {
-        const pBase = (p.name || '').replace(/\d+$/, '').trim();
-        if (cBase === pBase) {
-          matched = p;
-          break;
-        }
-      }
+      const bn = baseName(c.name);
+      const cands = patByYearBase.get(`${c.birthYear}|${bn}`) || [];
+      if (cands.length === 1) { matched = cands[0]; matchBy = 'byBirthYear'; }
     }
 
-    if (!matched) continue;
+    if (!matched) { stats.noMatch++; continue; }
 
-    // 이름 또는 식별자가 다를 때만 업데이트
-    const needsUpdate = c.name !== matched.name
-                     || c.chartNo !== matched.chartNo
-                     || c.patientId !== matched.internalId;
-    if (!needsUpdate) continue;
-
-    if (c.name !== matched.name) {
-      conUpdates[`consultations/${conId}/name`] = matched.name;
-    }
-    if (matched.chartNo && c.chartNo !== matched.chartNo) {
-      conUpdates[`consultations/${conId}/chartNo`] = matched.chartNo;
-    }
+    // 업데이트 필요 필드만 반영 (중복 쓰기 방지)
+    const updates = {};
+    if (c.name !== matched.name && matched.name) updates.name = matched.name;
+    if (matched.chartNo && c.chartNo !== matched.chartNo) updates.chartNo = matched.chartNo;
     if (matched.internalId && c.patientId !== matched.internalId) {
-      conUpdates[`consultations/${conId}/patientId`] = matched.internalId;
-      conUpdates[`consultations/${conId}/isNewPatient`] = false;
+      updates.patientId = matched.internalId;
+      updates.isNewPatient = false;
     }
+    if (Object.keys(updates).length === 0) continue;
+
+    for (const [k, v] of Object.entries(updates)) {
+      conUpdates[`consultations/${conId}/${k}`] = v;
+    }
+    stats[matchBy]++;
     conLinkCount++;
-    console.log(`  🔗 ${c.name} → ${matched.name} (chartNo: ${matched.chartNo})`);
   }
 
+  // 4) 적용 ─────────────────────────────────────────────────────────
   if (Object.keys(conUpdates).length > 0) {
     const conEntries = Object.entries(conUpdates);
     for (let i = 0; i < conEntries.length; i += 500) {
       await db.ref('/').update(Object.fromEntries(conEntries.slice(i, i + 500)));
     }
   }
-  console.log(`✅ 상담일지 연결 완료 (${conLinkCount}건 매칭)\n`);
+
+  // 5) 로그 & emrSyncLog 기록 (P5) ─────────────────────────────────
+  const totalCon    = Object.keys(conAll).length;
+  const linkedCount = Object.values(conAll).filter(c => c?.chartNo).length + stats.byChart + stats.byPhone + stats.byBirthDate + stats.byBirthYear;
+  console.log(`  ✅ 상담연결: 총 ${totalCon}건 중 ${conLinkCount}건 신규 매칭 (chart=${stats.byChart} phone=${stats.byPhone} birthDate=${stats.byBirthDate} birthYear=${stats.byBirthYear})`);
+  console.log(`     미매칭 ${stats.noMatch}건 / 제외 ${stats.skip}건 / cache=${cacheStatus}`);
+  try {
+    await db.ref('emrSyncLog/consultationLinking').set({
+      ts: new Date().toISOString(),
+      mode: FULL_MODE ? 'full' : 'light',
+      total: totalCon,
+      fixed: conLinkCount,
+      noMatch: stats.noMatch,
+      byChart: stats.byChart,
+      byPhone: stats.byPhone,
+      byBirthDate: stats.byBirthDate,
+      byBirthYear: stats.byBirthYear,
+      cacheStatus,
+      cacheAgeH: cacheAgeH === null ? null : +cacheAgeH.toFixed(2),
+      masterSize: Object.keys(patMaster).length,
+    });
+  } catch (e) { /* 기록 실패는 무시 */ }
 
   // ════════════════════════════════════════════════════════════════
   // [2.6] 신규 입원 환자 consultation 상태 업데이트

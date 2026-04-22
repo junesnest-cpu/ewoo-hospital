@@ -18,6 +18,9 @@ npm-debug.log*
 .claude/
 context.md
 
+# RPi 로컬 캐시 (syncEMR 환자 마스터)
+.cache/
+
 .vercel
 .mcp.json
 .mcp.local.json
