@@ -717,6 +717,25 @@ async function main() {
         const updatedRes = resList.filter((_, i) => i !== matchIdx);
         slotUpdates[`slots/${slotKey}/reservations`] = updatedRes;
         console.log(`  📋 예약→입원 전환: ${slotKey} (${emrData.name} ← 예약"${matched.name}") — 예약 데이터 병합 후 제거`);
+
+        // 연결된 consultation 도 일관되게 갱신 (auto-restore 차단 + 식별자 연결)
+        //   reservedSlot=null : 예약이 아니라 입원이 되었음을 반영
+        //   chartNo/patientId : 없으면 입원 환자와 동일하게 채워 이후 매칭 강화
+        //   status='입원완료' : 이 예약의 입원 사이클 완료
+        //     (consultation.js auto-restore 및 index.js 자동승격 방지)
+        if (matched.consultationId && conRaw[matched.consultationId]) {
+          const c = conRaw[matched.consultationId];
+          slotUpdates[`consultations/${matched.consultationId}/reservedSlot`] = null;
+          if (!c.chartNo && emrData.chartNo) {
+            slotUpdates[`consultations/${matched.consultationId}/chartNo`] = emrData.chartNo;
+          }
+          if (slotPatientId && c.patientId !== slotPatientId) {
+            slotUpdates[`consultations/${matched.consultationId}/patientId`] = slotPatientId;
+          }
+          if (c.status !== '입원완료') {
+            slotUpdates[`consultations/${matched.consultationId}/status`] = '입원완료';
+          }
+        }
       }
     }
 
@@ -1124,10 +1143,29 @@ async function main() {
     }
   }
 
+  // 보조 매칭 (안전망): 현재 EMR 입원 slotKey 에 reservedSlot 이 걸려있는 모든
+  //   consultation 을 "입원완료" + reservedSlot=null 로 정리.
+  //   이름/chartNo/pid 어느 경로로도 매칭 실패했지만 reservedSlot 이 입원 slot 이면
+  //   사실상 이 예약은 입원으로 전환된 것 (해당 환자의 과거 다른 상담레코드 등).
+  //   이를 정리하지 않으면 consultation.js auto-restore 가 예약을 다시 생성함.
+  const admittedSlotKeys = new Set(emrBedMap.keys());
+  let safetyNetCount = 0;
+  for (const [conId, c] of Object.entries(conLatest)) {
+    if (!c || !c.reservedSlot) continue;
+    if (c.status === '입원완료' || c.status === '취소') continue;
+    if (!admittedSlotKeys.has(c.reservedSlot)) continue;
+    // 이미 같은 iteration 에서 업데이트된 경우 중복 방지
+    if (admitUpdates[`consultations/${conId}/status`] === '입원완료') continue;
+    admitUpdates[`consultations/${conId}/reservedSlot`] = null;
+    admitUpdates[`consultations/${conId}/status`] = '입원완료';
+    safetyNetCount++;
+    console.log(`  🛡 안전망: ${c.name || '?'} (${conId}) reservedSlot=${c.reservedSlot} → 입원완료 + null`);
+  }
+
   if (Object.keys(admitUpdates).length > 0) {
     await db.ref('/').update(admitUpdates);
   }
-  console.log(`  ✅ 상태 업데이트: ${statusUpdateCount}건 / 자동 생성: ${autoCreateCount}건\n`);
+  console.log(`  ✅ 상태 업데이트: ${statusUpdateCount}건 / 자동 생성: ${autoCreateCount}건 / 안전망: ${safetyNetCount}건\n`);
 
   // ════════════════════════════════════════════════════════════════
   // [전체 모드] Phase 3: 과거 입원이력 동기화
