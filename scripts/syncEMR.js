@@ -591,14 +591,31 @@ async function main() {
   const slotUpdates = {};
   let   setCount = 0, clearCount = 0, transferCount = 0;
 
-  // 병실 이동 감지: Firebase 내 chartNo → slotKey 역인덱스
+  // 병실 이동 감지: Firebase 내 chartNo/patientId/baseName → slotKey 역인덱스
   //   EMR 에서 환자가 다른 병상으로 이동하면, 원래 slotKey 는 emrBedMap 에 없어 퇴원으로 오인된다.
-  //   chartNo 기준으로 "같은 환자가 다른 slotKey 에서 현재 입원중" 임을 감지하여
+  //   같은 환자가 다른 slotKey 에서 입원중임을 감지하여
   //   (a) 이전 slot.current 는 비우되 퇴원 기록은 남기지 않고
   //   (b) 이전 slot 의 discharge/note 등 사용자 입력값을 새 slot 으로 이관한다.
+  //
+  // 다중 경로 매칭 (강→약):
+  //   1) chartNo (가장 강함. EMR·Firebase 모두 보유)
+  //   2) patientId (내부 ID. 재입원·동명이인 구분 가능)
+  //   3) baseName (신) + 끝자리 숫자 + whitespace 제거 후 유일 매칭 시에만)
+  //      — 레거시 slot.current 에 chartNo 가 없는 경우의 백업. 동명이인 충돌 시 스킵.
+  const _baseName = (n) => (n || '').replace(/^신\)\s*/, '').replace(/\d+$/, '').replace(/\s/g, '').trim().toLowerCase();
   const fbChartToSlot = new Map();
+  const fbPidToSlot   = new Map();
+  const fbBaseToSlots = new Map(); // baseName → [slotKey,...] (중복 허용)
   for (const [sk, s] of Object.entries(fbSlots)) {
-    if (s?.current?.chartNo) fbChartToSlot.set(s.current.chartNo, sk);
+    const cur = s?.current;
+    if (!cur?.name) continue;
+    if (cur.chartNo)   fbChartToSlot.set(cur.chartNo, sk);
+    if (cur.patientId) fbPidToSlot.set(cur.patientId, sk);
+    const bn = _baseName(cur.name);
+    if (bn) {
+      if (!fbBaseToSlots.has(bn)) fbBaseToSlots.set(bn, []);
+      fbBaseToSlots.get(bn).push(sk);
+    }
   }
   const transferredFromSet = new Set();
 
@@ -606,13 +623,30 @@ async function main() {
     const existing  = fbSlots[slotKey] || {};
     const fbCurrent = existing.current || {};
 
-    // 병실 이동 여부 판정 (같은 chartNo 가 다른 slotKey 에 있음)
-    const prevSlotKey   = fbChartToSlot.get(emrData.chartNo);
+    // 병실 이동 여부 판정 — 다중 경로로 같은 환자가 이미 다른 slot 에 있는지 확인
+    const slotPatientIdEarly = chartToId[emrData.chartNo];
+    let prevSlotKey = fbChartToSlot.get(emrData.chartNo);
+    let transferBy = prevSlotKey ? 'chart' : null;
+    if (!prevSlotKey && slotPatientIdEarly) {
+      prevSlotKey = fbPidToSlot.get(slotPatientIdEarly);
+      if (prevSlotKey) transferBy = 'pid';
+    }
+    if (!prevSlotKey) {
+      // baseName fallback — 레거시 slot (chartNo 누락) 대비.
+      //   동명이인 충돌 시 여러 slotKey 가 나올 수 있으므로 '유일 매칭' 일 때만 채택.
+      //   또한 chartNo 있는 경우는 위에서 이미 걸렸을 것 — 여기 도달 시 chartNo 로 못 찾은 상황.
+      const bn = _baseName(emrData.name);
+      const cands = (fbBaseToSlots.get(bn) || []).filter(k => k !== slotKey);
+      if (cands.length === 1) {
+        prevSlotKey = cands[0];
+        transferBy = 'baseName';
+      }
+    }
     const isTransfer    = !!prevSlotKey && prevSlotKey !== slotKey;
     const prevFbCurrent = isTransfer ? ((fbSlots[prevSlotKey] || {}).current || null) : null;
     if (isTransfer) {
       transferredFromSet.add(prevSlotKey);
-      console.log(`  ↔ 병실 이동 감지: ${emrData.name} ${prevSlotKey} → ${slotKey}`);
+      console.log(`  ↔ 병실 이동 감지(${transferBy}): ${emrData.name} ${prevSlotKey} → ${slotKey}`);
       transferCount++;
     }
 
@@ -975,6 +1009,66 @@ async function main() {
   }
   if (boardUpdateCount) console.log(`  ✅ 입퇴원 기록 저장: ${boardUpdateCount}건`);
   else console.log(`  ✅ 입퇴원 변동 없음`);
+
+  // ────────────────────────────────────────────────────────────────
+  // 유령 퇴원 자동 회수 (retroactive cleanup)
+  //   "현재 EMR 에 입원 중인 환자가 과거 monthlyBoards 에 퇴원 기록으로 남아있음"
+  //   은 정의상 병실 이동을 퇴원으로 오탐한 흔적. 이동 감지 기능이 없던 시점(또는
+  //   임시 장애로 놓친 경우) 에 누적된 오류를 매 sync 가 알아서 청소한다.
+  //
+  //   안전장치:
+  //     - 퇴원일 < 현재 환자의 EMR admitDate 이면 제외 (정상적인 이전 퇴원 이력)
+  //     - hidden* 목록은 건드리지 않음
+  //     - 최근 2개월 범위만 스캔 (성능)
+  // ────────────────────────────────────────────────────────────────
+  try {
+    const currentByBase = new Map(); // baseName → { name, admitDate, chartNo }
+    const currentByChart = new Map();
+    for (const [, ed] of emrBedMap) {
+      const bn = _baseName(ed.name);
+      if (bn) currentByBase.set(bn, ed);
+      if (ed.chartNo) currentByChart.set(ed.chartNo, ed);
+    }
+    const parseKey = (s) => {
+      if (!s) return null;
+      const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? new Date(+m[1], +m[2]-1, +m[3]) : null;
+    };
+    const nowMonth = todayKey.slice(0, 7);
+    const prev = new Date(today.getFullYear(), today.getMonth()-1, 1);
+    const prevMonth = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+    let cleanupCount = 0;
+    for (const ym of [prevMonth, nowMonth]) {
+      const monthSnap = await db.ref(`monthlyBoards/${ym}`).get();
+      const monthData = monthSnap.val() || {};
+      for (const [dateKey, day] of Object.entries(monthData)) {
+        if (!day?.discharges?.length) continue;
+        const disDate = parseKey(dateKey);
+        const kept = [];
+        const removed = [];
+        for (const d of day.discharges) {
+          if (!d || !d.name) { kept.push(d); continue; }
+          const bn = _baseName(d.name);
+          const stillAdmitted = currentByBase.get(bn);
+          if (!stillAdmitted) { kept.push(d); continue; }
+          // 현재 입원 admitDate 가 퇴원 기록 날짜보다 나중이면 => 이번 입원이 이후 건. 퇴원 기록은 그대로 보존.
+          const admDate = parseKey(stillAdmitted.admitDate);
+          if (admDate && disDate && admDate > disDate) { kept.push(d); continue; }
+          // 나머지는 유령 퇴원으로 간주하여 제거
+          removed.push(d);
+          cleanupCount++;
+        }
+        if (removed.length > 0) {
+          await db.ref(`monthlyBoards/${ym}/${dateKey}/discharges`).set(kept);
+          removed.forEach(r => console.log(`  🩹 유령 퇴원 회수: ${dateKey} ${r.name}(${r.room||'?'}호) — 현재 입원 중`));
+        }
+      }
+    }
+    if (cleanupCount === 0) console.log(`  ✅ 유령 퇴원 스캔: 정리 대상 없음`);
+    else console.log(`  ✅ 유령 퇴원 회수: ${cleanupCount}건`);
+  } catch (e) {
+    console.error(`  ⚠ 유령 퇴원 스캔 실패: ${e.message}`);
+  }
 
   // ════════════════════════════════════════════════════════════════
   // [2.5] 상담일지(consultations) 자동 연결
