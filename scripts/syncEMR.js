@@ -1051,10 +1051,14 @@ async function main() {
           const bn = _baseName(d.name);
           const stillAdmitted = currentByBase.get(bn);
           if (!stillAdmitted) { kept.push(d); continue; }
-          // 현재 입원 admitDate 가 퇴원 기록 날짜보다 나중이면 => 이번 입원이 이후 건. 퇴원 기록은 그대로 보존.
+
+          // 안전장치 1: 미래 날짜(오늘 포함) 는 예약 퇴원이므로 절대 삭제하지 않음
+          if (disDate && disDate >= today) { kept.push(d); continue; }
+          // 안전장치 2: 현재 입원 admitDate >= 퇴원 기록 날짜 → 정상 이력 (같은 날 또는 이후 재입원)
           const admDate = parseKey(stillAdmitted.admitDate);
-          if (admDate && disDate && admDate > disDate) { kept.push(d); continue; }
-          // 나머지는 유령 퇴원으로 간주하여 제거
+          if (admDate && disDate && admDate >= disDate) { kept.push(d); continue; }
+
+          // 유령 퇴원: 현재 입원중이고 현재 입원이 퇴원 기록일보다 앞선 경우 → 병실이동 오탐 흔적
           removed.push(d);
           cleanupCount++;
         }
