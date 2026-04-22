@@ -589,11 +589,32 @@ async function main() {
   }
 
   const slotUpdates = {};
-  let   setCount = 0, clearCount = 0;
+  let   setCount = 0, clearCount = 0, transferCount = 0;
+
+  // 병실 이동 감지: Firebase 내 chartNo → slotKey 역인덱스
+  //   EMR 에서 환자가 다른 병상으로 이동하면, 원래 slotKey 는 emrBedMap 에 없어 퇴원으로 오인된다.
+  //   chartNo 기준으로 "같은 환자가 다른 slotKey 에서 현재 입원중" 임을 감지하여
+  //   (a) 이전 slot.current 는 비우되 퇴원 기록은 남기지 않고
+  //   (b) 이전 slot 의 discharge/note 등 사용자 입력값을 새 slot 으로 이관한다.
+  const fbChartToSlot = new Map();
+  for (const [sk, s] of Object.entries(fbSlots)) {
+    if (s?.current?.chartNo) fbChartToSlot.set(s.current.chartNo, sk);
+  }
+  const transferredFromSet = new Set();
 
   for (const [slotKey, emrData] of emrBedMap) {
     const existing  = fbSlots[slotKey] || {};
     const fbCurrent = existing.current || {};
+
+    // 병실 이동 여부 판정 (같은 chartNo 가 다른 slotKey 에 있음)
+    const prevSlotKey   = fbChartToSlot.get(emrData.chartNo);
+    const isTransfer    = !!prevSlotKey && prevSlotKey !== slotKey;
+    const prevFbCurrent = isTransfer ? ((fbSlots[prevSlotKey] || {}).current || null) : null;
+    if (isTransfer) {
+      transferredFromSet.add(prevSlotKey);
+      console.log(`  ↔ 병실 이동 감지: ${emrData.name} ${prevSlotKey} → ${slotKey}`);
+      transferCount++;
+    }
 
     const newCurrent = {
       name:      emrData.name,
@@ -618,6 +639,25 @@ async function main() {
       if (!isPast) newCurrent.discharge = raw;
     }
 
+    // 병실 이동 시: 이전 slot 에 있던 사용자 입력값을 새 slot 으로 이관
+    //   consultation fallback 보다 신뢰도 높음 (이전 slot 이 현재 입원 중이었으므로)
+    if (prevFbCurrent) {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      if (prevFbCurrent.discharge && !newCurrent.discharge) {
+        const raw = String(prevFbCurrent.discharge).trim();
+        let d = null;
+        const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (iso) d = new Date(+iso[1], +iso[2]-1, +iso[3]);
+        const md = !iso && raw.match(/^(\d{1,2})\/(\d{1,2})$/);
+        if (md) d = new Date(today.getFullYear(), +md[1]-1, +md[2]);
+        if (!d || d >= today) newCurrent.discharge = raw;
+      }
+      if (prevFbCurrent.note && !newCurrent.note) newCurrent.note = prevFbCurrent.note;
+      if (prevFbCurrent.admitTime && !newCurrent.admitTime) newCurrent.admitTime = prevFbCurrent.admitTime;
+      if (prevFbCurrent.dischargeTime && !newCurrent.dischargeTime) newCurrent.dischargeTime = prevFbCurrent.dischargeTime;
+      if (prevFbCurrent.consultationId && !newCurrent.consultationId) newCurrent.consultationId = prevFbCurrent.consultationId;
+    }
+
     // 예약에서 입원된 환자의 reservation 데이터 병합 후 정리
     const resList = existing.reservations || [];
     if (resList.length > 0) {
@@ -638,22 +678,37 @@ async function main() {
       }
     }
 
-    // 예약·fbCurrent에서 퇴원일을 못 찾은 경우: consultations에서 fallback 검색
-    // (예약이 다른 slot에 있었거나, 이미 정리됐거나, 이름 정규화 mismatch 대비)
+    // 예약·fbCurrent·이전 slot 에서도 퇴원일을 못 찾은 경우: consultations 에서 fallback 검색
+    // (예약이 다른 slot 에 있었거나, 이미 정리됐거나, 이름 정규화 mismatch 대비)
+    //
+    // 제외 조건:
+    //   - status='취소'    : 유효하지 않은 예약
+    //   - status='입원완료' : 이미 끝난 과거 입원의 퇴원일을 현재 입원에 붙이면 안 됨
+    //   - dischargeDate 가 오늘 이전 : 과거 퇴원 예정일 → 재원 카운트에서 탈락시키는 원인
     if (!newCurrent.discharge) {
       const emrNorm = (emrData.name || '').trim().toLowerCase();
+      const today = new Date(); today.setHours(0, 0, 0, 0);
       for (const c of Object.values(conRaw)) {
-        if (!c || !c.dischargeDate || c.status === '취소') continue;
+        if (!c || !c.dischargeDate) continue;
+        if (c.status === '취소' || c.status === '입원완료') continue;
         const chartMatch   = c.chartNo && emrData.chartNo && c.chartNo === emrData.chartNo;
         const pidMatch     = c.patientId && slotPatientId && c.patientId === slotPatientId;
         const slotNameMatch = c.reservedSlot === slotKey &&
           (c.name || '').trim().toLowerCase() === emrNorm;
-        if (chartMatch || pidMatch || slotNameMatch) {
-          newCurrent.discharge = c.dischargeDate;
-          if (!newCurrent.dischargeTime && c.dischargeTime) newCurrent.dischargeTime = c.dischargeTime;
-          console.log(`  🔗 consultations에서 퇴원일 복원: ${slotKey} ${emrData.name} → ${c.dischargeDate}`);
-          break;
-        }
+        if (!(chartMatch || pidMatch || slotNameMatch)) continue;
+
+        const raw = String(c.dischargeDate).trim();
+        let d = null;
+        const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) d = new Date(+iso[1], +iso[2]-1, +iso[3]);
+        const md = !iso && raw.match(/^(\d{1,2})\/(\d{1,2})$/);
+        if (md) d = new Date(today.getFullYear(), +md[1]-1, +md[2]);
+        if (d && d < today) continue; // 과거 dischargeDate 복원 금지
+
+        newCurrent.discharge = c.dischargeDate;
+        if (!newCurrent.dischargeTime && c.dischargeTime) newCurrent.dischargeTime = c.dischargeTime;
+        console.log(`  🔗 consultations에서 퇴원일 복원: ${slotKey} ${emrData.name} → ${c.dischargeDate}`);
+        break;
       }
     }
 
@@ -696,12 +751,18 @@ async function main() {
     }
   }
 
-  // 퇴원 감지: Firebase에 있지만 EMR에 없는 환자
+  // 병실 이동 출처 slot 의 current 는 단순 비우기 (퇴원 아님 → monthlyBoards 기록하지 않음)
+  for (const prevSk of transferredFromSet) {
+    slotUpdates[`slots/${prevSk}/current`] = null;
+  }
+
+  // 퇴원 감지: Firebase에 있지만 EMR에 없는 환자 (단, 병실 이동 출처는 제외)
   const dischargedPatients = []; // { name, room, admitDate, ... }
   const todayForAdmit = new Date(); todayForAdmit.setHours(0, 0, 0, 0);
   for (const [slotKey, slot] of Object.entries(fbSlots)) {
     if (!slot?.current?.name) continue;
     if (emrBedMap.has(slotKey)) continue;
+    if (transferredFromSet.has(slotKey)) continue; // 병실 이동 — 퇴원 아님
     const cur = slot.current;
 
     // 오늘 이후 입원 예정인 환자는 퇴원 처리하지 않음 (예약→current 자동 승격된 환자 보호)
@@ -775,7 +836,7 @@ async function main() {
   if (Object.keys(slotUpdates).length > 0) {
     await db.ref('/').update(slotUpdates);
   }
-  console.log(`  ✅ 병상 배치 완료 — 입원: ${setCount}개 / 퇴원: ${clearCount}개\n`);
+  console.log(`  ✅ 병상 배치 완료 — 입원: ${setCount}개 / 퇴원: ${clearCount}개 / 병실이동: ${transferCount}개\n`);
 
   // ────────────────────────────────────────────────────────────────
   // 입퇴원 이벤트를 monthlyBoards에 영구 기록
@@ -1095,7 +1156,7 @@ async function main() {
     console.log(`   [0.5] 구형 슬롯 키 마이그레이션`);
   }
   console.log(`   [1]   환자 마스터: ${patEntries.length}명${FULL_MODE ? '' : ' (입원환자만)'}`);
-  console.log(`   [2]   병상 입원: ${setCount}개 / 퇴원: ${clearCount}개`);
+  console.log(`   [2]   병상 입원: ${setCount}개 / 퇴원: ${clearCount}개 / 병실이동: ${transferCount}개`);
   console.log(`   [2.5] 상담연결: ${conLinkCount}건`);
   console.log(`   [2.6] 입원상태: 업데이트 ${statusUpdateCount}건 / 자동생성 ${autoCreateCount}건`);
   if (FULL_MODE) {
