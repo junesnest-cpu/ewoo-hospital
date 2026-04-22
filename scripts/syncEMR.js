@@ -539,6 +539,11 @@ async function main() {
   console.log('─'.repeat(50));
   console.log('[2] 병상 배치 동기화 시작');
 
+  // Phase 2에서 참조할 consultations 스냅샷 (퇴원일 복원 + 유령 차단용).
+  // cleanupDuplicates(전체 모드) 내부의 conRaw 는 별도 함수 스코프라 여기서 보이지 않으므로,
+  // 경량·전체 모드 모두에서 안전하게 main() 스코프에 로드한다.
+  const conRaw = (await db.ref('consultations').once('value')).val() || {};
+
   const bedResult = await pool.request().query(`
     WITH currentPats AS (
       SELECT CHARTNO, INSUCLS,
@@ -1079,8 +1084,9 @@ async function main() {
   }
 
   // ════════════════════════════════════════════════════════════════
-  // EMR 싱크 완료 시간 기록
+  // EMR 싱크 완료 시간 기록 + 이전 실패 상태 클리어
   await db.ref('emrSyncLog/lastSync').set(new Date().toISOString());
+  await db.ref('emrSyncLog/lastError').set(null);
 
   console.log('─'.repeat(50));
   console.log(`🎉 ${FULL_MODE ? '전체' : '경량'} 동기화 완료!`);
@@ -1100,8 +1106,19 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(err => {
+main().catch(async err => {
   console.error('❌ 오류:', err.message);
+  // Firebase에 실패 상태 기록 — UI/진단 스크립트에서 감지 가능하도록.
+  // (conRaw 누락 같은 회귀가 조용히 며칠씩 누적되는 것을 방지)
+  try {
+    await db.ref('emrSyncLog/lastError').set({
+      ts:    new Date().toISOString(),
+      mode:  FULL_MODE ? 'full' : 'light',
+      phase: 'unknown',
+      msg:   String(err && err.message || err),
+      stack: String(err && err.stack || '').slice(0, 2000),
+    });
+  } catch {}
   sql.close().catch(() => {});
   process.exit(1);
 });
