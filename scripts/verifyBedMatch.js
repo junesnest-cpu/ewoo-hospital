@@ -45,9 +45,17 @@ function normalizeChartNo(raw) {
   const s = String(raw).trim().replace(/\D/g, '');
   return s.padStart(10, '0');
 }
+// syncEMR.js 와 동일한 병실 매핑 (bedm_room 숫자 → "201"~"603")
+const ROOM_MAP = {
+   1:'201',  2:'202',  3:'203',  4:'204',  5:'205',  6:'206',
+   7:'301',  8:'302',  9:'303', 10:'304', 11:'305', 12:'306',
+  13:'501', 14:'502', 15:'503', 16:'504', 17:'505', 18:'506',
+  19:'601', 20:'602', 21:'603',
+};
 function makeSlotKey(dong, room, bedKey) {
-  // syncEMR.js 와 동일 규칙 (bedm_dong-bedm_room-bedm_key)
-  return `${String(room).trim()}-${String(bedKey).trim()}`;
+  const roomId = ROOM_MAP[room];
+  if (!roomId) return null;
+  return `${roomId}-${bedKey}`;
 }
 function normName(n) {
   return (n || '').replace(/^신\)\s*/, '').replace(/\s/g, '').trim().toLowerCase();
@@ -87,6 +95,10 @@ async function main() {
   const emrMap = new Map();
   for (const b of bedResult.recordset) {
     const slotKey = makeSlotKey(b.dong, b.room, b.bedKey);
+    if (!slotKey) {
+      console.log(`  ⚠ 알 수 없는 room 번호 skip: dong=${b.dong} room=${b.room} bed=${b.bedKey} name=${b.name}`);
+      continue;
+    }
     emrMap.set(slotKey, {
       name:      String(b.name || '').trim(),
       admitDate: formatDate(b.admitDate),
