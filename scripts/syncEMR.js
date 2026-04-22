@@ -659,10 +659,52 @@ async function main() {
     }
 
     // 예약에서 입원된 환자의 reservation 데이터 병합 후 정리
+    //
+    // 매칭 우선순위 (강→약):
+    //   1) consultationId → consultations[cid].chartNo === emrData.chartNo  (최강: 교차DB 식별자)
+    //   2) consultationId → consultations[cid].patientId === slotPatientId
+    //   3) 이름 완전 일치 (trim + lowercase)
+    //   4) baseName 일치 + (admit 또는 discharge 일치)
+    //        baseName: 신) 제거 + 끝자리 숫자(동명이인 suffix) 제거 + whitespace 제거
+    //        EMR 이 "김은정4" 로 숫자를 붙이고 상담일지는 "김은정" 으로 남아있는 케이스 해결
     const resList = existing.reservations || [];
     if (resList.length > 0) {
-      const emrNorm = (emrData.name || '').trim().toLowerCase();
-      const matchIdx = resList.findIndex(r => (r.name || '').trim().toLowerCase() === emrNorm);
+      const laxNorm  = (n) => (n || '').trim().toLowerCase();
+      const baseName = (n) => (n || '').replace(/^신\)\s*/, '').replace(/\d+$/, '').replace(/\s/g, '').trim().toLowerCase();
+      const normMD   = (s) => {
+        if (!s) return '';
+        const t = String(s).trim();
+        const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) return `${+iso[2]}/${+iso[3]}`;
+        const md = t.match(/^(\d{1,2})\/(\d{1,2})$/);
+        if (md) return `${+md[1]}/${+md[2]}`;
+        return t;
+      };
+
+      const emrLax    = laxNorm(emrData.name);
+      const emrBase   = baseName(emrData.name);
+      const emrAdmit  = normMD(emrData.admitDate);
+      const curDis    = normMD(newCurrent.discharge);
+
+      const matchIdx = resList.findIndex(r => {
+        if (!r?.name) return false;
+        // 1/2) consultationId 경유 식별자 매칭
+        if (r.consultationId && conRaw[r.consultationId]) {
+          const c = conRaw[r.consultationId];
+          if (c.chartNo   && emrData.chartNo  && c.chartNo   === emrData.chartNo)   return true;
+          if (c.patientId && slotPatientId    && c.patientId === slotPatientId)    return true;
+        }
+        // 3) 이름 완전 일치
+        if (emrLax && laxNorm(r.name) === emrLax) return true;
+        // 4) baseName + 날짜 시그널
+        if (emrBase && baseName(r.name) === emrBase) {
+          const rAdmit = normMD(r.admitDate);
+          const rDis   = normMD(r.discharge);
+          if (emrAdmit && rAdmit && emrAdmit === rAdmit) return true;
+          if (rDis && curDis && rDis === curDis) return true;
+        }
+        return false;
+      });
       if (matchIdx >= 0) {
         const matched = resList[matchIdx];
         // 예약에 있던 퇴원일·비고·시간 등을 current에 보존
@@ -674,7 +716,7 @@ async function main() {
         // 해당 예약 제거
         const updatedRes = resList.filter((_, i) => i !== matchIdx);
         slotUpdates[`slots/${slotKey}/reservations`] = updatedRes;
-        console.log(`  📋 예약→입원 전환: ${slotKey} (${emrData.name}) — 예약 데이터 병합 후 제거`);
+        console.log(`  📋 예약→입원 전환: ${slotKey} (${emrData.name} ← 예약"${matched.name}") — 예약 데이터 병합 후 제거`);
       }
     }
 
