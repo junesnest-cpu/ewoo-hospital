@@ -82,12 +82,27 @@ const sqlConfig = {
 };
 
 // ── 전화번호 정규화 ────────────────────────────────────────────────
+// 전화번호에서 유효한 10~11자리 번호를 모두 추출.
+// 상담일지 phone 필드에 "010-1111-2222(보호자)\n010-3333-4444(본인)" 처럼
+// 여러 번호가 라벨과 함께 섞여 있는 경우에도 각각 뽑아낸다.
+function extractPhones(raw) {
+  if (!raw) return [];
+  const matches = String(raw).match(/\d{2,4}-?\d{3,4}-?\d{4}/g) || [];
+  const out = [];
+  for (const m of matches) {
+    const d = m.replace(/\D/g, '');
+    let fmt;
+    if (d.length === 11)      fmt = `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}`;
+    else if (d.length === 10) fmt = `${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}`;
+    else continue;
+    if (!out.includes(fmt)) out.push(fmt);
+  }
+  return out;
+}
 function normalizePhone(raw) {
   if (!raw) return '';
-  const digits = String(raw).replace(/\D/g, '');
-  if (digits.length === 11) return `${digits.slice(0,3)}-${digits.slice(3,7)}-${digits.slice(7)}`;
-  if (digits.length === 10) return `${digits.slice(0,3)}-${digits.slice(3,6)}-${digits.slice(6)}`;
-  return String(raw).trim();
+  const arr = extractPhones(raw);
+  return arr[0] || String(raw).trim();
 }
 
 // ── 날짜 포맷 (YYYYMMDD → YYYY-MM-DD) ────────────────────────────
@@ -1235,12 +1250,12 @@ async function main() {
       matched = patByChart.get(c.chartNo);
       matchBy = 'byChart';
     }
-    // ② phone / phone2
+    // ② phone / phone2 — 보호자·본인 혼재 필드도 extractPhones 로 모두 시도
     if (!matched) {
-      const p1 = normalizePhone(c.phone);
-      const p2 = normalizePhone(c.phone2);
-      if (p1 && patByPhone.has(p1))      { matched = patByPhone.get(p1); matchBy = 'byPhone'; }
-      else if (p2 && patByPhone.has(p2)) { matched = patByPhone.get(p2); matchBy = 'byPhone'; }
+      const cands = [...extractPhones(c.phone), ...extractPhones(c.phone2)];
+      for (const p of cands) {
+        if (patByPhone.has(p)) { matched = patByPhone.get(p); matchBy = 'byPhone'; break; }
+      }
     }
     // ③ birthDate 전체 + baseName (유일)
     if (!matched && c.birthDate) {
@@ -1299,12 +1314,12 @@ async function main() {
 
     const issues = {};
 
-    // phone (phone2 도 허용)
-    const cp  = normalizePhone(c.phone);
-    const cp2 = normalizePhone(c.phone2);
-    const pp  = normalizePhone(pat.phone);
-    if (pp && cp && cp !== pp && (!cp2 || cp2 !== pp)) {
-      issues.phone = { con: cp || null, pat: pp };
+    // phone — 상담일지에 여러 번호가 섞여있을 수 있으므로 전부 추출해 어느 하나라도
+    // patient 와 일치하면 OK. 추출 결과가 전무한 경우(정규화 불가) 는 판정 보류.
+    const conPhones = [...extractPhones(c.phone), ...extractPhones(c.phone2)];
+    const pp = normalizePhone(pat.phone);
+    if (pp && conPhones.length > 0 && !conPhones.includes(pp)) {
+      issues.phone = { con: conPhones.join(', '), pat: pp };
     }
 
     // birthDate 전체 비교 (둘 다 있을 때만)
