@@ -165,6 +165,9 @@ export default function WardTimeline() {
   const [singleRoomMemoText, setSingleRoomMemoText] = useState("");
   const [localSingleMemo,    setLocalSingleMemo]    = useState("");
   const [singleMemoOpen,     setSingleMemoOpen]     = useState(true);
+  const [quadRoomMemoText,   setQuadRoomMemoText]   = useState("");
+  const [localQuadMemo,      setLocalQuadMemo]      = useState("");
+  const [quadMemoOpen,       setQuadMemoOpen]       = useState(true);
 
   // 모바일에서 초기 로드 시 메모 패널 접기
   useEffect(() => {
@@ -325,6 +328,15 @@ export default function WardTimeline() {
       const val = snap.val() || "";
       setSingleRoomMemoText(val);
       setLocalSingleMemo(val);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onValue(ref(db, "roomTypeMemos/4인실"), snap => {
+      const val = snap.val() || "";
+      setQuadRoomMemoText(val);
+      setLocalQuadMemo(val);
     });
     return () => unsub();
   }, []);
@@ -567,6 +579,11 @@ export default function WardTimeline() {
   const saveSingleRoomMemo = useCallback(async (text) => {
     setSingleRoomMemoText(text);
     await set(ref(db, "roomTypeMemos/1인실"), text);
+  }, []);
+
+  const saveQuadRoomMemo = useCallback(async (text) => {
+    setQuadRoomMemoText(text);
+    await set(ref(db, "roomTypeMemos/4인실"), text);
   }, []);
 
   // ── 드래그 앤 드롭 실행 ──────────────────────────────────────────────────
@@ -1197,6 +1214,32 @@ export default function WardTimeline() {
               onBlur={e => { const t = e.target.value; if (t !== singleRoomMemoText) saveSingleRoomMemo(t); }}
               placeholder="1인실 예약 조정, 대기 현황, 특이사항 등 자유롭게 입력하세요..."
               style={{ display:"block", width:"100%", border:"none", resize:"none", height:400, fontSize:13, padding:"6px 16px 10px", fontFamily:"inherit", color:"#1e1b4b", outline:"none", background:"transparent", boxSizing:"border-box", lineHeight:1.7 }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ── 4인실 전용 메모 패널 (병상 시트와 공유: roomTypeMemos/4인실) ── */}
+      {filterType === "4인실" && (
+        <div style={{ flexShrink:0, background:"#d1fae5", borderTop:"2px solid #6ee7b7" }}>
+          <div
+            onClick={() => setQuadMemoOpen(o => !o)}
+            style={{ padding:"6px 16px", display:"flex", alignItems:"center", gap:8, cursor:"pointer", userSelect:"none" }}>
+            <span style={{ fontSize:13, fontWeight:800, color:"#065f46" }}>📋 4인실 예약 메모</span>
+            <span style={{ fontSize:11, color:"#10b981" }}>{quadMemoOpen ? "▼" : "▲"}</span>
+            {!quadMemoOpen && localQuadMemo && (
+              <span style={{ fontSize:11, color:"#059669", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:400 }}>
+                {localQuadMemo.split("\n")[0]}
+              </span>
+            )}
+          </div>
+          {quadMemoOpen && (
+            <textarea
+              value={localQuadMemo}
+              onChange={e => setLocalQuadMemo(e.target.value)}
+              onBlur={e => { const t = e.target.value; if (t !== quadRoomMemoText) saveQuadRoomMemo(t); }}
+              placeholder="4인실 예약 조정, 대기 현황, 특이사항 등 자유롭게 입력하세요..."
+              style={{ display:"block", width:"100%", border:"none", resize:"none", height:400, fontSize:13, padding:"6px 16px 10px", fontFamily:"inherit", color:"#064e3b", outline:"none", background:"transparent", boxSizing:"border-box", lineHeight:1.7 }}
             />
           )}
         </div>

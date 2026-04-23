@@ -14,7 +14,7 @@ const ROOM_SECTIONS = [
       {room:"204",n:1},{room:"204",n:2},{room:"304",n:1},{room:"304",n:2},
       {room:"305",n:1},{room:"305",n:2},{room:"504",n:1},{room:"504",n:2},
     ] },
-  { type: "4인실", rowSize: 4, hasTypeMemo: false,
+  { type: "4인실", rowSize: 4, hasTypeMemo: true,
     beds: ["201","203","301","303","501","503"].flatMap(r => [1,2,3,4].map(n => ({room:r, n}))) },
   { type: "6인실", rowSize: 6, hasTypeMemo: false,
     beds: ["205","206","306","505","506","601","603"].flatMap(r => [1,2,3,4,5,6].map(n => ({room:r, n}))) },
@@ -29,9 +29,9 @@ function chunk(arr, size) {
 const TYPE_COLOR = {"1인실":"#6366f1","2인실":"#0ea5e9","4인실":"#10b981","6인실":"#f59e0b"};
 const TYPE_BG    = {"1인실":"#eef2ff","2인실":"#e0f2fe","4인실":"#d1fae5","6인실":"#fef3c7"};
 
-const COL_W  = 240;
-const GAP    = 8;
-const MEMO_W = 260;
+const COL_W  = 200;
+const GAP    = 6;
+const MEMO_W = 240;
 
 // ── 날짜 유틸 ──────────────────────────────────────────────────────────────
 function parseDateStr(str) {
@@ -228,12 +228,14 @@ export default function BedSheet() {
 
   const [memoSingle, setMemoSingle] = useState("");
   const [memoDouble, setMemoDouble] = useState("");
+  const [memoQuad,   setMemoQuad]   = useState("");
 
   // 룸타입 메모 구독 (타임라인과 동일 경로)
   useEffect(() => {
     const u1 = onValue(ref(db, "roomTypeMemos/1인실"), snap => setMemoSingle(snap.val() || ""));
     const u2 = onValue(ref(db, "roomTypeMemos/2인실"), snap => setMemoDouble(snap.val() || ""));
-    return () => { u1(); u2(); };
+    const u4 = onValue(ref(db, "roomTypeMemos/4인실"), snap => setMemoQuad(snap.val() || ""));
+    return () => { u1(); u2(); u4(); };
   }, []);
 
   const saveTypeMemo = useCallback(async (type, text) => {
@@ -244,8 +246,9 @@ export default function BedSheet() {
 
   const memoDebounce = useRef({});
   const onTypeMemoChange = (type, text) => {
-    if (type === "1인실") setMemoSingle(text);
-    else setMemoDouble(text);
+    if      (type === "1인실") setMemoSingle(text);
+    else if (type === "2인실") setMemoDouble(text);
+    else if (type === "4인실") setMemoQuad(text);
     clearTimeout(memoDebounce.current[type]);
     memoDebounce.current[type] = setTimeout(() => {
       set(ref(db, `roomTypeMemos/${type}`), text).catch(console.error);
@@ -328,7 +331,10 @@ export default function BedSheet() {
       <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 18 }}>
         {ROOM_SECTIONS.map((section) => {
           const rows = chunk(section.beds, section.rowSize);
-          const memoValue = section.type === "1인실" ? memoSingle : memoDouble;
+          const memoValue = section.type === "1인실" ? memoSingle
+                          : section.type === "2인실" ? memoDouble
+                          : section.type === "4인실" ? memoQuad
+                          : "";
           const occupied = section.beds.filter(b => slots[`${b.room}-${b.n}`]?.current?.name).length;
           const resCount = section.beds.reduce((s, b) =>
             s + ((slots[`${b.room}-${b.n}`]?.reservations || []).filter(r => r?.name).length), 0);
