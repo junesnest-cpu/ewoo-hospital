@@ -7,6 +7,12 @@ const NAV_GROUPS = [
     items: [
       { label: "병동 현황", href: "/" },
       { label: "타임라인", href: "/ward-timeline" },
+      { label: "병상 시트", href: "/bed-sheet" },
+    ],
+  },
+  {
+    label: "예정표",
+    items: [
       { label: "월간 예정표", href: "/monthly" },
       { label: "일일 현황판", href: "/daily-board" },
       { label: "일일 치료", href: "/daily" },

@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/router";
-import { ref, onValue, set, update } from "firebase/database";
+import { ref, onValue, set } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
 import useIsMobile from "../lib/useismobile";
-import { searchPatientsByName } from "../lib/patientSearch";
 import { useWardData } from "../lib/WardDataContext";
+import SlotEditModal from "../components/SlotEditModal";
 
 // ── 상수 ─────────────────────────────────────────────────────────────────────
 const WARD_STRUCTURE = {
@@ -107,182 +107,7 @@ function getOverlaps(bars, totalDays) {
   return overlaps;
 }
 
-// ── 편집 모달 ─────────────────────────────────────────────────────────────────
-const ADMIT_TIME_OPTIONS = ["아침","점심","저녁"];
-const DISCHARGE_TIME_OPTIONS = ["아침 후","점심 후","저녁 후"];
-const ALL_TIME_OPTIONS = [...ADMIT_TIME_OPTIONS, ...DISCHARGE_TIME_OPTIONS];
-
-function EditModal({ modal, onClose, onSave, onDelete, onConvert, saving, currentPatient }) {
-  const [form, setForm] = useState({
-    name:          modal.data.name          || "",
-    admitDate:     modal.data.admitDate     || "",
-    admitTime:     modal.data.admitTime     || "",
-    discharge:     modal.data.discharge     || "미정",
-    dischargeTime: modal.data.dischargeTime || "",
-    note:          modal.data.note          || "",
-    scheduleAlert: modal.data.scheduleAlert || false,
-    patientId:     modal.data.patientId     || "",
-    preserveSeat:  modal.data.preserveSeat  || false,
-  });
-  const [suggestions,     setSuggestions]     = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [searching,       setSearching]       = useState(false);
-  const searchTimer = useRef(null);
-
-  const isNew         = modal.resIndex === -1;
-  const isReservation = modal.mode === "reservation";
-  const slotLabel     = modal.slotKey.replace(/(\d+)-(\d+)/, "$1호 $2번");
-
-  // 자리보존 조건: 현재 입원 환자 + 퇴원 후 7일 이내 재입원 예약
-  const curDisD   = currentPatient?.discharge ? parseDateStr(currentPatient.discharge) : null;
-  const frmAdmitD = form.admitDate ? parseDateStr(form.admitDate) : null;
-  const diffDays  = (curDisD && frmAdmitD)
-    ? Math.round((dateOnly(frmAdmitD).getTime() - dateOnly(curDisD).getTime()) / 86400000)
-    : -1;
-  const showPreserveSeat = isReservation && !!currentPatient?.name && currentPatient.name === form.name && diffDays >= 1 && diffDays <= 7;
-  const inpStyle = { width:"100%", border:"1.5px solid #e2e8f0", borderRadius:8, padding:"9px 11px", fontSize:14, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
-
-  const onNameChange = (val) => {
-    setForm(p => ({ ...p, name: val, patientId: "" }));
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    if (!val.trim()) { setSuggestions([]); setShowSuggestions(false); setSearching(false); return; }
-    setSearching(true);
-    searchTimer.current = setTimeout(async () => {
-      try {
-        const results = await searchPatientsByName(val.trim());
-        setSuggestions(results);
-        setShowSuggestions(results.length > 0);
-      } catch(e) {}
-      setSearching(false);
-    }, 300);
-  };
-
-  const selectPatient = (p) => {
-    setForm(prev => ({
-      ...prev,
-      name:      p.name,
-      patientId: p.internalId || "",
-      note:      prev.note || (p.diagnosis ? `[${p.diagnosis}]` : ""),
-    }));
-    setSuggestions([]);
-    setShowSuggestions(false);
-  };
-
-  return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center" }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background:"#fff", borderRadius:16, padding:"24px 28px", width:"min(92vw,400px)", boxShadow:"0 24px 64px rgba(0,0,0,0.3)" }}>
-        <div style={{ fontWeight:800, fontSize:16, color:"#0f2744", marginBottom:4 }}>
-          {isNew ? "📅 예약 입원 추가" : isReservation ? "📅 예약 수정" : "🏥 입원 정보 수정"}
-        </div>
-        <div style={{ fontSize:12, color:"#94a3b8", marginBottom:20 }}>{slotLabel} 병상</div>
-
-        {/* 이름 입력 + 환자 자동완성 */}
-        <div style={{ marginBottom:14, position:"relative" }}>
-          <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>
-            환자 이름 *
-            {form.patientId && (
-              <span style={{ marginLeft:6, fontSize:11, color:"#059669", fontWeight:700 }}>✓ 기존 환자 연결됨</span>
-            )}
-          </label>
-          <div style={{ position:"relative" }}>
-            <input
-              style={{ ...inpStyle, borderColor: form.patientId ? "#10b981" : "#e2e8f0", paddingRight: searching ? 80 : 11 }}
-              value={form.name}
-              onChange={e => onNameChange(e.target.value)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              placeholder="이름 입력 (기존 환자 자동완성)"
-              autoFocus
-            />
-            {searching && (
-              <span style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", fontSize:11, color:"#94a3b8" }}>검색 중…</span>
-            )}
-          </div>
-          {showSuggestions && (
-            <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#fff", borderRadius:8,
-              boxShadow:"0 8px 24px rgba(0,0,0,0.18)", border:"1px solid #e2e8f0", zIndex:50, maxHeight:220, overflowY:"auto", marginTop:2 }}>
-              {suggestions.map((p, i) => (
-                <div key={i} onMouseDown={() => selectPatient(p)}
-                  style={{ padding:"9px 12px", cursor:"pointer", borderBottom:"1px solid #f1f5f9",
-                    display:"flex", flexDirection:"column", gap:2, background:"#fff", transition:"background 0.1s" }}
-                  onMouseEnter={e => e.currentTarget.style.background="#f0f9ff"}
-                  onMouseLeave={e => e.currentTarget.style.background="#fff"}>
-                  <div style={{ fontWeight:700, fontSize:14, color:"#0f2744" }}>{p.name}</div>
-                  <div style={{ fontSize:11, color:"#94a3b8", display:"flex", gap:8, flexWrap:"wrap" }}>
-                    {p.birthDate  && <span>{p.birthDate}</span>}
-                    {p.diagnosis  && <span style={{ color:"#64748b" }}>{p.diagnosis}</span>}
-                    {p.chartNo    && <span>차트 {p.chartNo}</span>}
-                    {p.doctor     && <span>담당 {p.doctor}</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* 입원일 / 퇴원일 + 시간 */}
-        {[
-          ...(isReservation ? [{ label:"예약 입원일 (예: 4/15)", key:"admitDate", timeKey:"admitTime", ph:"4/15" }] : []),
-          { label:"퇴원 예정일 (예: 4/25 또는 미정)", key:"discharge", timeKey:"dischargeTime", ph:"4/25 또는 미정" },
-        ].map(f => (
-          <div key={f.key} style={{ marginBottom:14 }}>
-            <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>{f.label}</label>
-            <div style={{ display:"flex", gap:6 }}>
-              <input style={{...inpStyle, flex:1}} value={form[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} placeholder={f.ph} />
-              {(() => { const opts = f.timeKey === "admitTime" ? ADMIT_TIME_OPTIONS : DISCHARGE_TIME_OPTIONS; return (!form[f.timeKey] || ALL_TIME_OPTIONS.includes(form[f.timeKey])) ? (
-                <select value={form[f.timeKey]||""} onChange={e=>{ if(e.target.value==="__custom__"){ const v=prompt("시간 입력 (예: 14시)"); setForm(p=>({...p,[f.timeKey]:v?v.trim():""})); } else setForm(p=>({...p,[f.timeKey]:e.target.value})); }}
-                  style={{...inpStyle, width:110, color:form[f.timeKey]?"#166534":"#94a3b8", flexShrink:0}}>
-                  <option value="">시간</option>
-                  {opts.map(t=><option key={t} value={t}>{t}</option>)}
-                  <option value="__custom__">직접입력</option>
-                </select>
-              ) : (
-                <input value={form[f.timeKey]} onChange={e=>setForm(p=>({...p,[f.timeKey]:e.target.value}))}
-                  style={{...inpStyle, width:110, color:"#166534", flexShrink:0}} />
-              ); })()}
-            </div>
-          </div>
-        ))}
-
-        <div style={{ marginBottom:14 }}>
-          <label style={{ display:"block", fontSize:12, fontWeight:700, color:"#64748b", marginBottom:5 }}>메모</label>
-          <textarea style={{...inpStyle, resize:"vertical", minHeight:72, lineHeight:1.6}} value={form.note} onChange={e=>setForm(p=>({...p,note:e.target.value}))} placeholder="치료 내용, 특이사항 등" />
-        </div>
-
-        <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:showPreserveSeat?8:20, cursor:"pointer", fontSize:13, color:"#64748b" }}>
-          <input type="checkbox" checked={form.scheduleAlert} onChange={e=>setForm(p=>({...p,scheduleAlert:e.target.checked}))} />
-          ⚠ 스케줄 확인 필요
-        </label>
-
-        {showPreserveSeat && (
-          <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20, cursor:"pointer", fontSize:13, color:"#92400e", background:"#fef3c7", borderRadius:8, padding:"10px 12px" }}>
-            <input type="checkbox" checked={form.preserveSeat} onChange={e=>setForm(p=>({...p,preserveSeat:e.target.checked}))} />
-            🛋 자리보존 서비스 — {currentPatient.name}님 퇴원 후 짐을 두고 재입원까지 병상 유지
-          </label>
-        )}
-
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          <button onClick={() => onSave({ ...form, preserveSeat: showPreserveSeat ? form.preserveSeat : false })} disabled={saving || !form.name.trim()}
-            style={{ flex:1, background:form.name.trim()?"#0f2744":"#e2e8f0", color:form.name.trim()?"#fff":"#94a3b8", border:"none", borderRadius:9, padding:"11px", fontSize:14, fontWeight:700, cursor:form.name.trim()?"pointer":"default" }}>
-            {saving ? "저장 중..." : "저장"}
-          </button>
-          {!isNew && isReservation && (
-            <button onClick={onConvert} disabled={saving}
-              style={{ flex:1, background:"#059669", color:"#fff", border:"none", borderRadius:9, padding:"11px", fontSize:14, fontWeight:700, cursor:"pointer" }}>
-              🛏 입원 전환
-            </button>
-          )}
-          {!isNew && (
-            <button onClick={onDelete} disabled={saving}
-              style={{ background:"#fee2e2", color:"#dc2626", border:"none", borderRadius:9, padding:"11px 14px", fontSize:14, fontWeight:700, cursor:"pointer" }}>삭제</button>
-          )}
-          <button onClick={onClose}
-            style={{ background:"#f1f5f9", color:"#64748b", border:"none", borderRadius:9, padding:"11px 14px", fontSize:14, cursor:"pointer" }}>취소</button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// ── 편집 모달은 components/SlotEditModal.js 공용 컴포넌트로 분리됨 ────────────
 
 // ── 팝오버 ────────────────────────────────────────────────────────────────────
 function Popover({ popover, onClose, onEdit, onDelete, onConvert }) {
@@ -333,7 +158,6 @@ export default function WardTimeline() {
   const [collapsed,  setCollapsed]  = useState({});
   const [popover,    setPopover]    = useState(null);
   const [editModal,  setEditModal]  = useState(null);
-  const [saving,     setSaving]     = useState(false);
   const [memoOpen,   setMemoOpen]   = useState(true);
   const [daysTotal,  setDaysTotal]  = useState(DAYS_MIN);
   const [localMemos, setLocalMemos] = useState({});  // 입력 중 로컬 상태
@@ -790,85 +614,7 @@ export default function WardTimeline() {
   }, [dragging, slots, saveSlots, syncConsultationOnSlotChange]);
 
 
-  // 저장 처리
-  const handleSave = useCallback(async form => {
-    if (!editModal) return;
-    setSaving(true);
-    try {
-      const { slotKey, mode, resIndex } = editModal;
-      const ns = JSON.parse(JSON.stringify(slots));
-      if (!ns[slotKey]) ns[slotKey] = { current:null, reservations:[] };
-      const slot = ns[slotKey];
-      if (mode === "current") {
-        slot.current = { ...(slot.current||{}), ...form };
-      } else {
-        if (!slot.reservations) slot.reservations = [];
-        if (resIndex >= 0) slot.reservations[resIndex] = { ...(slot.reservations[resIndex]||{}), ...form };
-        else slot.reservations.push({ ...form });
-      }
-      await saveSlots(ns, [slotKey]);
-      // 날짜 변경 시 이전 dailyBoards 항목 정리
-      const oldData = editModal.data || {};
-      if (oldData.admitDate !== form.admitDate || oldData.discharge !== form.discharge) {
-        await cleanupDailyBoards(form.name, oldData, form);
-      }
-      // 편집 저장 시 consultation 날짜 동기화
-      const cId = editModal.data?.consultationId || form.consultationId;
-      if (cId) {
-        await syncConsultationOnSlotChange(slotKey, form.name, cId, slotKey, {
-          admitDate: form.admitDate || undefined,
-          dischargeDate: form.discharge || undefined,
-        });
-      }
-      setEditModal(null); setPopover(null);
-    } finally { setSaving(false); }
-  }, [editModal, slots, saveSlots, syncConsultationOnSlotChange, cleanupDailyBoards]);
-
-  const handleDelete = useCallback(async () => {
-    if (!editModal) return;
-    const { slotKey, mode, resIndex, data } = editModal;
-    if (!window.confirm(`${data.name}님의 ${mode==="current"?"입원 정보":"예약"}를 삭제하시겠습니까?`)) return;
-    setSaving(true);
-    try {
-      const ns = JSON.parse(JSON.stringify(slots));
-      if (mode === "current") {
-        // 퇴원: consultation 상태를 "입원완료"로 먼저 (auto-restore 차단), dailyBoards 기록, current 비우기
-        const cur = slots[slotKey]?.current;
-        if (cur?.name) {
-          await syncConsultationOnSlotChange(slotKey, cur.name, cur.consultationId, null, undefined, 'discharge');
-          const d = cur.discharge;
-          const disDate = d?.match(/^(\d{4})-(\d{2})-(\d{2})/) ? d.split("T")[0]
-            : d?.match(/(\d{1,2})\/(\d{1,2})/) ? `${new Date().getFullYear()}-${d.match(/(\d{1,2})\/(\d{1,2})/)[1].padStart(2,"0")}-${d.match(/(\d{1,2})\/(\d{1,2})/)[2].padStart(2,"0")}` : null;
-          await recordDischarge(cur.name, slotKey, disDate);
-        }
-        ns[slotKey].current = null;
-        await saveSlots(ns, [slotKey]);
-      } else {
-        // 예약 취소: consultation 먼저(reservedSlot=null, status=상담중) → slots 나중. auto-restore 레이스 방지.
-        await syncConsultationOnSlotChange(slotKey, data.name, data.consultationId, null, undefined, 'cancel');
-        ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
-        await saveSlots(ns, [slotKey]);
-      }
-      if (data) {
-        await cleanupDailyBoards(data.name, data, {});
-      }
-      setEditModal(null); setPopover(null);
-    } finally { setSaving(false); }
-  }, [editModal, slots, saveSlots, recordDischarge, syncConsultationOnSlotChange, cleanupDailyBoards]);
-
-  const handleConvert = useCallback(async () => {
-    if (!editModal || editModal.mode !== "reservation") return;
-    const { slotKey, resIndex, data } = editModal;
-    if (!window.confirm(`${data.name}님을 현재 입원 환자로 전환하시겠습니까?`)) return;
-    setSaving(true);
-    try {
-      const ns = JSON.parse(JSON.stringify(slots));
-      ns[slotKey].current = { ...data };
-      ns[slotKey].reservations = (ns[slotKey].reservations||[]).filter((_,i)=>i!==resIndex);
-      await saveSlots(ns, [slotKey]);
-      setEditModal(null); setPopover(null);
-    } finally { setSaving(false); }
-  }, [editModal, slots, saveSlots]);
+  // handleSave / handleDelete / handleConvert 는 SlotEditModal 내부에서 처리됨
 
   const handlePopoverConvert = useCallback(async () => {
     if (!popover) return;
@@ -1472,16 +1218,12 @@ export default function WardTimeline() {
         />
       )}
 
-      {/* 편집 모달 */}
+      {/* 편집 모달 (공용 SlotEditModal) */}
       {editModal && (
-        <EditModal
+        <SlotEditModal
           modal={editModal}
           onClose={() => setEditModal(null)}
-          onSave={handleSave}
-          onDelete={handleDelete}
-          onConvert={handleConvert}
-          saving={saving}
-          currentPatient={editModal.currentPatient || null}
+          onSaved={() => setPopover(null)}
         />
       )}
     </div>
