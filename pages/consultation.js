@@ -243,13 +243,43 @@ export default function ConsultationPage() {
   }, [slotOverrides, consultations]);
 
   // 역방향 자동 복원: consultation에 reservedSlot이 있는데 slots에 reservation이 없으면 자동 추가
+  //
+  // 스코프 (2026-04-23 축소):
+  //   "사용자가 최근 상담일지에서 배정한 예약이 sync/삭제 등으로 slot에서 사라졌을 때"
+  //   만 복원하고, 과거 상담·과거 입원실적의 reservedSlot 은 복원하지 않는다.
+  //
+  // 가드:
+  //   1) status 가 '취소' 또는 '입원완료' 이면 스킵 (기존)
+  //   2) consultation.createdAt 가 올해가 아니면 스킵 (과거 상담의 reservedSlot 잔존 복원 방지)
+  //   3) admitDate 가 "M/D" 형식(연도 없음)일 때, 해당 월일을 올해로 해석해
+  //      오늘보다 2일 이상 과거면 스킵 (과거 입원 기록의 M/D 를 올해로 오해석 방지)
+  //      * 예: admitDate="5/4", createdAt="2025-02-12", 오늘=2026-04-23 → 스킵
+  //      * admitDate="4/27", 오늘=2026-04-23 → 복원 허용 (미래)
   const restoredRef = useRef(new Set());
   useEffect(() => {
     if (!Object.keys(slots).length) return;
+    const now = new Date();
+    const thisYear = now.getFullYear();
+    const todayStart = new Date(thisYear, now.getMonth(), now.getDate());
+    const GRACE_MS = 2 * 24 * 60 * 60 * 1000; // 2일 이상 지난 M/D 는 과거로 간주
+
     Object.entries(consultations).forEach(([cid, c]) => {
       if (!c?.name || !c.reservedSlot) return;
       if (c.status === "취소" || c.status === "입원완료") return;
       if (restoredRef.current.has(cid)) return;
+
+      // 가드 2: createdAt 올해가 아니면 스킵
+      const createdY = (c.createdAt || "").slice(0, 4);
+      if (createdY && /^\d{4}$/.test(createdY) && parseInt(createdY, 10) !== thisYear) return;
+
+      // 가드 3: admitDate 가 M/D 형식인데 올해 기준 이미 2일 이상 지난 과거면 스킵
+      const ad = String(c.admitDate || "").trim();
+      const md = ad.match(/^(\d{1,2})\/(\d{1,2})$/);
+      if (md) {
+        const candidate = new Date(thisYear, +md[1] - 1, +md[2]);
+        if (!isNaN(candidate) && todayStart.getTime() - candidate.getTime() > GRACE_MS) return;
+      }
+
       const slotKey = c.reservedSlot;
       const slot = slots[slotKey];
       // current에 있으면 이미 입원 상태 → 복원 불필요

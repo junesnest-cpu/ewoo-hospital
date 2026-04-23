@@ -771,8 +771,32 @@ async function main() {
       const emrAdmit  = normMD(emrData.admitDate);
       const curDis    = normMD(newCurrent.discharge);
 
+      // 재입원 예약 보호: 예약의 admitDate 가 EMR admitDate 와 다르고 미래(오늘 이후)면
+      //   같은 slot 이라도 "재입원 예약"으로 간주해 매칭 대상에서 제외.
+      //   예: 박경옥2 현재 205-3 재원 중(admit=4/3). 205-3 에 박경옥2 재입원 예약(admit=5/10)
+      //       → 이 가드로 삭제되지 않음.
+      const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+      const parseAdmitMD = (s) => {
+        if (!s) return null;
+        const t = String(s).trim();
+        const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) { const d = new Date(+iso[1], +iso[2]-1, +iso[3]); d.setHours(0,0,0,0); return d; }
+        const md = t.match(/^(\d{1,2})\/(\d{1,2})$/);
+        if (md) { const d = new Date(today0.getFullYear(), +md[1]-1, +md[2]); d.setHours(0,0,0,0); return d; }
+        return null;
+      };
+      const isFutureReReservation = (r) => {
+        const rAdmit = parseAdmitMD(r.admitDate);
+        const eAdmit = parseAdmitMD(emrData.admitDate);
+        if (!rAdmit || !eAdmit) return false;
+        if (rAdmit.getTime() === eAdmit.getTime()) return false; // 같은 사이클
+        return rAdmit > today0; // 다른 사이클 + 미래 → 재입원 예약
+      };
+
       const matchIdx = resList.findIndex(r => {
         if (!r?.name) return false;
+        // 재입원 예약은 어느 경로든 매칭 금지
+        if (isFutureReReservation(r)) return false;
         // 1/2) consultationId 경유 식별자 매칭
         if (r.consultationId && conRaw[r.consultationId]) {
           const c = conRaw[r.consultationId];
@@ -1535,6 +1559,18 @@ async function main() {
     const nameDateMatch = baseName26(c.name) === baseName26(emrIn.name) &&
       normMD26(c.admitDate) && normMD26(c.admitDate) === normMD26(emrIn.admitDate);
     if (!(chartMatch || pidMatch || nameDateMatch)) continue;
+    // 재입원 예약 보호: consultation.admitDate 가 미래인데 EMR admitDate 와 다르면 스킵.
+    //   예: 박경옥2 chartNo=A, EMR 현재 입원(admit=4/3), 재입원 예약 consultation(admit=5/10)
+    //       → chartMatch 되지만 admitDate 가 다른 미래 사이클이므로 안전망 발동 금지.
+    const cAdmit = parseAdmit26(c.admitDate);
+    const eAdmit = parseAdmit26(emrIn.admitDate);
+    if (cAdmit && cAdmit > today26) {
+      const sameCycle = eAdmit && cAdmit.getTime() === eAdmit.getTime();
+      if (!sameCycle) {
+        console.log(`  ⚠ 안전망 미래예약 보호: ${c.name || '?'} (${conId}) cAdmit=${c.admitDate} vs eAdmit=${emrIn.admitDate || '-'} (스킵)`);
+        continue;
+      }
+    }
     // 이미 같은 iteration 에서 업데이트된 경우 중복 방지
     if (admitUpdates[`consultations/${conId}/status`] === '입원완료') continue;
     admitUpdates[`consultations/${conId}/reservedSlot`] = null;

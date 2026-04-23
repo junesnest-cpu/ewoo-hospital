@@ -51,10 +51,18 @@ const baseName = (n) => (n || '').replace(/^신\)\s*/, '').replace(/\d+$/, '').r
   }
 
   const suspects = [];
+  const thisYear = today.getFullYear();
   for (const [id, c] of Object.entries(cons)) {
     if (!c) continue;
     if (c.status !== '입원완료') continue;
     if (c.mergedInto) continue; // 이미 병합된 건 스킵
+    // 과거 실적 M/D 오탐 방지: createdAt 연도가 올해가 아니면 M/D 는 작년(또는 그 이전)
+    // 실제 입원일일 가능성이 높아 "미래 예약인데 입원완료"로 볼 수 없음 → 스킵.
+    const createdY = (c.createdAt || '').slice(0, 4);
+    if (createdY && /^\d{4}$/.test(createdY) && parseInt(createdY, 10) !== thisYear) {
+      const ad = String(c.admitDate || '').trim();
+      if (/^\d{1,2}\/\d{1,2}$/.test(ad)) continue;
+    }
     const ad = parseDate(c.admitDate);
     if (!ad || ad <= today) continue; // 오늘 이후 입원만
     // chartNo 연결 상태 분류
