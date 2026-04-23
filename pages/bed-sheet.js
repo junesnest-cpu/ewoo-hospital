@@ -4,22 +4,27 @@ import { db } from "../lib/firebaseConfig";
 import { useWardData } from "../lib/WardDataContext";
 import SlotEditModal, { getCardColorBg, CARD_COLORS } from "../components/SlotEditModal";
 
-// ── 룸타입별 행 구성 ──────────────────────────────────────────────────────
-const ROOM_ROWS = [
-  { type: "1인실", beds: [{room:"202",n:1},{room:"302",n:1},{room:"502",n:1},{room:"602",n:1}], hasTypeMemo: true },
-  { type: "2인실", beds: [
-      {room:"204",n:1},{room:"204",n:2},
-      {room:"304",n:1},{room:"304",n:2},
-      {room:"305",n:1},{room:"305",n:2},
-      {room:"504",n:1},{room:"504",n:2},
-    ], hasTypeMemo: true },
-  { type: "4인실", beds: [
-      ...["201","203","301","303","501","503"].flatMap(r => [1,2,3,4].map(n => ({room:r, n}))),
-    ], hasTypeMemo: false },
-  { type: "6인실", beds: [
-      ...["205","206","306","505","506","601","603"].flatMap(r => [1,2,3,4,5,6].map(n => ({room:r, n}))),
-    ], hasTypeMemo: false },
+// ── 룸타입별 섹션 구성 ────────────────────────────────────────────────────
+// rowSize: 한 줄에 표시할 병상 수. 해당 크기로 chunk 해서 여러 줄로 배치.
+const ROOM_SECTIONS = [
+  { type: "1인실", rowSize: 4, hasTypeMemo: true,
+    beds: [{room:"202",n:1},{room:"302",n:1},{room:"502",n:1},{room:"602",n:1}] },
+  { type: "2인실", rowSize: 4, hasTypeMemo: true,
+    beds: [
+      {room:"204",n:1},{room:"204",n:2},{room:"304",n:1},{room:"304",n:2},
+      {room:"305",n:1},{room:"305",n:2},{room:"504",n:1},{room:"504",n:2},
+    ] },
+  { type: "4인실", rowSize: 4, hasTypeMemo: false,
+    beds: ["201","203","301","303","501","503"].flatMap(r => [1,2,3,4].map(n => ({room:r, n}))) },
+  { type: "6인실", rowSize: 6, hasTypeMemo: false,
+    beds: ["205","206","306","505","506","601","603"].flatMap(r => [1,2,3,4,5,6].map(n => ({room:r, n}))) },
 ];
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
 
 const TYPE_COLOR = {"1인실":"#6366f1","2인실":"#0ea5e9","4인실":"#10b981","6인실":"#f59e0b"};
 const TYPE_BG    = {"1인실":"#eef2ff","2인실":"#e0f2fe","4인실":"#d1fae5","6인실":"#fef3c7"};
@@ -88,7 +93,7 @@ function PatientCard({ person, type, slotKey, resIndex, onClick, onDragStart, on
           {person.name}
         </span>
       </div>
-      <div style={{ fontSize: 11, color: "#475569", lineHeight: 1.3 }}>{dateLine}</div>
+      <div style={{ fontSize: 22, color: "#475569", lineHeight: 1.2, textAlign: "center", fontWeight: 600 }}>{dateLine}</div>
     </div>
   );
 }
@@ -153,7 +158,7 @@ function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, on
       </div>
 
       <div style={{ padding: 6, display: "flex", flexDirection: "column", gap: 6 }}>
-        {current && (
+        {current ? (
           <PatientCard
             person={current}
             type="current"
@@ -164,6 +169,13 @@ function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, on
             onDragEnd={onDragEnd}
             isDragging={draggingInfo?.slotKey === slotKey && draggingInfo?.type === "current"}
           />
+        ) : (
+          <div style={{
+            border: "1.5px dashed #cbd5e1", borderRadius: 8, padding: "12px 8px",
+            background: "#f8fafc", color: "#94a3b8", fontSize: 12, textAlign: "center", fontWeight: 600,
+          }}>
+            비어있음
+          </div>
         )}
         {reservations.map(({ r, i }) => (
           <PatientCard
@@ -178,9 +190,6 @@ function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, on
             isDragging={draggingInfo?.slotKey === slotKey && draggingInfo?.type === "reservation" && draggingInfo?.resIndex === i}
           />
         ))}
-        {!current && reservations.length === 0 && (
-          <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", padding: "10px 0" }}>비어 있음</div>
-        )}
       </div>
     </div>
   );
@@ -314,44 +323,56 @@ export default function BedSheet() {
         </div>
       )}
 
-      <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 14 }}>
-        {ROOM_ROWS.map((row) => (
-          <div key={row.type}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: TYPE_COLOR[row.type], marginBottom: 6, paddingLeft: 2, letterSpacing: 0.3 }}>
-              {row.type} ({row.beds.length}개 병상)
-            </div>
-            <div style={{ overflowX: "auto", paddingBottom: 4 }}>
-              <div style={{ display: "flex", gap: GAP, alignItems: "flex-start", minWidth: "min-content" }}>
-                {row.beds.map(b => {
-                  const slotKey = `${b.room}-${b.n}`;
-                  return (
-                    <BedColumn
-                      key={slotKey}
-                      roomId={b.room}
-                      bedN={b.n}
-                      slot={slots[slotKey]}
-                      type={row.type}
-                      openEdit={openEdit}
-                      onDrop={handleDrop}
-                      onDragStart={onDragStart}
-                      onDragEnd={onDragEnd}
-                      draggingInfo={dragging}
-                      isOver={dragOver === slotKey}
-                      setDragOver={setDragOver}
+      <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 18 }}>
+        {ROOM_SECTIONS.map((section) => {
+          const rows = chunk(section.beds, section.rowSize);
+          const memoValue = section.type === "1인실" ? memoSingle : memoDouble;
+          return (
+            <div key={section.type}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: TYPE_COLOR[section.type], marginBottom: 6, paddingLeft: 2, letterSpacing: 0.3 }}>
+                {section.type} ({section.beds.length}개 병상 · {rows.length}줄)
+              </div>
+              <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+                <div style={{ display: "flex", gap: GAP, alignItems: "stretch", minWidth: "min-content" }}>
+                  {/* 왼쪽: 여러 줄의 병상 그리드 */}
+                  <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", gap: GAP }}>
+                    {rows.map((bedRow, ri) => (
+                      <div key={ri} style={{ display: "flex", gap: GAP, alignItems: "flex-start" }}>
+                        {bedRow.map(b => {
+                          const slotKey = `${b.room}-${b.n}`;
+                          return (
+                            <BedColumn
+                              key={slotKey}
+                              roomId={b.room}
+                              bedN={b.n}
+                              slot={slots[slotKey]}
+                              type={section.type}
+                              openEdit={openEdit}
+                              onDrop={handleDrop}
+                              onDragStart={onDragStart}
+                              onDragEnd={onDragEnd}
+                              draggingInfo={dragging}
+                              isOver={dragOver === slotKey}
+                              setDragOver={setDragOver}
+                            />
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                  {/* 오른쪽: 룸타입 메모 (섹션 전체 높이로 늘어남) */}
+                  {section.hasTypeMemo && (
+                    <TypeMemoCell
+                      type={section.type}
+                      value={memoValue}
+                      onChange={(v) => onTypeMemoChange(section.type, v)}
                     />
-                  );
-                })}
-                {row.hasTypeMemo && (
-                  <TypeMemoCell
-                    type={row.type}
-                    value={row.type === "1인실" ? memoSingle : memoDouble}
-                    onChange={(v) => onTypeMemoChange(row.type, v)}
-                  />
-                )}
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {editModal && (
