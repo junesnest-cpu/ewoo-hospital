@@ -1398,43 +1398,102 @@ async function main() {
   const conSnap3 = await db.ref('consultations').get();
   const conLatest = conSnap3.val() || {};
 
+  // 날짜 정규화 (Phase 2.6 전용 지역 헬퍼)
+  const normMD26 = (s) => {
+    if (!s) return '';
+    const t = String(s).trim();
+    const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${+iso[2]}/${+iso[3]}`;
+    const md = t.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (md) return `${+md[1]}/${+md[2]}`;
+    return t;
+  };
+  const baseName26 = (n) => (n || '').replace(/^신\)\s*/, '').replace(/\d+$/, '').replace(/\s/g, '').trim().toLowerCase();
+  const today26 = new Date(); today26.setHours(0, 0, 0, 0);
+  // admitDate 문자열 → Date (미래 판정용)
+  const parseAdmit26 = (s) => {
+    if (!s) return null;
+    const t = String(s).trim();
+    const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) { const d = new Date(+iso[1], +iso[2]-1, +iso[3]); d.setHours(0,0,0,0); return d; }
+    const md = t.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (md) { const d = new Date(today26.getFullYear(), +md[1]-1, +md[2]); d.setHours(0,0,0,0); return d; }
+    return null;
+  };
+
   // 현재 EMR에 입원 중인 전체 환자의 chartNo 세트
   const admittedChartNos = new Set();
   for (const [, emrData] of emrBedMap) {
     if (emrData.chartNo) admittedChartNos.add(emrData.chartNo);
   }
 
-  // consultation을 chartNo/patientId/이름으로 인덱스
+  // consultation을 chartNo/patientId로 인덱스 (이름 폴백은 아래에서 별도 처리)
   const conByChartNo = {};   // chartNo → { key, data }
   const conByPatientId = {}; // patientId → { key, data }
-  const conByName = {};      // name → { key, data }
   Object.entries(conLatest).forEach(([k, c]) => {
     if (!c?.name) return;
     if (c.chartNo) conByChartNo[c.chartNo] = { key: k, data: c };
     if (c.patientId) conByPatientId[c.patientId] = { key: k, data: c };
-    // 이름 매칭은 가장 최근 상담을 우선
-    if (!conByName[c.name] || (c.createdAt || '') > (conByName[c.name].data.createdAt || '')) {
-      conByName[c.name] = { key: k, data: c };
-    }
   });
 
   const admitUpdates = {};
   let statusUpdateCount = 0, autoCreateCount = 0;
 
+  // 이름 폴백: EMR 환자 이름 → 후보 consultation 목록 (동명이인 상황 대응)
+  // 키는 baseName (숫자 suffix/공백 제거) 으로 비교해 "조미정" / "조미정2" 같은 case 도 묶음
+  const conByBaseName = new Map(); // baseName → [{ key, data }]
+  Object.entries(conLatest).forEach(([k, c]) => {
+    if (!c?.name) return;
+    const bn = baseName26(c.name);
+    if (!bn) return;
+    if (!conByBaseName.has(bn)) conByBaseName.set(bn, []);
+    conByBaseName.get(bn).push({ key: k, data: c });
+  });
+
   for (const [slotKey, emrData] of emrBedMap) {
     const chartNo = emrData.chartNo;
     const patientId = chartToId[chartNo];
 
-    // 매칭 consultation 찾기: chartNo → patientId → 이름 순
+    // 매칭 consultation 찾기: chartNo → patientId → (엄격한) 이름+입원일 폴백
     let matched = conByChartNo[chartNo] || null;
     if (!matched && patientId) matched = conByPatientId[patientId] || null;
-    if (!matched) matched = conByName[emrData.name] || null;
+    if (!matched) {
+      // 이름만으로는 매칭하지 않고, 같은 baseName 중 "입원일 일치" 조건을 추가
+      //   - 이름 충돌(같은 이름의 미래 예약) 시 입원완료로 잘못 승격되는 문제 방지
+      //   - 예: EMR 조미정 입원(4/10) vs 4/27 입원 예정 조미정 예약 — 폴백이 후자를 덮어쓰던 버그 수정
+      const bn = baseName26(emrData.name);
+      const candidates = bn ? (conByBaseName.get(bn) || []) : [];
+      const emrMD = normMD26(emrData.admitDate);
+      // 강한 신호: 같은 입원일 + reservedSlot 이 없거나 현재 EMR slot 과 같음
+      let strong = null;
+      for (const cand of candidates) {
+        if (cand.data.status === '취소' || cand.data.status === '입원완료') continue;
+        const cMD = normMD26(cand.data.admitDate);
+        if (!emrMD || !cMD || emrMD !== cMD) continue;
+        const rs = cand.data.reservedSlot;
+        if (rs && rs !== slotKey) continue; // 다른 slot 예약이면 제외
+        // 여러 후보 중 createdAt 가장 최근을 선택 (동일 사이클 내 최신 상담)
+        if (!strong || (cand.data.createdAt || '') > (strong.data.createdAt || '')) strong = cand;
+      }
+      if (strong) matched = strong;
+    }
 
     if (matched) {
       // 이미 "입원완료"면 건너뜀
       if (matched.data.status === '입원완료') continue;
       // 취소된 상담은 건너뜀
       if (matched.data.status === '취소') continue;
+      // 미래 입원 예정 보호: 이 consultation 의 admitDate 가 오늘 이후인데
+      //   EMR 데이터의 admitDate 와 일치하지 않으면 (= 다른 사이클/다른 사람) 스킵
+      const cAdmit = parseAdmit26(matched.data.admitDate);
+      const eAdmit = parseAdmit26(emrData.admitDate);
+      if (cAdmit && cAdmit > today26) {
+        const sameCycle = eAdmit && cAdmit.getTime() === eAdmit.getTime();
+        if (!sameCycle) {
+          console.log(`  ⚠ ${emrData.name}: 미래 예약 보호 — cAdmit=${matched.data.admitDate} vs eAdmit=${emrData.admitDate || '-'} (스킵)`);
+          continue;
+        }
+      }
       admitUpdates[`consultations/${matched.key}/status`] = '입원완료';
       statusUpdateCount++;
       console.log(`  ✏️ ${emrData.name}: ${matched.data.status || '상태없음'} → 입원완료`);
@@ -1458,23 +1517,31 @@ async function main() {
     }
   }
 
-  // 보조 매칭 (안전망): 현재 EMR 입원 slotKey 에 reservedSlot 이 걸려있는 모든
-  //   consultation 을 "입원완료" + reservedSlot=null 로 정리.
-  //   이름/chartNo/pid 어느 경로로도 매칭 실패했지만 reservedSlot 이 입원 slot 이면
-  //   사실상 이 예약은 입원으로 전환된 것 (해당 환자의 과거 다른 상담레코드 등).
-  //   이를 정리하지 않으면 consultation.js auto-restore 가 예약을 다시 생성함.
-  const admittedSlotKeys = new Set(emrBedMap.keys());
+  // 보조 매칭 (안전망): consultation.reservedSlot 이 현재 EMR 점유 slot 인데
+  //   환자가 일치하는 경우에만 정리. 단순 slot 일치만으로는 승격하지 않음
+  //   (다른 사람의 예약 slot 에 EMR 이 다른 환자를 배치한 경우 오승격 방지).
+  const admittedBySlot = new Map(); // slotKey → emrData
+  for (const [sk, ed] of emrBedMap) admittedBySlot.set(sk, ed);
   let safetyNetCount = 0;
   for (const [conId, c] of Object.entries(conLatest)) {
     if (!c || !c.reservedSlot) continue;
     if (c.status === '입원완료' || c.status === '취소') continue;
-    if (!admittedSlotKeys.has(c.reservedSlot)) continue;
+    const emrIn = admittedBySlot.get(c.reservedSlot);
+    if (!emrIn) continue;
+    // 환자 일치 신호: chartNo / patientId / (baseName + admitDate)
+    const chartMatch = c.chartNo && emrIn.chartNo && c.chartNo === emrIn.chartNo;
+    const pid = chartToId[emrIn.chartNo];
+    const pidMatch = c.patientId && pid && c.patientId === pid;
+    const nameDateMatch = baseName26(c.name) === baseName26(emrIn.name) &&
+      normMD26(c.admitDate) && normMD26(c.admitDate) === normMD26(emrIn.admitDate);
+    if (!(chartMatch || pidMatch || nameDateMatch)) continue;
     // 이미 같은 iteration 에서 업데이트된 경우 중복 방지
     if (admitUpdates[`consultations/${conId}/status`] === '입원완료') continue;
     admitUpdates[`consultations/${conId}/reservedSlot`] = null;
     admitUpdates[`consultations/${conId}/status`] = '입원완료';
     safetyNetCount++;
-    console.log(`  🛡 안전망: ${c.name || '?'} (${conId}) reservedSlot=${c.reservedSlot} → 입원완료 + null`);
+    const reason = chartMatch ? 'chart' : pidMatch ? 'pid' : 'name+date';
+    console.log(`  🛡 안전망(${reason}): ${c.name || '?'} (${conId}) reservedSlot=${c.reservedSlot} → 입원완료 + null`);
   }
 
   if (Object.keys(admitUpdates).length > 0) {
