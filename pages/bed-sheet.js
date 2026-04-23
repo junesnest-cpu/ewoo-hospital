@@ -85,14 +85,13 @@ function PatientCard({ person, type, slotKey, resIndex, onClick, onDragStart, on
       title={person.note || ""}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-        {isCurrent && <span style={{ fontSize: 9, fontWeight: 800, color: "#059669", background: "#d1fae5", padding: "1px 4px", borderRadius: 3, flexShrink: 0 }}>재원</span>}
         {hasNote && <span style={{ fontSize: 11, flexShrink: 0 }}>📝</span>}
         {person.scheduleAlert && <span style={{ fontSize: 11, flexShrink: 0 }} title="스케줄 확인 필요">⚠</span>}
         {person.preserveSeat && <span style={{ fontSize: 11, flexShrink: 0 }} title="자리보존">🛋</span>}
         <span style={{ fontWeight: 700, fontSize: 13, color: "#0f2744", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>
           {person.name}
         </span>
-        <span style={{ fontSize: 12, color: "#475569", whiteSpace: "nowrap", flexShrink: 0, fontWeight: 500 }}>{dateLine}</span>
+        <span style={{ fontSize: 14, color: "#475569", whiteSpace: "nowrap", flexShrink: 0, fontWeight: 500 }}>{dateLine}</span>
       </div>
     </div>
   );
