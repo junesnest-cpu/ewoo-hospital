@@ -26,6 +26,17 @@ function chunk(arr, size) {
   return out;
 }
 
+// 한 줄의 병상 리스트를 연속된 같은 방끼리 묶어 [{room, beds:[...]}, ...] 로 반환
+function groupRowByRoom(bedRow) {
+  const groups = [];
+  for (const b of bedRow) {
+    const last = groups[groups.length - 1];
+    if (last && last.room === b.room) last.beds.push(b);
+    else groups.push({ room: b.room, beds: [b] });
+  }
+  return groups;
+}
+
 const TYPE_COLOR = {"1인실":"#6366f1","2인실":"#0ea5e9","4인실":"#10b981","6인실":"#f59e0b"};
 const TYPE_BG    = {"1인실":"#eef2ff","2인실":"#e0f2fe","4인실":"#d1fae5","6인실":"#fef3c7"};
 
@@ -85,7 +96,6 @@ function PatientCard({ person, type, slotKey, resIndex, onClick, onDragStart, on
       title={person.note || ""}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-        {hasNote && <span style={{ fontSize: 11, flexShrink: 0 }}>📝</span>}
         {person.scheduleAlert && <span style={{ fontSize: 11, flexShrink: 0 }} title="스케줄 확인 필요">⚠</span>}
         {person.preserveSeat && <span style={{ fontSize: 11, flexShrink: 0 }} title="자리보존">🛋</span>}
         <span style={{ fontWeight: 700, fontSize: 13, color: "#0f2744", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>
@@ -132,25 +142,22 @@ function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, on
       <div
         style={{
           background: TYPE_BG[type],
-          color: TYPE_COLOR[type],
-          fontWeight: 800,
-          fontSize: 13,
-          padding: "6px 8px",
+          padding: "2px 6px",
           borderTopLeftRadius: 9,
           borderTopRightRadius: 9,
           borderBottom: `1px solid ${TYPE_COLOR[type]}33`,
           display: "flex",
-          justifyContent: "space-between",
+          justifyContent: "flex-end",
           alignItems: "center",
+          minHeight: 20,
         }}
       >
-        <span>{roomId}호 {bedN}번</span>
         <button
           onClick={() => openEdit({ slotKey, mode: "reservation", resIndex: -1,
             data: { name:"", admitDate:"", discharge:"미정", note:"", scheduleAlert:false },
             currentPatient: current })}
-          style={{ background: "transparent", border: "none", fontSize: 14, cursor: "pointer", color: TYPE_COLOR[type], fontWeight: 800, padding: "0 2px" }}
-          title="예약 추가"
+          style={{ background: "transparent", border: "none", fontSize: 14, cursor: "pointer", color: TYPE_COLOR[type], fontWeight: 800, padding: "0 4px", lineHeight: 1 }}
+          title={`${roomId}호 ${bedN}번 예약 추가`}
         >
           +
         </button>
@@ -348,23 +355,45 @@ export default function BedSheet() {
                   <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", gap: GAP }}>
                     {rows.map((bedRow, ri) => (
                       <div key={ri} style={{ display: "flex", gap: GAP, alignItems: "flex-start" }}>
-                        {bedRow.map(b => {
-                          const slotKey = `${b.room}-${b.n}`;
+                        {groupRowByRoom(bedRow).map(g => {
+                          const label = g.beds.length === 1
+                            ? `${g.room}호`
+                            : `${g.room}호 ${g.beds.map(b => `${b.n}번`).join(" + ")}`;
                           return (
-                            <BedColumn
-                              key={slotKey}
-                              roomId={b.room}
-                              bedN={b.n}
-                              slot={slots[slotKey]}
-                              type={section.type}
-                              openEdit={openEdit}
-                              onDrop={handleDrop}
-                              onDragStart={onDragStart}
-                              onDragEnd={onDragEnd}
-                              draggingInfo={dragging}
-                              isOver={dragOver === slotKey}
-                              setDragOver={setDragOver}
-                            />
+                            <div key={g.room} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              <div style={{
+                                padding: "4px 10px",
+                                background: "#fff",
+                                color: TYPE_COLOR[section.type],
+                                fontWeight: 800,
+                                fontSize: 13,
+                                borderRadius: 7,
+                                border: `1.5px solid ${TYPE_COLOR[section.type]}55`,
+                                textAlign: "center",
+                                whiteSpace: "nowrap",
+                              }}>{label}</div>
+                              <div style={{ display: "flex", gap: GAP }}>
+                                {g.beds.map(b => {
+                                  const slotKey = `${b.room}-${b.n}`;
+                                  return (
+                                    <BedColumn
+                                      key={slotKey}
+                                      roomId={b.room}
+                                      bedN={b.n}
+                                      slot={slots[slotKey]}
+                                      type={section.type}
+                                      openEdit={openEdit}
+                                      onDrop={handleDrop}
+                                      onDragStart={onDragStart}
+                                      onDragEnd={onDragEnd}
+                                      draggingInfo={dragging}
+                                      isOver={dragOver === slotKey}
+                                      setDragOver={setDragOver}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
