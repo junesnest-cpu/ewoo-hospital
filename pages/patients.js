@@ -82,24 +82,41 @@ export default function PatientsPage() {
   // - 순수 숫자 9자리 미만 → 차트번호
   // - 숫자 포함(9자리 이상 또는 하이픈 포함) → 전화번호
   // - 그 외 → 이름
+  //
+  // patients/ 뿐 아니라 consultations/ 도 보조 검색해 "상담 입력만 되고 아직 입원 전"
+  // 인 예약 환자(chartNo/patientId 미부여)도 결과에 포함시킨다.
   const doSearch = useCallback(async (q) => {
     const trimmed = (q || query).trim();
     if (!trimmed || trimmed.length < 2) return;
     setSearching(true); setResults(null); setSelected(null);
     try {
-      let found;
+      let patientFound = [];
       const digitsOnly = trimmed.replace(/\D/g, "");
-      if (/^\d+$/.test(trimmed) && trimmed.length < 9) {
-        // 순수 숫자 단자리 → 차트번호 검색
+      const mode = (/^\d+$/.test(trimmed) && trimmed.length < 9) ? "chart"
+                 : (/\d/.test(trimmed) ? "phone" : "name");
+      if (mode === "chart") {
         const p = await findPatientByChartNo(trimmed);
-        found = p ? [p] : [];
-      } else if (/\d/.test(trimmed)) {
-        // 숫자 포함 → 전화번호 검색
+        patientFound = p ? [p] : [];
+      } else if (mode === "phone") {
         const p = await findPatientByPhone(trimmed);
-        found = p ? [p] : [];
+        patientFound = p ? [p] : [];
       } else {
-        found = await searchPatientsByName(trimmed);
+        patientFound = await searchPatientsByName(trimmed);
       }
+
+      // 보조 검색: consultations 에서도 매칭 환자 수집 (아직 patients 에 없는 예약 환자)
+      const conMatches = await searchConsultationsPseudoPatients(trimmed, mode);
+      // 중복 제거: patients 에 이미 있는 환자(chart/phone) 는 consultation 측에서 제외
+      const seenCharts = new Set(patientFound.map(p => p.chartNo).filter(Boolean));
+      const seenPhones = new Set(patientFound.map(p => normalizePhone(p.phone)).filter(x => x && x.length >= 10));
+      const conDedup = conMatches.filter(c => {
+        if (c.chartNo && seenCharts.has(c.chartNo)) return false;
+        const cp = normalizePhone(c.phone);
+        if (cp && cp.length >= 10 && seenPhones.has(cp)) return false;
+        return true;
+      });
+
+      const found = [...patientFound, ...conDedup];
       if (found.length === 1) await selectPatient(found[0]);
       else setResults(found);
     } catch(e) {
@@ -108,6 +125,64 @@ export default function PatientsPage() {
     }
     setSearching(false);
   }, [query]);
+
+  // consultations 에서 pseudo-patient 객체 배열 생성
+  //   - chartNo/patientId 유무와 무관하게 이름·전화·차트로 매칭
+  //   - 같은 사람(이름+전화 또는 chartNo) 의 복수 상담은 가장 최근 1건만 대표로
+  async function searchConsultationsPseudoPatients(q, mode) {
+    const snap = await get(ref(db, "consultations"));
+    const all = snap.val() || {};
+    const qt = q.trim();
+    const qDigits = normalizePhone(qt);
+    const chartQ = qt.padStart(10, "0"); // chartNo 는 10자리 0패딩 관례
+
+    const candidates = [];
+    for (const [k, c] of Object.entries(all)) {
+      if (!c || !c.name) continue;
+      if (c.status === "취소") continue;
+      if (c.mergedInto) continue;
+      let hit = false;
+      if (mode === "chart") {
+        hit = c.chartNo === qt || c.chartNo === chartQ;
+      } else if (mode === "phone") {
+        const p1 = normalizePhone(c.phone);
+        const p2 = normalizePhone(c.phone2);
+        if (qDigits.length >= 7) {
+          hit = (p1 && p1.includes(qDigits)) || (p2 && p2.includes(qDigits));
+        }
+      } else {
+        hit = c.name.includes(qt);
+      }
+      if (hit) candidates.push({ _key: k, ...c });
+    }
+
+    // dedupe: chartNo → phone → (name+birthYear) 순 키, 가장 최근 createdAt 대표
+    const dedup = new Map();
+    candidates.forEach(c => {
+      const dkey =
+        c.chartNo ||
+        (normalizePhone(c.phone) && normalizePhone(c.phone).length >= 10 ? normalizePhone(c.phone) : null) ||
+        `n:${c.name}:${c.birthYear || ""}`;
+      const prev = dedup.get(dkey);
+      if (!prev || (c.createdAt || "") > (prev.createdAt || "")) dedup.set(dkey, c);
+    });
+
+    return [...dedup.values()]
+      .map(c => ({
+        internalId: null,
+        _consultationOnly: true,
+        _conKey: c._key,
+        name: c.name,
+        phone: c.phone || "",
+        birthYear: c.birthYear || "",
+        birthDate: c.birthDate || "",
+        gender: c.gender || "",
+        chartNo: c.chartNo || null,
+        diagnosis: c.diagnosis || "",
+        source: "consultation",
+      }))
+      .sort((a, b) => (a.name > b.name ? 1 : -1));
+  }
 
   // 입력 즉시 자동 검색 (500ms debounce)
   useEffect(() => {
@@ -136,35 +211,77 @@ export default function PatientsPage() {
   };
 
   const selectPatient = async (p) => {
-    setSelected(p); setResults(null); setLoadingDetail(true); setActiveTab("info");
+    setSelected(p); setResults(null); setLoadingDetail(true);
+    // consultation-only 환자는 입원현황이 없으므로 상담 탭을 기본으로
+    setActiveTab(p._consultationOnly ? "consult" : "info");
     try {
       // 상담이력
       const cSnap = await get(ref(db, "consultations"));
-      const allC  = Object.values(cSnap.val() || {}).filter(Boolean);
-      const linked = allC
-        .filter(c => {
-          if (c.patientId && p.internalId) return c.patientId === p.internalId;
-          if (!c.patientId) return c.name === p.name; // patientId 없는 구형 상담 기록은 이름 매칭
-          return false;
-        })
-        .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+      const allCEntries = Object.entries(cSnap.val() || {}).filter(([, v]) => !!v);
+
+      let linked;
+      if (p._consultationOnly) {
+        // consultation-only: 같은 이름 + (전화/차트/생년) 중 하나 일치. 단서가 전혀 없으면 이름만.
+        const pPhoneD = normalizePhone(p.phone);
+        const pHasSignal = !!(pPhoneD || p.chartNo || p.birthYear);
+        linked = allCEntries
+          .map(([k, c]) => ({ _key: k, ...c }))
+          .filter(c => {
+            if (c.status === "취소" || c.mergedInto) return false;
+            if (c.name !== p.name) return false;
+            if (!pHasSignal) return true;
+            const cPhoneD = normalizePhone(c.phone);
+            const cPhoneD2 = normalizePhone(c.phone2);
+            if (pPhoneD && pPhoneD.length >= 10) {
+              if ((cPhoneD && cPhoneD === pPhoneD) || (cPhoneD2 && cPhoneD2 === pPhoneD)) return true;
+            }
+            if (p.chartNo && c.chartNo && p.chartNo === c.chartNo) return true;
+            if (p.birthYear && c.birthYear && p.birthYear === c.birthYear) return true;
+            return false;
+          });
+      } else {
+        linked = allCEntries
+          .map(([k, c]) => ({ _key: k, ...c }))
+          .filter(c => {
+            if (c.patientId && p.internalId) return c.patientId === p.internalId;
+            if (!c.patientId) return c.name === p.name; // patientId 없는 구형 상담 기록은 이름 매칭
+            return false;
+          });
+      }
+      linked.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       setConsultations(linked);
+
       // 입원/예약 현황
       const sSnap = await get(ref(db, "slots"));
       const allS  = sSnap.val() || {};
       let curSlot = null, resList = [];
-      Object.entries(allS).forEach(([slotKey, slot]) => {
-        if (!slot) return;
-        const cur = slot.current;
-        const matchCurrent = cur && (
-          (cur.patientId && p.internalId) ? cur.patientId === p.internalId : (!cur.patientId && cur.name === p.name)
-        );
-        if (matchCurrent) curSlot = { slotKey, data: cur };
-        (Array.isArray(slot.reservations) ? slot.reservations : Object.values(slot.reservations || {})).filter(Boolean).forEach((r, ri) => {
-          const matchRes = (r.patientId && p.internalId) ? r.patientId === p.internalId : (!r.patientId && r.name === p.name);
-          if (matchRes) resList.push({ slotKey, data: r, resIndex: ri });
+
+      if (p._consultationOnly) {
+        // consultation-only: reservedSlot + linked 상담의 consultationId 기반으로만 매핑
+        const conIdSet = new Set(linked.map(c => c._key));
+        Object.entries(allS).forEach(([slotKey, slot]) => {
+          if (!slot) return;
+          const res = (Array.isArray(slot.reservations) ? slot.reservations : Object.values(slot.reservations || {})).filter(Boolean);
+          res.forEach((r, ri) => {
+            if (r.consultationId && conIdSet.has(r.consultationId)) {
+              resList.push({ slotKey, data: r, resIndex: ri });
+            }
+          });
         });
-      });
+      } else {
+        Object.entries(allS).forEach(([slotKey, slot]) => {
+          if (!slot) return;
+          const cur = slot.current;
+          const matchCurrent = cur && (
+            (cur.patientId && p.internalId) ? cur.patientId === p.internalId : (!cur.patientId && cur.name === p.name)
+          );
+          if (matchCurrent) curSlot = { slotKey, data: cur };
+          (Array.isArray(slot.reservations) ? slot.reservations : Object.values(slot.reservations || {})).filter(Boolean).forEach((r, ri) => {
+            const matchRes = (r.patientId && p.internalId) ? r.patientId === p.internalId : (!r.patientId && r.name === p.name);
+            if (matchRes) resList.push({ slotKey, data: r, resIndex: ri });
+          });
+        });
+      }
       setCurrentSlot(curSlot);
       setReservations(resList);
     } catch(e) {
@@ -535,16 +652,19 @@ export default function PatientsPage() {
               <>
                 <div style={{ fontSize:13, fontWeight:700, color:"#64748b", marginBottom:10 }}>{results.length}명 검색됨</div>
                 {results.map((p, i) => (
-                  <div key={i} onClick={() => selectPatient(p)}
+                  <div key={p.internalId || p._conKey || i} onClick={() => selectPatient(p)}
                     style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", border:"1.5px solid #e2e8f0", borderRadius:9, marginBottom:6, cursor:"pointer", transition:"background 0.1s" }}
                     onMouseEnter={e => e.currentTarget.style.background="#f0f9ff"}
                     onMouseLeave={e => e.currentTarget.style.background="#fff"}>
-                    <span style={S.badge("#0f2744","#fff")}>{p.internalId}</span>
+                    {p._consultationOnly
+                      ? <span style={S.badge("#7c3aed","#fff")}>📋 상담·예약</span>
+                      : <span style={S.badge("#0f2744","#fff")}>{p.internalId}</span>}
                     {p.chartNo && <span style={S.badge("#e2e8f0","#475569")}>차트 {p.chartNo}</span>}
                     <div style={{ flex:1 }}>
                       <div style={{ fontWeight:700, fontSize:15 }}>{p.name}</div>
                       <div style={{ fontSize:12, color:"#94a3b8" }}>
-                        {p.birthDate || p.birthYear || ""} {p.gender==="M"?"남":"여"} · {phoneDisplay(p.phone)}
+                        {p.birthDate || p.birthYear || ""} {p.gender==="M"?"남":p.gender==="F"?"여":""}{(p.birthDate||p.birthYear||p.gender)?" · ":""}{phoneDisplay(p.phone)}
+                        {p._consultationOnly && p.diagnosis ? ` · ${p.diagnosis}` : ""}
                       </div>
                     </div>
                     <span style={{ color:"#0ea5e9", fontSize:20 }}>›</span>
@@ -564,7 +684,9 @@ export default function PatientsPage() {
                 <div>
                   <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
                     <span style={{ fontSize:22, fontWeight:900 }}>{selected.name}</span>
-                    <span style={S.badge("#0f2744","#fff")}>{selected.internalId}</span>
+                    {selected._consultationOnly
+                      ? <span style={S.badge("#7c3aed","#fff")}>📋 상담·예약 (미등록)</span>
+                      : <span style={S.badge("#0f2744","#fff")}>{selected.internalId}</span>}
                     {selected.chartNo && <span style={S.badge("#e2e8f0","#475569")}>차트 {selected.chartNo}</span>}
                     {currentSlot && <span style={S.badge("#dcfce7","#166534")}>🏥 현재 입원중 {currentSlot.slotKey.split("-")[0]}호</span>}
                   </div>
