@@ -29,9 +29,9 @@ function chunk(arr, size) {
 const TYPE_COLOR = {"1인실":"#6366f1","2인실":"#0ea5e9","4인실":"#10b981","6인실":"#f59e0b"};
 const TYPE_BG    = {"1인실":"#eef2ff","2인실":"#e0f2fe","4인실":"#d1fae5","6인실":"#fef3c7"};
 
-const COL_W  = 160;
+const COL_W  = 240;
 const GAP    = 8;
-const MEMO_W = 240;
+const MEMO_W = 260;
 
 // ── 날짜 유틸 ──────────────────────────────────────────────────────────────
 function parseDateStr(str) {
@@ -84,16 +84,16 @@ function PatientCard({ person, type, slotKey, resIndex, onClick, onDragStart, on
       }}
       title={person.note || ""}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
-        {isCurrent && <span style={{ fontSize: 9, fontWeight: 800, color: "#059669", background: "#d1fae5", padding: "1px 4px", borderRadius: 3 }}>재원</span>}
-        {hasNote && <span style={{ fontSize: 10, color: "#64748b" }}>📝</span>}
-        {person.scheduleAlert && <span style={{ fontSize: 10 }} title="스케줄 확인 필요">⚠</span>}
-        {person.preserveSeat && <span style={{ fontSize: 10 }} title="자리보존">🛋</span>}
-        <span style={{ fontWeight: 700, fontSize: 13, color: "#0f2744", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+        {isCurrent && <span style={{ fontSize: 9, fontWeight: 800, color: "#059669", background: "#d1fae5", padding: "1px 4px", borderRadius: 3, flexShrink: 0 }}>재원</span>}
+        {hasNote && <span style={{ fontSize: 11, flexShrink: 0 }}>📝</span>}
+        {person.scheduleAlert && <span style={{ fontSize: 11, flexShrink: 0 }} title="스케줄 확인 필요">⚠</span>}
+        {person.preserveSeat && <span style={{ fontSize: 11, flexShrink: 0 }} title="자리보존">🛋</span>}
+        <span style={{ fontWeight: 700, fontSize: 13, color: "#0f2744", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>
           {person.name}
         </span>
+        <span style={{ fontSize: 12, color: "#475569", whiteSpace: "nowrap", flexShrink: 0, fontWeight: 500 }}>{dateLine}</span>
       </div>
-      <div style={{ fontSize: 22, color: "#475569", lineHeight: 1.2, textAlign: "center", fontWeight: 600 }}>{dateLine}</div>
     </div>
   );
 }
@@ -171,8 +171,10 @@ function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, on
           />
         ) : (
           <div style={{
-            border: "1.5px dashed #cbd5e1", borderRadius: 8, padding: "12px 8px",
-            background: "#f8fafc", color: "#94a3b8", fontSize: 12, textAlign: "center", fontWeight: 600,
+            border: "1.5px dashed #cbd5e1", borderRadius: 8, padding: "6px 8px",
+            background: "#f8fafc", color: "#94a3b8", fontSize: 13, fontWeight: 600,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            lineHeight: 1.2,
           }}>
             비어있음
           </div>
@@ -327,10 +329,13 @@ export default function BedSheet() {
         {ROOM_SECTIONS.map((section) => {
           const rows = chunk(section.beds, section.rowSize);
           const memoValue = section.type === "1인실" ? memoSingle : memoDouble;
+          const occupied = section.beds.filter(b => slots[`${b.room}-${b.n}`]?.current?.name).length;
+          const resCount = section.beds.reduce((s, b) =>
+            s + ((slots[`${b.room}-${b.n}`]?.reservations || []).filter(r => r?.name).length), 0);
           return (
             <div key={section.type}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: TYPE_COLOR[section.type], marginBottom: 6, paddingLeft: 2, letterSpacing: 0.3 }}>
-                {section.type} ({section.beds.length}개 병상 · {rows.length}줄)
+              <div style={{ fontSize: 13, fontWeight: 800, color: TYPE_COLOR[section.type], marginBottom: 6, paddingLeft: 2, letterSpacing: 0.3 }}>
+                {section.type} ({occupied}/{section.beds.length}) (총 {resCount}명 예약 중)
               </div>
               <div style={{ overflowX: "auto", paddingBottom: 4 }}>
                 <div style={{ display: "flex", gap: GAP, alignItems: "stretch", minWidth: "min-content" }}>
