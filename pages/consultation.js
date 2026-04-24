@@ -173,6 +173,11 @@ export default function ConsultationPage() {
   // slots, patients, allConsultations → WardDataContext에서 공급
 
   // slots → consultation 역참조: reservedSlot이 있는 상담의 실제 병상·날짜를 slots에서 조회
+  //
+  // 가드 (2026-04-24, HOTFIX): 동명이인/재입원 상담이 있을 때, 이름만 일치해도 다른 consultation이
+  //   이미 owner(consultationId)인 slot entry는 claim 금지. 또한 입원완료/취소/과거 admitDate
+  //   consultation은 애초에 재연결 대상이 아니다. 이전에는 강영희 1/5 과거 상담이 slots 에 남아있는
+  //   Apr24 재예약(name 일치)을 차지해 reservedSlot/admitDate/dischargeDate 가 덮어써졌다.
   const slotOverrides = useMemo(() => {
     const map = {}; // consultationId → { reservedSlot, admitDate, dischargeDate }
     Object.entries(slots).forEach(([slotKey, slot]) => {
@@ -195,23 +200,52 @@ export default function ConsultationPage() {
         }
       });
     });
+
+    // 과거 admitDate 감지 (2일 이상 지난 M/D 또는 ISO 일자)
+    const todayStart = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+    const thisYear = todayStart.getFullYear();
+    const GRACE = 2 * 86400000;
+    const isPastAdmit = (ad) => {
+      if (!ad) return false;
+      const t = String(ad).trim();
+      const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (iso) {
+        const d = new Date(+iso[1], +iso[2]-1, +iso[3]); d.setHours(0,0,0,0);
+        return todayStart.getTime() - d.getTime() > GRACE;
+      }
+      const md = t.match(/^(\d{1,2})\/(\d{1,2})$/);
+      if (md) {
+        const d = new Date(thisYear, +md[1]-1, +md[2]); d.setHours(0,0,0,0);
+        return todayStart.getTime() - d.getTime() > GRACE;
+      }
+      return false;
+    };
+
     // consultationId가 없는 경우: 이름으로 전체 slots 검색 (병상 이동 대응)
     Object.entries(consultations).forEach(([cid, c]) => {
       if (map[cid] || !c?.name) return;
+      // 가드: finalized 상담(입원완료/취소)은 slot 재연결 금지
+      if (c.status === '입원완료' || c.status === '취소') return;
+      // 가드: 과거 입원일(>2일) consultation은 역사적 기록 → 재연결 금지
+      if (isPastAdmit(c.admitDate)) return;
       const cn = normName(c.name);
       if (!cn) return;
       // 전체 slots에서 이름으로 검색 (reservedSlot이 변경되었을 수 있으므로)
       for (const [slotKey, slot] of Object.entries(slots)) {
-        if (slot?.current?.name && normName(slot.current.name) === cn) {
+        const cur = slot?.current;
+        if (cur?.name && normName(cur.name) === cn) {
+          // 다른 consultation이 이미 이 slot entry의 owner면 차지 금지
+          if (cur.consultationId && cur.consultationId !== cid && consultations[cur.consultationId]) continue;
           map[cid] = {
             reservedSlot: slotKey,
-            admitDate: slot.current.admitDate || undefined,
-            dischargeDate: slot.current.discharge || undefined,
+            admitDate: cur.admitDate || undefined,
+            dischargeDate: cur.discharge || undefined,
           };
           break;
         }
         const r = (slot?.reservations || []).find(r => r?.name && normName(r.name) === cn);
         if (r) {
+          if (r.consultationId && r.consultationId !== cid && consultations[r.consultationId]) continue;
           map[cid] = {
             reservedSlot: slotKey,
             admitDate: r.admitDate || undefined,
@@ -225,11 +259,14 @@ export default function ConsultationPage() {
   }, [slots, consultations]);
 
   // 불일치 자동 보정: slots 데이터를 consultation에 반영
+  // 가드 (2026-04-24): finalized(입원완료/취소) consultation은 덮어쓰기 금지.
+  //   과거 상담의 admitDate/reservedSlot이 다른 예약의 값으로 오염되는 것 방지.
   const syncedRef = useRef(new Set());
   useEffect(() => {
     Object.entries(slotOverrides).forEach(([cid, ov]) => {
       const c = consultations[cid];
       if (!c) return;
+      if (c.status === '입원완료' || c.status === '취소') return;
       if (syncedRef.current.has(cid)) return;
       const updates = {};
       if (ov.reservedSlot && ov.reservedSlot !== c.reservedSlot) updates.reservedSlot = ov.reservedSlot;

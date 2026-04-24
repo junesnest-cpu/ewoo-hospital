@@ -13,6 +13,40 @@
 
 ---
 
+## 2026-04-24 — 재입원 예약 시 과거 상담(동명) reservedSlot 오염 → "2건 예약" 표시
+
+### 증상
+- 강영희(2026-01-05 상담 후 Jan 입원·퇴원)가 다시 연락 → 4/24 신규 상담+예약 등록.
+- 상담일지 "입원 예정 / 병상배정" 목록에 **동일 환자가 2건**으로 표시.
+- 1/5 상담 레코드의 `reservedSlot/admitDate/dischargeDate` 가 4/24 예약 값과 **동일하게 덮어써짐**.
+
+### 근본 원인
+`pages/consultation.js` `slotOverrides` fallback (line 198-223, "consultationId 없는 경우 이름으로 전체 slots 검색") 이 너무 관대함.
+1. 강영희 1/5 상담은 퇴원 후 slots에 직접 링크(`consultationId`)가 없음 → fallback 진입.
+2. 4/24 신규 예약이 slot X 에 막 등록돼 `name="강영희"` reservation 이 있음.
+3. Fallback 이 slot X 의 Apr24 reservation(다른 consultation 이 이미 owner) 을 Jan5 cid 에 귀속.
+4. 이어 `useEffect` auto-sync(line 229-243) 가 Jan5 consultation 의 reservedSlot/admitDate/dischargeDate 를 Apr24 값으로 덮어쓰기. finalized(입원완료/취소) 가드 없음.
+5. UI `effectiveStatus` + `isReserved` 가 둘 다 "예약완료"로 판정 → "2건 예약" 표시.
+
+### 수정 (커밋 예정)
+- `pages/consultation.js`:
+  - `slotOverrides` fallback 에 **3가지 가드** 추가: (a) 다른 consultation 이 이미 owner 인 slot entry 는 claim 금지, (b) status='입원완료'/'취소' consultation 은 재연결 금지, (c) 과거 admitDate(>2일) consultation 은 재연결 금지.
+  - Auto-sync `useEffect` 에 **입원완료/취소 consultation 덮어쓰기 금지** 가드 추가.
+
+### 재발 방지 가드
+- **slot entry owner 보호**: 동명이인·재입원 상담 상황에서, 이름만으로 slot entry 를 가져가지 않음. 반드시 `consultationId` 가 비어있거나 같은 cid 인 entry 만 claim.
+- **finalized consultation 은 frozen**: status='입원완료'/'취소' 는 slotOverrides 에서 재연결·데이터 덮어쓰기 대상 아님.
+- **과거 admitDate 는 재연결 대상 아님**: 역사적 기록이 최근 slot 데이터로 오염되지 않도록 fallback 자체 차단.
+
+### 검증·복구 도구
+- `scripts/repairKangYounghee.js` — 강영희 전체 상담 조회 + createdAt 2026-01 상담을 `status=입원완료, reservedSlot=null` 로 되돌림. admitDate/dischargeDate 는 수동 확인용 (자동 변경 안 함). `--apply` 로 적용, 백업 자동.
+
+### 연관 관찰
+- 같은 버그 패턴: **동명 환자 + 과거 상담** 조합이면 모두 오염 가능. 비슷한 증상(과거 상담의 예약 정보가 "어제 방금 변경된 것처럼" 보임) 발견 시 `slotOverrides` fallback 이 재발한 것인지 먼저 확인.
+- 2026-04-23 HOTFIX 항목 #5 (`syncConsultationOnSlotChange`) 의 "matches 전체 갱신" 수정과는 별개 경로. 이번 건은 fallback 이 애초에 잘못된 cid 를 link 한 것.
+
+---
+
 ## 2026-04-23 — 재입원 예약 자동삭제 / 과거 실적 자동 예약화 / 드래그 원위치 잔존
 
 ### 증상
