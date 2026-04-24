@@ -51,9 +51,11 @@ function fmtDate(str) {
   if (iso) return `${parseInt(iso[2])}/${parseInt(iso[3])}`;
   return String(str);
 }
+function dateOnly(d) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+function normName(n) { return (n || "").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase(); }
 
 // ── 카드 (입원/예약 공통) ──────────────────────────────────────────────────
-function PatientCard({ person, type, slotKey, resIndex, onClick, onDragStart, onDragEnd, isDragging }) {
+function PatientCard({ person, type, slotKey, resIndex, onClick, onDragStart, onDragEnd, isDragging, isNew }) {
   const isCurrent = type === "current";
   const bgColor = getCardColorBg(person.color);
   const hasColor = !!person.color;
@@ -87,6 +89,9 @@ function PatientCard({ person, type, slotKey, resIndex, onClick, onDragStart, on
       <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
         {person.scheduleAlert && <span style={{ fontSize: 11, flexShrink: 0 }} title="스케줄 확인 필요">⚠</span>}
         {person.preserveSeat && <span style={{ fontSize: 11, flexShrink: 0 }} title="자리보존">🛋</span>}
+        {isNew && (
+          <span style={{ background:"#fef08a", color:"#713f12", borderRadius:3, padding:"1px 4px", fontSize:10, fontWeight:800, flexShrink:0 }} title="신환">★신</span>
+        )}
         <span style={{ fontWeight: 700, fontSize: 13, color: "#0f2744", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1, minWidth: 0 }}>
           {person.name}
         </span>
@@ -97,7 +102,7 @@ function PatientCard({ person, type, slotKey, resIndex, onClick, onDragStart, on
 }
 
 // ── 단일 병상 컬럼 ─────────────────────────────────────────────────────────
-function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, onDragEnd, draggingInfo, isOver, setDragOver }) {
+function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, onDragEnd, draggingInfo, isOver, setDragOver, newPatientNames, today }) {
   const slotKey = `${roomId}-${bedN}`;
   const current = slot?.current?.name ? slot.current : null;
   const reservations = (slot?.reservations || [])
@@ -111,6 +116,14 @@ function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, on
       if (!dbx) return -1;
       return da - dbx;
     });
+
+  const isNewPerson = (p) => {
+    if (!newPatientNames || !p?.name) return false;
+    if (!newPatientNames.has(normName(p.name))) return false;
+    const ad = parseDateStr(p.admitDate);
+    if (!ad) return true;
+    return dateOnly(ad).getTime() >= today.getTime() - 7 * 24 * 60 * 60 * 1000;
+  };
 
   return (
     <div
@@ -166,6 +179,7 @@ function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, on
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             isDragging={draggingInfo?.slotKey === slotKey && draggingInfo?.type === "current"}
+            isNew={isNewPerson(current)}
           />
         ) : (
           <div style={{
@@ -188,6 +202,7 @@ function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, on
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             isDragging={draggingInfo?.slotKey === slotKey && draggingInfo?.type === "reservation" && draggingInfo?.resIndex === i}
+            isNew={isNewPerson(r)}
           />
         ))}
       </div>
@@ -219,7 +234,7 @@ function TypeMemoCell({ type, value, onChange }) {
 
 // ── 메인 페이지 ────────────────────────────────────────────────────────────
 export default function BedSheet() {
-  const { slots, saveSlots, syncConsultationOnSlotChange, slotsLoaded } = useWardData();
+  const { slots, saveSlots, syncConsultationOnSlotChange, slotsLoaded, consultations } = useWardData();
   const [editModal, setEditModal] = useState(null);
   const [dragging, setDragging]   = useState(null);  // { slotKey, type, resIndex, person }
   const [dragOver, setDragOver]   = useState(null);
@@ -227,6 +242,19 @@ export default function BedSheet() {
   const [memoSingle, setMemoSingle] = useState("");
   const [memoDouble, setMemoDouble] = useState("");
   const [memoQuad,   setMemoQuad]   = useState("");
+
+  const today = useMemo(() => dateOnly(new Date()), []);
+  const newPatientNames = useMemo(() => {
+    const set = new Set();
+    Object.values(consultations || {}).forEach(c => {
+      if (!c?.name) return;
+      const isNew = c.isNewPatient !== undefined ? !!c.isNewPatient : !c.patientId;
+      if (!isNew) return;
+      if (c.status === "취소" || c.status === "입원완료") return;
+      set.add(normName(c.name));
+    });
+    return set;
+  }, [consultations]);
 
   // 룸타입 메모 구독 (타임라인과 동일 경로)
   useEffect(() => {
@@ -363,6 +391,8 @@ export default function BedSheet() {
                               draggingInfo={dragging}
                               isOver={dragOver === slotKey}
                               setDragOver={setDragOver}
+                              newPatientNames={newPatientNames}
+                              today={today}
                             />
                           );
                         })}
