@@ -87,7 +87,9 @@ export async function apiFetch(url, opts = {}) {
 | clinical | `4bacaff` | Firestore 규칙 재작성 (테스트모드 제거) |
 | (snapshot) | `c297fb2`, `fac5309`, `7db5fc4` | Rules 리포 커밋 |
 
-## Stage 3 작업 결과 (2026-04-25)
+## Stage 3 작업 결과 (2026-04-25 토)
+
+### 코드 배포 (audit 모드)
 
 | 리포 | 커밋 | 내용 |
 |---|---|---|
@@ -95,8 +97,76 @@ export async function apiFetch(url, opts = {}) {
 | clinical  | `cb67446` | 8개 EMR/환자 엔드포인트 + 클라이언트 일괄 (audit 모드) |
 | approval  | `36bc123` | /api/director-stats requireRole('director') (audit 모드) |
 
-전체 audit 모드 배포. 다음 단계:
-1. 24~48h 로그 모니터링 — Vercel Logs 에서 `[auth-audit]` / `[role-audit]` 경고 확인
-2. 누락된 호출 지점이 더 있는지 식별·치환
-3. 각 리포 Vercel env 에 `AUTH_ENFORCE=true` 설정 → enforce 전환
-4. (approval 한정) `APPROVAL_FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY` env 등록 — 그래야 approval 토큰·역할 검증 정상 작동. 미설정 시 audit 모드에선 통과되나 enforce 시 모든 요청 401 됨.
+### approval 환경변수 등록 + 후속 수정
+
+approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 토큰 검증이 ward fallback 만 시도되며 매번 audit 경고 발생. 다음 절차로 정리:
+
+1. `serviceAccount-new.json`(approval Firebase 콘솔 발급분, 리포 root 에 보관 중) 에서 값 추출
+2. `npx vercel env add` 로 `APPROVAL_FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY` × 3환경(prod/preview/dev) 등록
+3. **함정 발견**: vercel CLI 가 `--value="$VAR"` 로 multi-line 값 받을 때 newline 처리에 결함 → cert() PEM 파싱 실패 → 500 (배포 `13d2bcd` 직후)
+4. `lib/firebaseAdmin.js` 를 `safeInit` 패턴으로 변경 (커밋 `10f38d8`) — init 실패 시 try-catch 로 잡고 null 반환, audit 에서 안전 fallback
+5. `APPROVAL_FIREBASE_PRIVATE_KEY` 를 literal `\n` escape 형태로 재등록 — 코드의 `.replace(/\\n/g, '\n')` 가 actual newline 으로 변환해 정상 작동
+6. 재배포 (`d4e5949`) — approval admin SDK init 성공 확인. 사용자 호출 6건 audit 경고 0건 정상 통과.
+
+### 검증
+
+- 3개 사이트 smoke test: 모두 로그인 화면 정상 렌더 (favicon 404 외 콘솔 에러 0)
+- runtime logs: hospital/clinical 깨끗, approval audit 모드 정상 작동
+
+---
+
+## 향후 계획 (모니터링 → enforce 전환)
+
+### 1단계: 로그 분석 (예약: 2026-04-28 화 13:00 — Google 캘린더 등록됨)
+
+3개 Vercel 프로젝트 Logs 에서 `[auth-audit]` / `[role-audit]` / `[firebaseAdmin]` 검색:
+- **0건이면**: 모든 호출에 토큰 정상 부착 → enforce 안전
+- **있으면**: 누락된 클라이언트 호출 지점 식별 → `apiFetch` 로 마저 치환 → 추가 24h 관찰
+
+### 2단계: enforce 전환 (위험도 낮음 → 높음, 24h 간격)
+
+각 Vercel 프로젝트에 `AUTH_ENFORCE=true` 환경변수 추가 → 자동 재배포 → 토큰 없는 호출은 **401**.
+
+| 일자 | 리포 | 비고 |
+|---|---|---|
+| 2026-04-29 수 | clinical  | 환자정보 노출이 가장 위험하지만 audit 검증 완료 |
+| 2026-04-30 목 | approval  | 역할 검증(director) 포함이라 진입 장벽 높음 |
+| 2026-05-01 금 | hospital  | 영향 적음, 마지막 |
+
+각 전환 직후 30분간 Logs 즉시 관찰. 401 폭증·사용자 제보 시 env 토글로 1분 내 audit 복귀.
+
+### 3단계: 정착 확인 (1주)
+
+- 401 발생 빈도 (사용자 제보)
+- 토큰 만료·재발급 흐름 자연스러운지 (`apiFetch` 가 `getIdToken()` 매 호출마다 재발급)
+- 모바일 / 외부 도구 영향 여부
+
+### 4단계: 후속 정리
+
+- [ ] `/api/inquiry` (hospital, 외부 공개 폼) — reCAPTCHA / hCaptcha 도입 검토
+- [ ] `/api/auth/migrate` (clinical, hospital) — rate limit 검토 (현재 비번 자체 보호)
+- [ ] `serviceAccount-old.json` / `serviceAccount-new.json` 정리 — 사용 중 키 확정 후 old 폐기 (보안 위생)
+- [ ] HOTFIX.md 에 vercel CLI multi-line env 등록 함정 추가 (literal `\n` 형식 권장)
+
+### 비상 절차
+
+| 증상 | 조치 | 소요 |
+|---|---|---|
+| 사용자 페이지 접근 불가 | Vercel env 에서 `AUTH_ENFORCE` 삭제 → audit 복귀 | ~1분 |
+| 특정 엔드포인트만 깨짐 | `git revert <커밋>` + 푸시 | ~5분 |
+| 데이터 노출 의심 | Firebase Rules 강화 (별도 작업) | 즉시 |
+
+---
+
+## 학습한 함정 (재발 방지용)
+
+### vercel CLI 의 multi-line env 등록
+
+- `--value="$VAR"` 에 actual newline 이 들어간 값을 넘기면 저장 시점에 일부 배포 환경에서 정상 파싱되지 않음 (FirebaseAppError: Failed to parse private key)
+- **권장**: PEM 류 multi-line 비밀값은 반드시 literal `\n` escape 형태로 저장하고, 코드에서 `.replace(/\\n/g, '\n')` 로 변환
+- approval 의 `scripts/extract-pk-literal.js` + `scripts/re-register-pk.sh` 가 표준 절차 — 다른 리포에서 같은 작업 시 재사용
+
+### vercel CLI agent-detection 비대화 모드
+
+- `CLAUDECODE` env 가 set 되어있으면 vercel CLI 가 일부 prompt 를 JSON `action_required` 로 반환하고 `--yes`/`--value` 만으로는 끝나지 않을 수 있음
+- preview env 의 git-branch prompt 는 **빈 문자열 positional** (`vercel env add NAME preview "" --value="..." --yes`) 로 우회 필요
