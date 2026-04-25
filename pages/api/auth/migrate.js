@@ -12,6 +12,7 @@
  */
 import { approvalAdminAuth, approvalAdminDb, wardAdminAuth } from "../../../lib/firebaseAdmin";
 import publicConfig from "../../../lib/firebasePublicConfig.json";
+import { checkRateLimit, getClientIp, sanitizeKey } from "../../../lib/rateLimit";
 
 const APPROVAL_API_KEY = publicConfig.approval.apiKey;
 const WARD_API_KEY     = publicConfig.ward.apiKey;
@@ -49,6 +50,18 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: "email·password required" });
+
+  // Rate limit: (IP + email) 키로 5분당 5회.
+  // password spraying 차단 + 정상 사용자(평생 0~3회 호출)는 영향 없음.
+  const rlKey = `migrate/${getClientIp(req)}__${sanitizeKey(email)}`;
+  const rl = await checkRateLimit({ key: rlKey, max: 5, windowMs: 5 * 60 * 1000, db: approvalAdminDb });
+  if (!rl.allowed) {
+    res.setHeader("Retry-After", String(rl.retryAfter));
+    return res.status(429).json({
+      error: "too many login attempts",
+      retryAfter: rl.retryAfter,
+    });
+  }
 
   try {
     const [approvalAuth, wardAuthRes] = await Promise.all([

@@ -1,4 +1,6 @@
 import admin from 'firebase-admin';
+import crypto from 'crypto';
+import { checkRateLimit, checkDedup, getClientIp } from '../../lib/rateLimit';
 
 // ── Firebase Admin SDK 초기화 (싱글턴) ───────────────────────────────────────
 function getAdminDb() {
@@ -53,6 +55,26 @@ export default async function handler(req, res) {
     // 연락처 정규화
     const normPhone = phone.replace(/[^0-9]/g, '');
 
+    const db = getAdminDb();
+
+    // Rate limit: IP 당 1시간 10회 (정상 사용자는 평생 0~1회 제출이 일반적)
+    const ip = getClientIp(req);
+    const rl = await checkRateLimit({ key: `inquiry/${ip}`, max: 10, windowMs: 60 * 60 * 1000, db });
+    if (!rl.allowed) {
+      res.setHeader('Retry-After', String(rl.retryAfter));
+      return res.status(429).json({ error: '문의가 너무 자주 들어왔습니다. 잠시 후 다시 시도해주세요.' });
+    }
+
+    // Dedup: 동일 phone + content 해시 1시간 내 중복 거부 (오타 정정 외엔 중복 의미 없음)
+    const dedupKey = crypto.createHash('sha256')
+      .update(`${normPhone}|${content.trim()}`)
+      .digest('hex')
+      .slice(0, 16);
+    const dup = await checkDedup({ key: dedupKey, windowMs: 60 * 60 * 1000, db });
+    if (dup.duplicate) {
+      return res.status(409).json({ error: '동일한 문의가 이미 접수되었습니다.' });
+    }
+
     // 상담일지 데이터 구성
     const now = new Date();
     const createdAt = now.toISOString();
@@ -79,7 +101,6 @@ export default async function handler(req, res) {
       source: 'website',
     };
 
-    const db = getAdminDb();
     const newRef = db.ref('consultations').push();
     await newRef.set(consultation);
 

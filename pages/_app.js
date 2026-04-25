@@ -46,6 +46,12 @@ function LoginScreen() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
         });
+        if (r.status === 429) {
+          const body = await r.json().catch(() => ({}));
+          const sec = body.retryAfter || 60;
+          setError(`로그인 시도가 너무 잦습니다. ${Math.ceil(sec / 60)}분 후 다시 시도해 주세요.`);
+          return;
+        }
         if (!r.ok) {
           setError("이름 또는 비밀번호가 올바르지 않습니다.");
           return;
