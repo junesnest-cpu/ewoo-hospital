@@ -27,7 +27,7 @@ Firebase ID Token 검증 미들웨어를 적용한다.
 ### ewoo-hospital
 - ~~`/api/analyze`~~ — 엔드포인트 삭제 (2026-04-21, AI 자동입력 기능 철회)
 - ~~`/api/naver-works-webhook`~~ — 엔드포인트 삭제 (同 이유)
-- [ ] `/api/naver-works-send` — 봇 발송 (토큰 검증 추가)
+- [x] `/api/naver-works-send` — 봇 발송 (2026-04-25, audit 모드로 배포)
 - [ ] `/api/inquiry` — **예외 유지** (외부 공개 폼, reCAPTCHA 등 별도 보호 권장)
 
 ### ewoo-approval

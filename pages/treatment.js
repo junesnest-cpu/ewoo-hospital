@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set, get } from "firebase/database";
 import { db } from "../lib/firebaseConfig";
+import { apiFetch } from "../lib/apiFetch";
 import useIsMobile from "../lib/useismobile";
 import { planPaths } from "../lib/planPaths";
 
@@ -259,7 +260,7 @@ export default function TreatmentPage() {
 
     setSending(true);
     try {
-      const res = await fetch("/api/naver-works-send", {
+      const res = await apiFetch("/api/naver-works-send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: msg }),
