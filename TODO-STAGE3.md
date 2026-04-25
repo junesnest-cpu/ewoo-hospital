@@ -14,14 +14,14 @@ Firebase ID Token 검증 미들웨어를 적용한다.
 ## 대상 엔드포인트
 
 ### ewoo-clinical (우선순위 🔴 환자정보 노출)
-- [ ] `/api/emr/patients` — 환자 마스터
-- [ ] `/api/emr/opinion-data` — 처방이력
-- [ ] `/api/emr/find-memos` — 의사 메모
-- [ ] `/api/emr/rounding` — 라운딩 환자목록
-- [ ] `/api/emr/rounding-summary` — 의사 라운딩 요약
-- [ ] `/api/patients/search` — 환자 검색
-- [ ] `/api/rounding` — 라운딩 메모 저장
-- [ ] `/api/vitals` — 바이탈 저장/조회
+- [x] `/api/emr/patients` — 환자 마스터 (2026-04-25, audit)
+- [x] `/api/emr/opinion-data` — 처방이력 (2026-04-25, audit)
+- [x] `/api/emr/find-memos` — 의사 메모 (2026-04-25, audit)
+- [x] `/api/emr/rounding` — 라운딩 환자목록 (2026-04-25, audit)
+- [x] `/api/emr/rounding-summary` — 의사 라운딩 요약 (2026-04-25, audit)
+- [x] `/api/patients/search` — 환자 검색 (2026-04-25, audit)
+- [x] `/api/rounding` — 라운딩 메모 저장 (2026-04-25, audit)
+- [x] `/api/vitals` — 바이탈 저장/조회 (2026-04-25, audit)
 - [ ] `/api/auth/migrate` — 이미 이메일+비밀번호로 자체 보호, 우선순위 낮음
 
 ### ewoo-hospital
@@ -31,7 +31,7 @@ Firebase ID Token 검증 미들웨어를 적용한다.
 - [ ] `/api/inquiry` — **예외 유지** (외부 공개 폼, reCAPTCHA 등 별도 보호 권장)
 
 ### ewoo-approval
-- [ ] `/api/director-stats` — 경영·매출 집계 (토큰 + 역할 검증)
+- [x] `/api/director-stats` — 경영·매출 집계 (2026-04-25, audit, requireRole('director'))
 
 ## 작업 절차
 
@@ -86,3 +86,17 @@ export async function apiFetch(url, opts = {}) {
 | clinical | `b154da8` | /api/generate 인증 |
 | clinical | `4bacaff` | Firestore 규칙 재작성 (테스트모드 제거) |
 | (snapshot) | `c297fb2`, `fac5309`, `7db5fc4` | Rules 리포 커밋 |
+
+## Stage 3 작업 결과 (2026-04-25)
+
+| 리포 | 커밋 | 내용 |
+|---|---|---|
+| hospital  | `f0f5af6` | requireAuth + apiFetch + /api/naver-works-send (audit 모드) |
+| clinical  | `cb67446` | 8개 EMR/환자 엔드포인트 + 클라이언트 일괄 (audit 모드) |
+| approval  | `36bc123` | /api/director-stats requireRole('director') (audit 모드) |
+
+전체 audit 모드 배포. 다음 단계:
+1. 24~48h 로그 모니터링 — Vercel Logs 에서 `[auth-audit]` / `[role-audit]` 경고 확인
+2. 누락된 호출 지점이 더 있는지 식별·치환
+3. 각 리포 Vercel env 에 `AUTH_ENFORCE=true` 설정 → enforce 전환
+4. (approval 한정) `APPROVAL_FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY` env 등록 — 그래야 approval 토큰·역할 검증 정상 작동. 미설정 시 audit 모드에선 통과되나 enforce 시 모든 요청 401 됨.
