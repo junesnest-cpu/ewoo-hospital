@@ -1,6 +1,24 @@
 {
   "rules": {
-    ".read": "auth != null",
-    ".write": "auth != null"
+    "rateLimits":       { ".read": false, ".write": false },
+    "dedupKeys":        { ".read": false, ".write": false },
+    "pendingChanges":   { ".read": false, ".write": false },
+    "migrationReports": { ".read": false, ".write": false },
+
+    "monthlyBoards":    { ".read": "auth != null", ".write": false },
+    "emrSyncLog":       { ".read": "auth != null", ".write": false },
+    "roomSyncLog":      { ".read": "auth != null", ".write": false },
+
+    "logs": {
+      ".read": "auth != null",
+      "$logId": {
+        ".write": "auth != null && !data.exists() && newData.exists()"
+      }
+    },
+
+    "$node": {
+      ".read":  "auth != null && !$node.beginsWith('_backup_')",
+      ".write": "auth != null && !$node.beginsWith('_backup_')"
+    }
   }
 }

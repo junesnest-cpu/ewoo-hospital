@@ -173,7 +173,12 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
 
 문서 보완 과정에서 enforce 전환만으로는 막히지 않는 갭을 새로 식별. 우선순위 순:
 
-- [ ] **🔴 RTDB 룰 too-permissive** — `database.rules.json` 이 전 경로 `auth != null` 만. 로그인한 누구든 `/logs`, `/users`, `/settings`, `/monthlyBoards` 등을 클라이언트 SDK 로 직접 삭제·변조 가능. AUTH_ENFORCE 는 API 토큰만 보호하지 RTDB 직접 호출은 못 막음. 경로별 read/write 분리 + 역할 기반 룰 필요 (최소 `/logs`·`/rateLimits`·`/dedupKeys`·`/users` 는 보호)
+- [x] **🔴 RTDB 룰 강화** (2026-04-26) — `database.rules.json` 4분류 구조로 재작성:
+  - **서버 전용**(false/false): `rateLimits`, `dedupKeys`, `pendingChanges`, `migrationReports`
+  - **읽기 전용**(read-only): `monthlyBoards`, `emrSyncLog`, `roomSyncLog` — RPi/Cloud Functions Admin SDK 만 write
+  - **append-only**: `logs` — 신규 entry 추가만 허용 (직원 wipe 차단). `addLog` 를 set(전체 배열) → `push()` 패턴으로 전환 (`lib/WardDataContext.js`). 기존 배열 데이터는 `Object.values` 로 점진 호환
+  - **일반**(`$node` 와일드카드): 명시 없는 모든 경로 — `auth != null` + `_backup_*` prefix 차단. cascading 함정 회피
+  - 룰 변경 즉시 enforce. 영향 평가: 정상 사용자는 무영향 / 직원 콘솔 조작·악의 변조 차단 / 스크립트는 Admin SDK 로 룰 우회 가능
 - [x] **🔴 `lib/firebaseAdmin.js` safe-init 패턴** (2026-04-26) — `safeInit()` 헬퍼 도입. ENV 누락·PEM 파싱 실패 시 throw 대신 null 반환 + `[firebaseAdmin]` 경고 로그. `verifyAuth` 와 `/api/auth/migrate` 도 null-safe 처리 (migrate 는 503 반환). HOTFIX 2026-04-25 와 동일 패턴
 - [x] **🟠 `/api/naver-works-send` rate limit + 길이 제한** (2026-04-26) — uid 우선·IP fallback 키로 1분 10회 제한 (`wardAdminDb` 백엔드). 메시지 2000자 상한 (413 반환). 정상 사용(시간당 수 건)은 영향 없음
 - [ ] **🟠 `/api/inquiry` CORS allowlist 우회** — `origin.includes('imweb')` 패턴이 `imweb.attacker.com` 도 통과시킴. 정확 호스트 매칭으로 좁히기

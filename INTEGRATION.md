@@ -137,7 +137,7 @@ EMR 주문과 별개로 **치료실에서의 실시행** 여부를 검증한다.
 
 | 레이어 | 보호 대상 | 메커니즘 | 우회 가능 조건 |
 |---|---|---|---|
-| **L1. RTDB / Firestore 룰** | DB 직접 호출 (클라이언트 SDK) | `auth != null` + 경로별 룰 | 로그인된 모든 사용자가 룰 허용 범위 내에서 자유. ⚠️ hospital `database.rules.json` 은 현재 전경로 `auth != null` 만 — 강화 예정 |
+| **L1. RTDB / Firestore 룰** | DB 직접 호출 (클라이언트 SDK) | 경로별 룰 (서버 전용/읽기 전용/append-only/일반 분리) | 로그인된 모든 사용자가 룰 허용 범위 내에서 자유. hospital 은 2026-04-26 강화 완료 — 아래 `1.1 RTDB 룰 구조` 참조 |
 | **L2. API 토큰 검증** | `/api/*` 라우트 | `lib/verifyAuth.js` (`requireAuth`) — Firebase ID Token 검증, audit/enforce 모드 | `AUTH_ENFORCE` env 미설정 시 audit (경고만). hospital 은 enforce 활성, clinical/approval 은 4/29~30 enforce 예정 |
 | **L3. 역할 검증** | 민감 API (예: `/api/director-stats`) | `requireRole('director')` — approval `/users/{emailKey}/role` 조회 | L2 통과한 직원도 역할 미달 시 차단 |
 | **L4. Rate limit / Dedup** | 폼 spam, password spraying | `lib/rateLimit.js` — RTDB 슬라이딩 윈도우, fail-open | RTDB 장애 시 통과 (사용자 lockout 방지 우선) |
@@ -152,8 +152,26 @@ EMR 주문과 별개로 **치료실에서의 실시행** 여부를 검증한다.
 | 사용자 프로필·비밀번호 (`/users/`) | 🔴 인증 자체 | L1+L2 + Firebase Auth 자체 보호 |
 | 매출·수가 집계 | 🟠 경영 정보 | L2+L3 (`director` role 한정) |
 | 외부 문의 (홈페이지) | 🟡 외부 입력 | L4+L5 (rate limit + CORS) |
-| 치료계획·병상배치 | 🟡 운영 데이터 | L1+L2 |
-| 로그·설정 (`/logs`, `/settings`) | 🟡 운영 메타 | L1만 (현재 부족 — 룰 강화 예정) |
+| 치료계획·병상배치 | 🟡 운영 데이터 | L1 (auth != null) + L2 |
+| 로그 (`/logs`) | 🟡 운영 메타 | L1 append-only — 직원 wipe 후 변조 차단 |
+| 서버 전용 메타 (`/rateLimits`, `/dedupKeys`, `/pendingChanges`, `/migrationReports`) | 🟢 서버 전용 | L1 — 클라이언트 read/write 모두 false. Admin SDK 만 |
+| 동기화 결과 (`/monthlyBoards`, `/emrSyncLog`, `/roomSyncLog`) | 🟢 서버 기록 | L1 — 클라이언트 read 만, write 는 RPi/Cloud Functions Admin SDK |
+| 백업 (`_backup_*`) | 🟢 보존 | L1 — 클라이언트 read/write 모두 차단 (admin SDK 만) |
+
+### 6.1 RTDB 룰 구조 (2026-04-26 강화)
+
+`database.rules.json` 는 **명시 노드별 룰 + `$node` 와일드카드 fallback** 구조:
+
+| 룰 패턴 | 적용 노드 | 효과 |
+|---|---|---|
+| `false / false` | `rateLimits`, `dedupKeys`, `pendingChanges`, `migrationReports` | 클라이언트 완전 차단. Admin SDK 만 (룰 우회) |
+| `read: auth!=null / write: false` | `monthlyBoards`, `emrSyncLog`, `roomSyncLog` | 클라이언트 읽기만, 쓰기는 서버 전용 |
+| append-only (`logs/$logId`) | `logs` | 신규 entry 추가만 허용. 기존 변경·삭제 차단 — 직원 wipe 방지 |
+| `$node` 와일드카드 (`auth != null && !$node.beginsWith('_backup_')`) | 위에서 명시되지 않은 모든 child | 기존 `auth != null` 동작 유지 + `_backup_*` prefix 차단 |
+
+**RTDB 룰의 cascading 함정**: 부모 노드의 룰이 true 면 자식은 항상 허용 (자식에서 더 엄격하게 못 함). 따라서 root `.read/.write` 를 두지 않고 `$node` 와일드카드로 fallback 처리 — 미명시 경로는 자동 deny by default 가 아닌 `auth != null` 유지.
+
+**logs append-only 코드 호환**: `lib/WardDataContext.js` `addLog` 가 set(전체 배열) 패턴에서 `push()` 키 기반으로 전환됨 (2026-04-26). 기존 배열 데이터는 `Object.values` 로 호환 처리되어 마이그레이션 없이 점진 전환.
 
 ### 비밀번호 변경·계정 회수 흐름
 
@@ -183,3 +201,5 @@ EMR 주문과 별개로 **치료실에서의 실시행** 여부를 검증한다.
 | 2026-04-25 | H1 `/api/inquiry` rate limit + dedup, H3 `/api/auth/migrate` rate limit (`0fbcc34`) — `lib/rateLimit.js` 신설 | |
 | 2026-04-25 | **C3 hospital enforce 활성화** (`f173b61`, `AUTH_ENFORCE=true`) — 원래 5/1 일정에서 audit 당일 앞당김. clinical/approval 은 4/29~30 예정 | |
 | 2026-04-26 | INTEGRATION.md 6장 보안 책임 분담 추가 — L1~L6 다층 방어 구조와 데이터 분류별 적용 레이어 정리 | |
+| 2026-04-26 | 코드 갭 패치 — `lib/firebaseAdmin.js` safeInit, `apiFetch` stale token 자동 복구, `/api/naver-works-send` rate limit + 길이 상한 | |
+| 2026-04-26 | **RTDB 룰 강화** — 서버 전용/읽기 전용/append-only/일반 4분류로 경로별 분리. `logs` append-only 전환 (`addLog` push 패턴), `_backup_*` 클라이언트 차단 | |

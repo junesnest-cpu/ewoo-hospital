@@ -13,6 +13,44 @@
 
 ---
 
+## 2026-04-26 — RTDB 룰 강화 시 logs `set(전체 배열)` 패턴이 룰에 막힘
+
+### 증상
+- `database.rules.json` 강화 배포 직후 환자 이동·예약 등 변경 작업 시 콘솔에 `PERMISSION_DENIED: Permission denied` 로그.
+- 데이터 자체는 변경되지만 `logs` 항목이 누락됨.
+
+### 근본 원인
+- 새 룰의 `logs.$logId` 는 **append-only** (`!data.exists() && newData.exists()`).
+- 기존 코드 `lib/WardDataContext.js addLog` 는 `set(ref(db, "logs"), updated)` 로 **전체 배열을 통째로 set**.
+  - 부모 `logs` 노드 자체에는 .write 룰 없음 → 거부.
+  - child `logs/$logId` 룰은 신규 추가만 허용 → 기존 entry 덮어쓰기 거부.
+- 즉 룰 강화 후엔 set(전체) 패턴이 **반드시 거부**되며 push() 패턴으로의 코드 전환 필수.
+
+### 수정 (커밋: RTDB 룰 강화와 동일 커밋)
+- `lib/WardDataContext.js`:
+  - `addLog` 를 `push(ref(db, "logs"))` + `set(newRef, newLog)` 패턴으로 변경.
+  - `import { push }` 추가.
+  - `u6` 읽기 코드는 이미 `Array.isArray(val) ? val : Object.values(val)` 처리되어 있어 객체 형태와 호환. ts 내림차순 정렬 + 200건 제한 추가.
+  - 낙관적 갱신(setLogs) 은 유지 — onValue 가 정합성 보정.
+
+### 재발 방지 가드
+- **append-only 룰을 적용한 노드는 반드시 push() 패턴 코드여야 함**: `set(ref(db, "노드"), 전체)` 또는 `update(ref(db), {"노드": 전체})` 호출이 있는지 grep 으로 확인 후 룰 적용.
+- **RTDB 룰 cascading 함정**: 부모 노드의 `.read/.write` 가 true 면 자식에서 더 엄격하게 만들 수 없음 (자식 룰 무시됨). root 에 `.read/.write: "auth != null"` 두면 모든 child 가 `auth != null` 로 고정됨. 그래서 root 룰을 제거하고 `$node` 와일드카드로 fallback 처리.
+- **룰 변경은 audit 모드 없음**: `firebase deploy --only database` 즉시 enforce. 배포 직전 모든 페이지의 영향받는 동작(예약 등록·이동·퇴원·치료계획 입력·logs 기록) smoke test 필요. 깨지면 `git revert` + 재배포로 ~1분 내 복구.
+
+### 검증·복구 도구
+- 새 룰 배포 후 즉시 확인할 동작:
+  - 병동 메인(`pages/index.js`)에서 환자 정보 수정 → console 에 `PERMISSION_DENIED` 가 안 나야 함
+  - "변경 이력" 탭(`LogView`)에서 신규 항목이 즉시 표시되어야 함
+  - 외부 문의(`/api/inquiry`) 접수 시 rate limit 정상 동작 (서버측 Admin SDK 라 룰 우회됨)
+- 롤백: `database.rules.json` 을 직전 커밋으로 되돌리고 `firebase deploy --only database` 재실행.
+
+### 연관 관찰
+- `set(ref(db, "노드"), ...)` 또는 `update(ref(db), {"노드": ...})` 패턴은 append-only 룰과 호환 안 됨 — 새 룰 적용 노드에는 grep 으로 사전 확인.
+- 부모 cascading 때문에 root 에 `auth != null` 두면 child 보호 룰이 무력화됨. 이 함정을 모르고 "child 만 강화" 시도하면 룰만 늘고 실효 없음.
+
+---
+
 ## 2026-04-25 — Vercel CLI multi-line env 등록 시 PEM 줄바꿈 깨짐 → Admin SDK init 500
 
 ### 증상
