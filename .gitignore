@@ -3,6 +3,13 @@
 .env.local
 .env*.local
 
+# Firebase Admin SDK 서비스 계정 (절대 커밋 금지 — 키 노출 시 즉시 회전 필요)
+# hospital 은 환경변수만 사용해서 파일 자체가 없지만, 예방 차원에서 패턴 등재
+serviceAccount*.json
+service-account*.json
+*-firebase-adminsdk-*.json
+google-credentials*.json
+
 # Next.js 빌드 결과물
 .next/
 out/

@@ -166,7 +166,7 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
 
 - [ ] `/api/inquiry` (hospital, 외부 공개 폼) — reCAPTCHA / hCaptcha 도입 검토
 - [x] `/api/auth/migrate` (hospital) — rate limit 적용 (`0fbcc34`, IP+email 5분 5회). clinical 동일 적용 필요시 별건
-- [ ] `serviceAccount-old.json` / `serviceAccount-new.json` 정리 — 사용 중 키 확정 후 old 폐기 (보안 위생)
+- [x] `serviceAccount-old.json` / `serviceAccount-new.json` 정리 (2026-04-26) — **hospital 레포는 N/A**: 파일 자체 없음·git 미커밋·모든 스크립트가 환경변수만 사용. 예방 차원 `.gitignore` 패턴 추가(`serviceAccount*.json` 등). **approval 레포 작업으로 분리** — 거기서 사용 중 키 확정 후 old 폐기 필요
 - [x] HOTFIX.md 에 vercel CLI multi-line env 등록 함정 추가 (literal `\n` 형식 권장)
 
 ### 5단계: 추가 발견 보안 갭 (2026-04-26 점검)
