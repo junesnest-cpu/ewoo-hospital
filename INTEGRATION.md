@@ -212,3 +212,6 @@ EMR 주문과 별개로 **치료실에서의 실시행** 여부를 검증한다.
 | 2026-04-26 | 코드 갭 패치 — `lib/firebaseAdmin.js` safeInit, `apiFetch` stale token 자동 복구, `/api/naver-works-send` rate limit + 길이 상한 | |
 | 2026-04-26 | **RTDB 룰 강화** — 서버 전용/읽기 전용/append-only/일반 4분류로 경로별 분리. `logs` append-only 전환 (`addLog` push 패턴), `_backup_*` 클라이언트 차단 | |
 | 2026-04-26 | `/api/inquiry` CORS 정확 매칭(URL 파싱 + `*.imweb.me` suffix), `/api/auth/migrate` 응답 정보 누출 제거(`{ok:true}` 단일화) | |
+| 2026-04-26 | clinical/approval 사전 안전 패치 — safeInit·apiFetch refresh·verifyAuth null·migrate 정보 누출 (clinical `c1e61ba`, approval `3849a7b`) | |
+| 2026-04-26 | approval RTDB 룰 강화 — hospital 패턴 4분류 적용. cascading 함정 제거로 기존에 무력했던 `approvals/.write:false`·`role/.write:false` 가 진짜 작동 (`890d521`) | |
+| 2026-04-26 | clinical Firestore 룰 점검 — 이미 `match /{document=**} { allow read,write: if false }` 최강 룰. 모든 I/O 가 서버 API 경유. 강화 불필요 | |

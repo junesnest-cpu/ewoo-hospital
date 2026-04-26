@@ -137,7 +137,7 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
 | 일자 | 리포 | 상태 | 비고 |
 |---|---|---|---|
 | ~~2026-05-01 금~~ → **2026-04-25 토** | hospital  | ✅ 완료 (`f173b61`) | 영향 적어 audit 당일 바로 enforce 앞당김 |
-| 2026-04-29 수 | clinical  | ⏳ 예정 — 사전 안전 패치 완료 (`c1e61ba`, 4/26) | 환자정보 노출 가장 위험. safeInit + apiFetch refresh + migrate 정보 누출 제거 적용. audit 28일 분석 후 |
+| 2026-04-29 수 | clinical  | ⏳ 예정 — 사전 점검 100% 완료 (4/26) | **enforce 전환 안전**: Firestore 룰 이미 최강(`if false`), apiFetch 100% 사용(16/16), 코드 사전 패치 `c1e61ba`. 4/27~28 Vercel Logs `[auth-audit]` 검색 결과 0건이면 즉시 enforce 가능 |
 | 2026-04-30 목 | approval  | ⏳ 예정 — 사전 안전 패치 완료 (`3849a7b`, `890d521`, 4/26) | 역할 검증(director) 포함. apiFetch refresh + verifyAuth ward null + RTDB 룰 강화(4분류 + cascading 회피) |
 
 각 전환 직후 30분간 Logs 즉시 관찰. 401 폭증·사용자 제보 시 env 토글로 1분 내 audit 복귀.
