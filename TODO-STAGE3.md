@@ -137,8 +137,8 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
 | 일자 | 리포 | 상태 | 비고 |
 |---|---|---|---|
 | ~~2026-05-01 금~~ → **2026-04-25 토** | hospital  | ✅ 완료 (`f173b61`) | 영향 적어 audit 당일 바로 enforce 앞당김 |
-| 2026-04-29 수 | clinical  | ⏳ 예정 | 환자정보 노출 가장 위험, audit 28일 분석 후 |
-| 2026-04-30 목 | approval  | ⏳ 예정 | 역할 검증(director) 포함, 진입 장벽 높음 |
+| 2026-04-29 수 | clinical  | ⏳ 예정 — 사전 안전 패치 완료 (`c1e61ba`, 4/26) | 환자정보 노출 가장 위험. safeInit + apiFetch refresh + migrate 정보 누출 제거 적용. audit 28일 분석 후 |
+| 2026-04-30 목 | approval  | ⏳ 예정 — 사전 안전 패치 완료 (`3849a7b`, `890d521`, 4/26) | 역할 검증(director) 포함. apiFetch refresh + verifyAuth ward null + RTDB 룰 강화(4분류 + cascading 회피) |
 
 각 전환 직후 30분간 Logs 즉시 관찰. 401 폭증·사용자 제보 시 env 토글로 1분 내 audit 복귀.
 
@@ -186,12 +186,20 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
 
 문서 보완 과정에서 enforce 전환만으로는 막히지 않는 갭을 새로 식별. 우선순위 순:
 
-- [x] **🔴 RTDB 룰 강화** (2026-04-26) — `database.rules.json` 4분류 구조로 재작성:
+- [x] **🔴 RTDB 룰 강화 (hospital)** (2026-04-26) — `database.rules.json` 4분류 구조로 재작성:
   - **서버 전용**(false/false): `rateLimits`, `dedupKeys`, `pendingChanges`, `migrationReports`
   - **읽기 전용**(read-only): `monthlyBoards`, `emrSyncLog`, `roomSyncLog` — RPi/Cloud Functions Admin SDK 만 write
   - **append-only**: `logs` — 신규 entry 추가만 허용 (직원 wipe 차단). `addLog` 를 set(전체 배열) → `push()` 패턴으로 전환 (`lib/WardDataContext.js`). 기존 배열 데이터는 `Object.values` 로 점진 호환
   - **일반**(`$node` 와일드카드): 명시 없는 모든 경로 — `auth != null` + `_backup_*` prefix 차단. cascading 함정 회피
   - 룰 변경 즉시 enforce. 영향 평가: 정상 사용자는 무영향 / 직원 콘솔 조작·악의 변조 차단 / 스크립트는 Admin SDK 로 룰 우회 가능
+
+- [x] **🔴 RTDB 룰 강화 (approval)** (2026-04-26, `890d521`) — hospital 패턴 적용:
+  - **서버 전용 / read-only**: `approvals/{$docId}` (서버 Admin SDK 만 write — `/api/approvals/action`), `patients/{$docId}` (서버 환불 처리만)
+  - **read+write 일반**: `users/{$ek}` (profile setup, uid sync), `approvalCounters` (클라이언트 runTransaction), `userPwChangedAt` (PW 변경 감지)
+  - **role 보호**: `users/{$ek}/role` 만 .write false — 직원 self-promote 차단
+  - **`$node` 와일드카드 fallback**: 미명시 노드는 `auth != null` 유지 + `_backup_*` prefix 차단
+  - **핵심 발견**: 기존 룰의 root `.read/.write: "auth != null"` cascading 때문에 child `.write: false` 가 **실제로 무력했음**. root 제거 + $node fallback 으로 보호가 진짜 작동하게 됨
+  - 클라이언트 코드 변경 0 (logs append-only 같은 호환성 이슈 없음 — approval 은 set(전체) 패턴 사용 안 함)
 - [x] **🔴 `lib/firebaseAdmin.js` safe-init 패턴** (2026-04-26) — `safeInit()` 헬퍼 도입. ENV 누락·PEM 파싱 실패 시 throw 대신 null 반환 + `[firebaseAdmin]` 경고 로그. `verifyAuth` 와 `/api/auth/migrate` 도 null-safe 처리 (migrate 는 503 반환). HOTFIX 2026-04-25 와 동일 패턴
 - [x] **🟠 `/api/naver-works-send` rate limit + 길이 제한** (2026-04-26) — uid 우선·IP fallback 키로 1분 10회 제한 (`wardAdminDb` 백엔드). 메시지 2000자 상한 (413 반환). 정상 사용(시간당 수 건)은 영향 없음
 - [x] **🟠 `/api/inquiry` CORS allowlist 정확 매칭** (2026-04-26) — `origin.includes('imweb')` → `URL` 파싱 후 `*.imweb.me` suffix 매칭(서브도메인 확보 검증). 명시 origin 외에는 헤더 부여 안 함 (origin 없는 호출은 rate limit + dedup 이 방어). `Vary: Origin` 추가
