@@ -1,25 +1,14 @@
-import admin from 'firebase-admin';
 import crypto from 'crypto';
 import { checkRateLimit, checkDedup, getClientIp } from '../../lib/rateLimit';
+import { wardAdminDb } from '../../lib/firebaseAdmin';
 
-// ── Firebase Admin SDK 초기화 (싱글턴) ───────────────────────────────────────
-function getAdminDb() {
-  if (!admin.apps.length) {
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-    if (!privateKey || !process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL) {
-      throw new Error('Firebase 환경변수 미설정');
-    }
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId:   process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey,
-      }),
-      databaseURL: 'https://ewoo-hospital-ward-default-rtdb.firebaseio.com',
-    });
-  }
-  return admin.database();
-}
+// ── 회귀 fix (2026-04-26 firebase 12 업그레이드 직후 표면화) ─────────────────
+// 이전: 자체 admin.initializeApp default app 호출. lib/firebaseAdmin 이 named app
+//   (approval-admin, ward-admin) 만 init 하므로 cold start 운에 따라 admin.apps.length
+//   가 0 이거나 2 였음. 0 일 때만 default app init 성공 → warm lambda 에서 inquiry 가
+//   처음 호출되면 admin.database() 가 default app 없어 throw → 500.
+// 이제: lib/firebaseAdmin 의 wardAdminDb (named app) 를 직접 사용. cold/warm 무관.
+// safeInit 패턴 덕에 wardAdminDb 가 null 일 수 있으니 503 fallback.
 
 // 문의유형 → 메모 접두사
 const TYPE_LABELS = {
@@ -91,7 +80,11 @@ export default async function handler(req, res) {
     // 연락처 정규화
     const normPhone = phone.replace(/[^0-9]/g, '');
 
-    const db = getAdminDb();
+    const db = wardAdminDb;
+    if (!db) {
+      console.error('[inquiry] wardAdminDb 미초기화 — env 점검 필요');
+      return res.status(503).json({ error: '서비스가 일시적으로 사용 불가합니다.' });
+    }
 
     // Rate limit: IP 당 1시간 10회 (정상 사용자는 평생 0~1회 제출이 일반적)
     const rl = await checkRateLimit({ key: `inquiry/${ip}`, max: 10, windowMs: 60 * 60 * 1000, db });
