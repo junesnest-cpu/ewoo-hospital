@@ -171,7 +171,15 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
   - 단순 봇 ~70% 차단 예상. 정교한 헤드리스 봇·사람 형태 spam 은 못 막음
   - **단계 2 (reCAPTCHA v2 invisible)** 는 honeypot 모니터링 결과 보고 결정. 가짜 문의 발생 빈도가 월 5건 넘으면 진입
 - [x] `/api/auth/migrate` (hospital) — rate limit 적용 (`0fbcc34`, IP+email 5분 5회). clinical 동일 적용 필요시 별건
-- [x] `serviceAccount-old.json` / `serviceAccount-new.json` 정리 (2026-04-26) — **hospital 레포는 N/A**: 파일 자체 없음·git 미커밋·모든 스크립트가 환경변수만 사용. 예방 차원 `.gitignore` 패턴 추가(`serviceAccount*.json` 등). **approval 레포 작업으로 분리** — 거기서 사용 중 키 확정 후 old 폐기 필요
+- [x] `serviceAccount-old.json` / `serviceAccount-new.json` 정리 (2026-04-26) — **hospital 레포는 N/A**: 파일 자체 없음·git 미커밋·모든 스크립트가 환경변수만 사용. 예방 차원 `.gitignore` 패턴 추가(`serviceAccount*.json` 등).
+  - **approval 레포 검토 결과 (2026-04-26)**: 옵션 A — **유지 결정**
+    - `lib/firebaseAdmin.js` 는 환경변수만 사용 — JSON 자동 로드 안 됨 (JSON 파일 존재와 dev 서버 인증 동작은 자동 연결 안 됨)
+    - 운영(Vercel deploy) 측면 — Vercel env 가 모든 키 공급, JSON 불필요
+    - 로컬 dev 측면 — `.env.local` 도 없으므로 dev 서버에서 인증 라우트는 audit 모드 / 503 으로 동작. JSON 자체는 dev 에 자동 영향 없음
+    - **JSON 직접 참조 7개 파일** — `scripts/migrateUsers.js`, `migrateData.js`, `extract-pk-literal.js`, `register-env.sh`, `re-register-pk.sh` (일회성 마이그레이션 + 키 회전 헬퍼)
+    - 유지 사유: 향후 키 회전 시 `register-env.sh` 가 매우 유용 (HOTFIX 2026-04-25 의 literal `\n` 함정 회피용 표준 절차). 마이그레이션 스크립트 재실행 가능성도 있음
+    - 보안 위생: `.gitignore` 21줄에 `serviceAccount*.json` 등재됨 → git 노출 위험 0. 로컬 PC 한 곳에만 존재 → 추가 노출 표면 없음
+    - **회복 보증**: Vercel env 에 모든 키가 등록되어 있고 (`vercel env ls production` 으로 확인 가능), Firebase Console 에서 새 키 재발급 가능 → JSON 분실 시에도 회복 가능
 - [x] HOTFIX.md 에 vercel CLI multi-line env 등록 함정 추가 (literal `\n` 형식 권장)
 
 ### 5단계: 추가 발견 보안 갭 (2026-04-26 점검)

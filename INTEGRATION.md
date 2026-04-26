@@ -64,6 +64,14 @@ Promise.all([
 
 `serviceAccount-new.json` / `serviceAccount-old.json`은 `ewoo-approval` 레포 로컬에만 보관. Vercel 환경변수로만 배포 환경에 주입.
 
+**Service account JSON 파일 검토 결과 (2026-04-26)**:
+- ✅ **유지 결정 (옵션 A)** — 보안 위생 양호, 향후 키 회전·마이그레이션 헬퍼 활용
+- approval 의 `lib/firebaseAdmin.js` 는 환경변수만 사용 — 운영 동작에 JSON 불필요
+- 다만 `scripts/migrateUsers.js`, `migrateData.js`, `extract-pk-literal.js`, `register-env.sh` 등 7개 헬퍼가 JSON 직접 참조
+- `.gitignore` 에 `serviceAccount*.json` 등재 → git 노출 위험 0
+- 회복 보증: Vercel env 에 모든 키 등록됨 + Firebase Console 에서 새 키 재발급 가능
+- hospital / clinical 레포: JSON 파일 자체 없음. 모든 스크립트가 환경변수만 사용. `.gitignore` 에 예방 패턴 등재됨
+
 ## 3. EMR DB 이원화 (ewoo-hospital, ewoo-clinical)
 
 브레인 닥터스 EMR은 **2개 DB 분리**:
