@@ -137,8 +137,8 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
 | 일자 | 리포 | 상태 | 비고 |
 |---|---|---|---|
 | ~~2026-05-01 금~~ → **2026-04-25 토** | hospital  | ✅ 완료 (`f173b61`) | 영향 적어 audit 당일 바로 enforce 앞당김 |
-| 2026-04-29 수 | clinical  | ⏳ 예정 — 사전 점검 100% 완료 (4/26) | **enforce 전환 안전**: Firestore 룰 이미 최강(`if false`), apiFetch 100% 사용(16/16), 코드 사전 패치 `c1e61ba`. 4/27~28 Vercel Logs `[auth-audit]` 검색 결과 0건이면 즉시 enforce 가능 |
-| 2026-04-30 목 | approval  | ⏳ 예정 — 사전 안전 패치 완료 (`3849a7b`, `890d521`, 4/26) | 역할 검증(director) 포함. apiFetch refresh + verifyAuth ward null + RTDB 룰 강화(4분류 + cascading 회피) |
+| ~~2026-04-29 수~~ → **2026-04-26 일** | clinical  | ✅ 완료 (`35b9aaf`) | 사전 점검 100% 완료 후 즉시 enforce. AUTH_ENFORCE=true 등록 (production readable, vercel CLI sensitive 함정 회피) → 빈 commit redeploy → curl 401 검증 ✅ |
+| ~~2026-04-30 목~~ → **2026-04-26 일** | approval  | ✅ 완료 (`d2caacd`) | apiFetch refresh + verifyAuth ward null + RTDB 룰 강화 사전 패치 후 즉시 enforce. 역할 검증(director) 포함 |
 
 각 전환 직후 30분간 Logs 즉시 관찰. 401 폭증·사용자 제보 시 env 토글로 1분 내 audit 복귀.
 
