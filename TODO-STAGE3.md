@@ -162,6 +162,30 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
 - 토큰 만료·재발급 흐름 자연스러운지 (`apiFetch` 가 `getIdToken()` 매 호출마다 재발급)
 - 모바일 / 외부 도구 영향 여부
 
+### 6단계: Dependabot 취약점 정리 (2026-04-26 진행)
+
+GitHub Dependabot + `npm audit` 결과 28건 → 안전 패치로 critical 모두 해소.
+
+#### 처리 완료 — patch 업그레이드 (메이저 변경 0)
+| 프로젝트 | 커밋 | 변경 | 결과 |
+|---|---|---|---|
+| hospital | `765f8ee` | `next` 14.2.3 → 14.2.35 (patch) + audit fix | 1 critical 1 high → 0 critical 2 high |
+| clinical | `e02a3c7` | audit fix (protobufjs critical 등) | 1 critical → 0 critical 1 high |
+| approval | `d3f831e` | `next` 14.2.3 → 14.2.35 + audit fix | 2 critical 1 high → 0 critical 3 high |
+
+핵심: **Next.js critical (GHSA-7gfc-8cq8-jh5f, authorization bypass) 가 14.x 안에서 패치 가능** — 메이저 업그레이드(15.x) 불필요.
+
+#### 미처리 — 메이저 업그레이드 필요 (별도 작업)
+- [ ] **🟠 firebase 10.11 → 12+** (hospital, approval) — undici high + 기타 transitive. clinical 은 이미 ^12.12 (선례 있음). Auth/RTDB API 변경 호환성 검증 필수
+- [ ] **🟡 mssql 의존성 체인** (`uuid` → `@azure/msal-node` → `tedious` → `mssql`) — hospital 만 (RPi syncEMR). mssql 자체 의존성 업데이트 기다리거나 lock override 필요
+- [ ] **🟡 기타 transitive** (postcss, @tootallnate/once, gaxios) — 대부분 메이저 dep 업그레이드 시 자연 해소
+
+남은 카운트 (3프로젝트 합):
+- 🔴 critical: 0
+- 🟠 high: 6 (hospital 2, clinical 1, approval 3) — 주로 undici (firebase transitive)
+- 🟡 moderate: 53
+- 🟢 low: 6
+
 ### 4단계: 후속 정리
 
 - [~] `/api/inquiry` (hospital, 외부 공개 폼) — **단계 1 honeypot 적용 완료** (2026-04-26):
