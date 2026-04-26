@@ -1,5 +1,13 @@
 import crypto from 'crypto';
 import { requireAuth } from '../../lib/verifyAuth';
+import { checkRateLimit, getClientIp, sanitizeKey } from '../../lib/rateLimit';
+import { wardAdminDb } from '../../lib/firebaseAdmin';
+
+// 메시지 길이 상한 (네이버 웍스 자체 한도와 무관, 봇 채널 가독성·과도 발송 방지)
+const MAX_MESSAGE_LENGTH = 2000;
+// rate limit: (uid 또는 IP) 1분 10회 — 정상 사용(치료계획 입력 알림 등)은 시간당 수 회 수준
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
 // ── JWT 생성 (Node.js 내장 crypto 사용) ───────────────────────────────────────
 function base64url(buf) {
@@ -97,6 +105,19 @@ export default async function handler(req, res) {
 
   const { message } = req.body;
   if (!message) return res.status(400).json({ error: '메시지가 없습니다' });
+
+  // 메시지 길이 상한 — 직원 실수·자동화 폭주·봇 채널 가독성 보호
+  if (typeof message !== 'string' || message.length > MAX_MESSAGE_LENGTH) {
+    return res.status(413).json({ error: `메시지가 너무 깁니다 (최대 ${MAX_MESSAGE_LENGTH}자)` });
+  }
+
+  // Rate limit: uid 우선(인증 통과 시), 없으면 IP. audit 모드 폴백 시에도 IP 기반 보호.
+  const rlKey = `naver-works-send/${a.user?.uid ? `uid_${sanitizeKey(a.user.uid)}` : `ip_${getClientIp(req)}`}`;
+  const rl = await checkRateLimit({ key: rlKey, max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS, db: wardAdminDb });
+  if (!rl.allowed) {
+    res.setHeader('Retry-After', String(rl.retryAfter));
+    return res.status(429).json({ error: '봇 발송이 너무 잦습니다. 잠시 후 다시 시도해주세요.', retryAfter: rl.retryAfter });
+  }
 
   const channelId = process.env.NAVER_WORKS_CHANNEL_ID;
   const botId     = process.env.NAVER_WORKS_BOT_ID;

@@ -13,6 +13,38 @@
 
 ---
 
+## 2026-04-25 — Vercel CLI multi-line env 등록 시 PEM 줄바꿈 깨짐 → Admin SDK init 500
+
+### 증상
+- Stage 3 audit 배포(`13d2bcd`) 직후 ewoo-approval 의 모든 `/api/*` 가 500.
+- Runtime logs: `FirebaseAppError: Failed to parse private key: Error: Invalid PEM formatted message`.
+- `npx vercel env add APPROVAL_FIREBASE_PRIVATE_KEY production --value="$VAR" --yes` 로 actual newline 포함 PEM 문자열을 등록한 직후.
+
+### 근본 원인
+- vercel CLI 의 `--value="$VAR"` 가 multi-line 값(\n 실제 개행)을 일부 배포 환경에서 정상 저장하지 못함.
+- 저장된 값을 firebase-admin `cert()` 가 PEM 으로 파싱할 때 줄바꿈 손상 → init 실패.
+- approval 만 신규 등록한 상태였고 hospital/clinical 은 기존 env 사용으로 영향 없음.
+
+### 수정 (커밋)
+- `10f38d8` (approval) — `lib/firebaseAdmin.js` 를 **safeInit 패턴**으로 변경: try-catch 로 cert 실패 잡고 null 반환. audit 모드에서도 안전 fallback.
+- `APPROVAL_FIREBASE_PRIVATE_KEY` 를 **literal `\n` escape** 형태로 재등록 (한 줄 문자열). 코드의 `.replace(/\\n/g, '\n')` 가 actual newline 으로 변환.
+- `d4e5949` (approval) 재배포 — Admin SDK init 성공 확인.
+
+### 재발 방지 가드
+- **PEM/multi-line secret 등록은 반드시 literal `\n` escape 형태로**: 줄바꿈을 `\n` 두 글자로 치환해 한 줄 문자열로 만든 뒤 등록. 코드는 `.replace(/\\n/g, '\n')` 로 디코드.
+- **Admin SDK init 은 safeInit 패턴**: import 자체가 죽어 모든 라우트가 500 되는 사태 방지. ⚠️ hospital `lib/firebaseAdmin.js` 는 아직 safeInit 미적용 (TODO-STAGE3.md 5단계 항목).
+- **Vercel CLI agent-detection 비대화 모드**: `CLAUDECODE` env 가 set 이면 vercel CLI 가 일부 prompt 를 JSON `action_required` 로 반환 — `--yes`/`--value` 만으로 끝나지 않을 수 있음. preview env 의 git-branch prompt 는 빈 문자열 positional 로 우회: `vercel env add NAME preview "" --value="..." --yes`.
+
+### 검증·복구 도구
+- approval 레포 `scripts/extract-pk-literal.js` + `scripts/re-register-pk.sh` — literal `\n` 변환 + Vercel 등록 자동화. 다른 리포에서 같은 작업 시 재사용.
+- Vercel runtime logs 에서 `[firebaseAdmin]` 키워드로 init 실패 즉시 감지 가능.
+
+### 연관 관찰
+- 같은 증상(특정 프로젝트만 Admin SDK 관련 500)이면 가장 먼저 env 의 `*_PRIVATE_KEY` 가 literal `\n` 인지, actual newline 인지 확인.
+- 키 회전 시에도 동일 함정 재발 가능 — 회전 절차 문서에 반드시 포함.
+
+---
+
 ## 2026-04-24 — 재입원 예약 시 과거 상담(동명) reservedSlot 오염 → "2건 예약" 표시
 
 ### 증상

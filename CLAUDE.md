@@ -128,8 +128,25 @@
 - `pages/settings.js` - 설정
 
 ## API 엔드포인트
-- `POST /api/naver-works-send` - 네이버 웍스 봇으로 공지 메시지 단방향 발송 (치료계획 입력 완료 알림 등)
-- `POST /api/inquiry` - 외부 웹사이트 문의 접수
+
+| 엔드포인트 | 용도 | 인증 | 추가 보호 |
+|---|---|---|---|
+| `POST /api/naver-works-send` | 봇 메시지 단방향 발송 | `requireAuth` (enforce) | ⚠️ rate limit 미적용 (TODO) |
+| `POST /api/inquiry` | 외부 홈페이지 문의 접수 | **없음 (의도적 공개)** | rate limit (IP/h 10), dedup (phone+content 1h), CORS allowlist |
+| `POST /api/auth/migrate` | approval↔ward 양방향 Auth 동기화 | 자체 인증 (이메일+비밀번호) | rate limit (IP+email 5분 5회) |
+
+**전체 정책**:
+- `AUTH_ENFORCE=true` 활성 (2026-04-25 `f173b61`) — 토큰 없는 `/api/*` 호출은 401
+- audit 잔존 발견 시 Vercel Logs 에서 `[auth-enforce]` 키워드 검색 (TODO-STAGE3.md 모니터링 플레이북 참조)
+
+### 🚨 신규 API 추가 시 보안 체크리스트 (Claude 반드시 준수)
+
+새 `/api/*` 라우트를 추가할 때:
+1. **인증 필요한가?** — 기본은 YES. handler 초입에 `const a = await requireAuth(req, res); if (!a.ok && !a.audited) return;` 의무. 외부 공개 폼 등 예외만 명시적 사유와 함께 인증 생략
+2. **클라이언트 호출은 `apiFetch` 로** — `lib/apiFetch.js` 사용. 직접 `fetch('/api/...')` 쓰면 enforce 환경에서 401
+3. **외부 입력 처리하면 rate limit** — `lib/rateLimit.js` 의 `checkRateLimit` 적용. fail-open 이라 RTDB 장애에도 lockout 없음
+4. **PII/PHI 다루면 INTEGRATION.md 6장 데이터 분류 표 갱신**
+5. **이 표(`API 엔드포인트`) 와 INTEGRATION.md 7장 변경 이력에 기재
 
 ## 주요 규칙
 - 입원 예약 자동 승격: admitDate < today (당일 미포함, 과거만) — index.js, room.js 양쪽 동일 로직

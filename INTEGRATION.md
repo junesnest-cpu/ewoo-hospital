@@ -131,14 +131,44 @@ EMR 주문과 별개로 **치료실에서의 실시행** 여부를 검증한다.
 - 라즈베리파이: 각 프로젝트 폴더의 `.env.local`
 - Vercel: 프로젝트별 Environment Variables 섹션 (Production/Preview/Development 모두)
 
-## 6. Claude Code 제한사항
+## 6. 보안 책임 분담
+
+3프로젝트 모두 동일한 다층 방어 구조를 따른다. 각 레이어가 다른 위협을 막으므로 한 층에 의존하지 말 것.
+
+| 레이어 | 보호 대상 | 메커니즘 | 우회 가능 조건 |
+|---|---|---|---|
+| **L1. RTDB / Firestore 룰** | DB 직접 호출 (클라이언트 SDK) | `auth != null` + 경로별 룰 | 로그인된 모든 사용자가 룰 허용 범위 내에서 자유. ⚠️ hospital `database.rules.json` 은 현재 전경로 `auth != null` 만 — 강화 예정 |
+| **L2. API 토큰 검증** | `/api/*` 라우트 | `lib/verifyAuth.js` (`requireAuth`) — Firebase ID Token 검증, audit/enforce 모드 | `AUTH_ENFORCE` env 미설정 시 audit (경고만). hospital 은 enforce 활성, clinical/approval 은 4/29~30 enforce 예정 |
+| **L3. 역할 검증** | 민감 API (예: `/api/director-stats`) | `requireRole('director')` — approval `/users/{emailKey}/role` 조회 | L2 통과한 직원도 역할 미달 시 차단 |
+| **L4. Rate limit / Dedup** | 폼 spam, password spraying | `lib/rateLimit.js` — RTDB 슬라이딩 윈도우, fail-open | RTDB 장애 시 통과 (사용자 lockout 방지 우선) |
+| **L5. CORS / Origin allowlist** | 외부 공개 폼 (`/api/inquiry`) | Allow-Origin 명시 도메인만 | ⚠️ `origin.includes('imweb')` 패턴은 부분일치라 우회 여지 있음 — 정확 매칭 권장 |
+| **L6. Admin SDK env 분리** | 서버 측 권한 상승 호출 | `APPROVAL_FIREBASE_*` / `WARD_FIREBASE_*` / `FIREBASE_*` 분리 적재 | env 유출 시 해당 프로젝트 전권. literal `\n` PEM 형식 + Vercel scope 분리로 보호 |
+
+### 데이터 분류와 적용 레이어
+
+| 데이터 | 분류 | 적용 레이어 |
+|---|---|---|
+| 환자 마스터 (`patients/`, EMR 처방 이력) | 🔴 PHI (개인 의료정보) | L1+L2+L3 — clinical 의 8개 EMR 엔드포인트 audit 모드 운영 중 |
+| 사용자 프로필·비밀번호 (`/users/`) | 🔴 인증 자체 | L1+L2 + Firebase Auth 자체 보호 |
+| 매출·수가 집계 | 🟠 경영 정보 | L2+L3 (`director` role 한정) |
+| 외부 문의 (홈페이지) | 🟡 외부 입력 | L4+L5 (rate limit + CORS) |
+| 치료계획·병상배치 | 🟡 운영 데이터 | L1+L2 |
+| 로그·설정 (`/logs`, `/settings`) | 🟡 운영 메타 | L1만 (현재 부족 — 룰 강화 예정) |
+
+### 비밀번호 변경·계정 회수 흐름
+
+- 비밀번호 변경: `ewoo-approval` Auth 단일 출처. 클라이언트는 `userPwChangedAt` 갱신 → `ewoo-hospital` 다음 로그인 시 강제 로그아웃
+- 계정 비활성화 (퇴직): approval Admin SDK 로 `disabled:true` → ID Token 검증 자동 실패 → L2 차단
+- 키 회전 (Admin SDK 서비스 계정): Firebase Console 에서 새 키 발급 → Vercel env 갱신 → 구 키 폐기 (literal `\n` 함정 주의 — TODO-STAGE3.md 학습한 함정 참조)
+
+## 7. Claude Code 제한사항
 
 - Firebase DB·Auth에 직접 접근 불가 → Admin SDK 스크립트를 작성해 라즈베리파이에서 실행하거나 API 라우트 경유
 - EMR DB는 병원 내부망(`192.168.0.253`) → 라즈베리파이 통해서만 접근 가능
 - Firebase rules·Vercel env 변경은 사용자가 콘솔에서 수동으로 처리해야 함
 - Firebase CLI(`firebase auth:export/import`, `apps:sdkconfig`)로 사용자·config 조회 가능
 
-## 7. 변경 이력
+## 7. 변경 이력 (섹션 번호 변경: 6→7)
 
 | 날짜 | 변경 | 담당 |
 |---|---|---|
@@ -148,3 +178,8 @@ EMR 주문과 별개로 **치료실에서의 실시행** 여부를 검증한다.
 | 2026-04-18 | 치료계획↔EMR 검증 시스템 (BrOcs.Oidam) + 3프로젝트 사용자 인증 통합 (dual Auth) | |
 | 2026-04-18 | 치료실↔치료계획 검증 (`room:"removed"` 태그, EMR 검증에서도 제외) | |
 | 2026-04-18 | 치료실 검증을 Firebase Cloud Functions(매일 20:00 KST)로 이관 — RPi 의존성 제거 | |
+| 2026-04-20 | Stage 1·2 — `/api/generate` 토큰 검증 + Firestore 룰 재작성 (clinical), Naver Works 시그니처 audit (hospital) | |
+| 2026-04-25 | Stage 3 audit — 3프로젝트 합 12개 엔드포인트에 `requireAuth` + `apiFetch` 일괄 적용 (hospital `f0f5af6`, clinical `cb67446`, approval `36bc123`) | |
+| 2026-04-25 | H1 `/api/inquiry` rate limit + dedup, H3 `/api/auth/migrate` rate limit (`0fbcc34`) — `lib/rateLimit.js` 신설 | |
+| 2026-04-25 | **C3 hospital enforce 활성화** (`f173b61`, `AUTH_ENFORCE=true`) — 원래 5/1 일정에서 audit 당일 앞당김. clinical/approval 은 4/29~30 예정 | |
+| 2026-04-26 | INTEGRATION.md 6장 보안 책임 분담 추가 — L1~L6 다층 방어 구조와 데이터 분류별 적용 레이어 정리 | |

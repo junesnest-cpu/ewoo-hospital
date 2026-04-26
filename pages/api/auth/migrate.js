@@ -51,6 +51,13 @@ export default async function handler(req, res) {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: "email·password required" });
 
+  // safeInit 패턴 도입(2026-04-26) 후 Admin SDK 가 null 일 수 있음.
+  // migrate 는 양쪽 Admin 모두 필수 (계정 생성·비밀번호 동기화) → 503 반환.
+  if (!approvalAdminAuth || !approvalAdminDb || !wardAdminAuth) {
+    console.warn("[migrate] Admin SDK 비활성 — env 점검 필요");
+    return res.status(503).json({ error: "auth service unavailable" });
+  }
+
   // Rate limit: (IP + email) 키로 5분당 5회.
   // password spraying 차단 + 정상 사용자(평생 0~3회 호출)는 영향 없음.
   const rlKey = `migrate/${getClientIp(req)}__${sanitizeKey(email)}`;

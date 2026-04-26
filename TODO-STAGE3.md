@@ -97,6 +97,13 @@ export async function apiFetch(url, opts = {}) {
 | clinical  | `cb67446` | 8개 EMR/환자 엔드포인트 + 클라이언트 일괄 (audit 모드) |
 | approval  | `36bc123` | /api/director-stats requireRole('director') (audit 모드) |
 
+### 추가 보안 패치 (2026-04-25 토 — 같은 날 audit 직후)
+
+| 리포 | 커밋 | 내용 |
+|---|---|---|
+| hospital | `0fbcc34` | H1 `/api/inquiry` rate limit (IP/h 10회) + dedup (phone+content 1h), H3 `/api/auth/migrate` rate limit (IP+email 5분 5회) — `lib/rateLimit.js` 신설 |
+| hospital | `f173b61` | **C3 hospital enforce 활성화** — `AUTH_ENFORCE=true` Vercel env 등록 + 재배포. 일정 앞당겨짐 (원래 5/1) |
+
 ### approval 환경변수 등록 + 후속 수정
 
 approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 토큰 검증이 ward fallback 만 시도되며 매번 audit 경고 발생. 다음 절차로 정리:
@@ -127,13 +134,27 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
 
 각 Vercel 프로젝트에 `AUTH_ENFORCE=true` 환경변수 추가 → 자동 재배포 → 토큰 없는 호출은 **401**.
 
-| 일자 | 리포 | 비고 |
-|---|---|---|
-| 2026-04-29 수 | clinical  | 환자정보 노출이 가장 위험하지만 audit 검증 완료 |
-| 2026-04-30 목 | approval  | 역할 검증(director) 포함이라 진입 장벽 높음 |
-| 2026-05-01 금 | hospital  | 영향 적음, 마지막 |
+| 일자 | 리포 | 상태 | 비고 |
+|---|---|---|---|
+| ~~2026-05-01 금~~ → **2026-04-25 토** | hospital  | ✅ 완료 (`f173b61`) | 영향 적어 audit 당일 바로 enforce 앞당김 |
+| 2026-04-29 수 | clinical  | ⏳ 예정 | 환자정보 노출 가장 위험, audit 28일 분석 후 |
+| 2026-04-30 목 | approval  | ⏳ 예정 | 역할 검증(director) 포함, 진입 장벽 높음 |
 
 각 전환 직후 30분간 Logs 즉시 관찰. 401 폭증·사용자 제보 시 env 토글로 1분 내 audit 복귀.
+
+#### 모니터링 플레이북 (enforce 전환 후 24~48h)
+
+**Vercel Logs 검색 키워드** (각 프로젝트 dashboard → Logs → Filter):
+- `[auth-enforce]` — 토큰 없이 들어와 **차단된** 호출. 0건이 정상. 1건이라도 보이면 어떤 클라이언트가 토큰 부착 누락인지 즉시 식별
+- `[auth-audit]` — audit 모드 잔존 호출 (enforce 전환 후엔 발생 안 해야 함)
+- `[role-audit]` / `[role-enforce]` — approval `director` 권한 미달 호출
+- `[firebaseAdmin]` — Admin SDK init 실패 (env 누락·PEM 파싱 오류 등)
+- `unauthorized` — 401 응답 raw 카운트
+
+**대응 흐름**:
+1. `[auth-enforce]` 발견 → 호출 path 확인 → 해당 페이지의 `fetch('/api/...')` 호출이 `apiFetch` 로 감싸졌는지 확인 → 패치 후 재배포
+2. 401 폭증·사용자 제보 → Vercel env 에서 `AUTH_ENFORCE` 삭제 (audit 복귀, ~1분) → 원인 파악 후 재시도
+3. `[firebaseAdmin]` 발생 → 해당 프로젝트 env(`*_FIREBASE_*`) 점검, PEM 줄바꿈은 literal `\n` 형태인지 확인 (학습한 함정 참조)
 
 ### 3단계: 정착 확인 (1주)
 
@@ -144,9 +165,20 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
 ### 4단계: 후속 정리
 
 - [ ] `/api/inquiry` (hospital, 외부 공개 폼) — reCAPTCHA / hCaptcha 도입 검토
-- [ ] `/api/auth/migrate` (clinical, hospital) — rate limit 검토 (현재 비번 자체 보호)
+- [x] `/api/auth/migrate` (hospital) — rate limit 적용 (`0fbcc34`, IP+email 5분 5회). clinical 동일 적용 필요시 별건
 - [ ] `serviceAccount-old.json` / `serviceAccount-new.json` 정리 — 사용 중 키 확정 후 old 폐기 (보안 위생)
-- [ ] HOTFIX.md 에 vercel CLI multi-line env 등록 함정 추가 (literal `\n` 형식 권장)
+- [x] HOTFIX.md 에 vercel CLI multi-line env 등록 함정 추가 (literal `\n` 형식 권장)
+
+### 5단계: 추가 발견 보안 갭 (2026-04-26 점검)
+
+문서 보완 과정에서 enforce 전환만으로는 막히지 않는 갭을 새로 식별. 우선순위 순:
+
+- [ ] **🔴 RTDB 룰 too-permissive** — `database.rules.json` 이 전 경로 `auth != null` 만. 로그인한 누구든 `/logs`, `/users`, `/settings`, `/monthlyBoards` 등을 클라이언트 SDK 로 직접 삭제·변조 가능. AUTH_ENFORCE 는 API 토큰만 보호하지 RTDB 직접 호출은 못 막음. 경로별 read/write 분리 + 역할 기반 룰 필요 (최소 `/logs`·`/rateLimits`·`/dedupKeys`·`/users` 는 보호)
+- [x] **🔴 `lib/firebaseAdmin.js` safe-init 패턴** (2026-04-26) — `safeInit()` 헬퍼 도입. ENV 누락·PEM 파싱 실패 시 throw 대신 null 반환 + `[firebaseAdmin]` 경고 로그. `verifyAuth` 와 `/api/auth/migrate` 도 null-safe 처리 (migrate 는 503 반환). HOTFIX 2026-04-25 와 동일 패턴
+- [x] **🟠 `/api/naver-works-send` rate limit + 길이 제한** (2026-04-26) — uid 우선·IP fallback 키로 1분 10회 제한 (`wardAdminDb` 백엔드). 메시지 2000자 상한 (413 반환). 정상 사용(시간당 수 건)은 영향 없음
+- [ ] **🟠 `/api/inquiry` CORS allowlist 우회** — `origin.includes('imweb')` 패턴이 `imweb.attacker.com` 도 통과시킴. 정확 호스트 매칭으로 좁히기
+- [ ] **🟡 `/api/auth/migrate` 정보 누출** — 응답 `{ approvalOk, wardOk }` 가 어느 쪽 계정이 존재하는지 노출. 일반 응답은 `{ ok:true }` 로 통일하고 어느 쪽이 부족했는지는 서버 로그에만 남기기
+- [x] **🟠 `apiFetch` stale token 자동 복구** (2026-04-26) — 401 응답 + 로그인 상태일 때만 1회 `getIdToken(true)` 강제 refresh 후 재시도. enforce 직후 노트북 절전·idle 후 첫 호출 실패 자동 복구. 무한루프 방지로 retry 1회 한정. (우선순위 🟡→🟠 격상: enforce 켜진 직후 가장 먼저 사용자 제보 가능성 있는 항목이라 선처리)
 
 ### 비상 절차
 
