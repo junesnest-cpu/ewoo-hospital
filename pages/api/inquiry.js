@@ -68,7 +68,19 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { name, phone, inquiryType, content, privacyAgreed } = req.body;
+    const { name, phone, inquiryType, content, privacyAgreed, website } = req.body;
+
+    // Honeypot 검증 (2026-04-26):
+    //   폼에 display:none 으로 숨겨진 'website' 필드가 있음. 사람은 안 보여서 안 채움,
+    //   봇은 자동으로 채움 → 비어있지 않으면 봇 판정.
+    //   봇 학습 차단을 위해 정상 응답({success}) 으로 위장하고 DB 저장 skip.
+    //   서버 로그에는 IP·값 일부 기록해 향후 패턴 분석.
+    const ip = getClientIp(req);
+    if (typeof website === 'string' && website.trim()) {
+      console.warn(`[inquiry][honeypot] 봇 의심 제출 from IP=${ip}, hp_value="${website.slice(0, 80)}"`);
+      // 200 + fake id — 봇이 "성공"으로 인식하지만 DB 저장 안 됨
+      return res.status(200).json({ success: true, id: `hp-${Date.now()}` });
+    }
 
     // 필수값 검증
     if (!name?.trim()) return res.status(400).json({ error: '이름을 입력해주세요.' });
@@ -82,7 +94,6 @@ export default async function handler(req, res) {
     const db = getAdminDb();
 
     // Rate limit: IP 당 1시간 10회 (정상 사용자는 평생 0~1회 제출이 일반적)
-    const ip = getClientIp(req);
     const rl = await checkRateLimit({ key: `inquiry/${ip}`, max: 10, windowMs: 60 * 60 * 1000, db });
     if (!rl.allowed) {
       res.setHeader('Retry-After', String(rl.retryAfter));

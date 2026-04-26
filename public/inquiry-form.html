@@ -113,6 +113,13 @@
     <textarea id="ewooContent"></textarea>
   </div>
 
+  <!-- Honeypot — 봇 차단용. 화면 밖에 위치, 사람은 못 보고 봇은 자동 채움. 채워지면 서버가 거부 (fake success 응답). -->
+  <div style="position:absolute; left:-9999px; top:-9999px; width:1px; height:1px; overflow:hidden;" aria-hidden="true">
+    <label>Website
+      <input type="text" id="ewooHpField" name="website" tabindex="-1" autocomplete="off">
+    </label>
+  </div>
+
   <button class="submit-btn" id="ewooSubmit" onclick="submitEwooInquiry()">문의접수</button>
   <div id="ewooMsg"></div>
 </div>
@@ -136,10 +143,12 @@ function submitEwooInquiry() {
 
   btn.disabled = true; btn.textContent = '접수 중...';
 
+  var hp = document.getElementById('ewooHpField').value;
+
   fetch('https://ewoo-hospital.vercel.app/api/inquiry', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: name, phone: phone, inquiryType: inquiryType, content: content, privacyAgreed: true })
+    body: JSON.stringify({ name: name, phone: phone, inquiryType: inquiryType, content: content, privacyAgreed: true, website: hp })
   })
   .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
   .then(function(res) {

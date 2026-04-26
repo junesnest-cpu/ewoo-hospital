@@ -164,7 +164,12 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
 
 ### 4단계: 후속 정리
 
-- [ ] `/api/inquiry` (hospital, 외부 공개 폼) — reCAPTCHA / hCaptcha 도입 검토
+- [~] `/api/inquiry` (hospital, 외부 공개 폼) — **단계 1 honeypot 적용 완료** (2026-04-26):
+  - 폼에 화면 밖 숨김 `website` 필드(`#ewooHpField`/`#ewooHpFieldM`) — 데스크톱·모바일 양쪽
+  - 서버: 비어있지 않으면 봇 판정 → fake success 응답(`{success:true, id:'hp-...'}`) + 서버 로그 (`[inquiry][honeypot]`)
+  - DB 저장 skip → 가짜 문의 누적 방지. 봇 학습 차단 위해 거부 응답 위장
+  - 단순 봇 ~70% 차단 예상. 정교한 헤드리스 봇·사람 형태 spam 은 못 막음
+  - **단계 2 (reCAPTCHA v2 invisible)** 는 honeypot 모니터링 결과 보고 결정. 가짜 문의 발생 빈도가 월 5건 넘으면 진입
 - [x] `/api/auth/migrate` (hospital) — rate limit 적용 (`0fbcc34`, IP+email 5분 5회). clinical 동일 적용 필요시 별건
 - [x] `serviceAccount-old.json` / `serviceAccount-new.json` 정리 (2026-04-26) — **hospital 레포는 N/A**: 파일 자체 없음·git 미커밋·모든 스크립트가 환경변수만 사용. 예방 차원 `.gitignore` 패턴 추가(`serviceAccount*.json` 등). **approval 레포 작업으로 분리** — 거기서 사용 중 키 확정 후 old 폐기 필요
 - [x] HOTFIX.md 에 vercel CLI multi-line env 등록 함정 추가 (literal `\n` 형식 권장)
