@@ -181,8 +181,8 @@ approval 은 `APPROVAL_FIREBASE_*` env 미설정이라 audit 시점에 approval 
   - 룰 변경 즉시 enforce. 영향 평가: 정상 사용자는 무영향 / 직원 콘솔 조작·악의 변조 차단 / 스크립트는 Admin SDK 로 룰 우회 가능
 - [x] **🔴 `lib/firebaseAdmin.js` safe-init 패턴** (2026-04-26) — `safeInit()` 헬퍼 도입. ENV 누락·PEM 파싱 실패 시 throw 대신 null 반환 + `[firebaseAdmin]` 경고 로그. `verifyAuth` 와 `/api/auth/migrate` 도 null-safe 처리 (migrate 는 503 반환). HOTFIX 2026-04-25 와 동일 패턴
 - [x] **🟠 `/api/naver-works-send` rate limit + 길이 제한** (2026-04-26) — uid 우선·IP fallback 키로 1분 10회 제한 (`wardAdminDb` 백엔드). 메시지 2000자 상한 (413 반환). 정상 사용(시간당 수 건)은 영향 없음
-- [ ] **🟠 `/api/inquiry` CORS allowlist 우회** — `origin.includes('imweb')` 패턴이 `imweb.attacker.com` 도 통과시킴. 정확 호스트 매칭으로 좁히기
-- [ ] **🟡 `/api/auth/migrate` 정보 누출** — 응답 `{ approvalOk, wardOk }` 가 어느 쪽 계정이 존재하는지 노출. 일반 응답은 `{ ok:true }` 로 통일하고 어느 쪽이 부족했는지는 서버 로그에만 남기기
+- [x] **🟠 `/api/inquiry` CORS allowlist 정확 매칭** (2026-04-26) — `origin.includes('imweb')` → `URL` 파싱 후 `*.imweb.me` suffix 매칭(서브도메인 확보 검증). 명시 origin 외에는 헤더 부여 안 함 (origin 없는 호출은 rate limit + dedup 이 방어). `Vary: Origin` 추가
+- [x] **🟡 `/api/auth/migrate` 정보 누출 제거** (2026-04-26) — 응답을 `{ ok: true }` 단일화. 어느 쪽 동기화됐는지는 서버 console 에만 기록 (`[migrate] {email}: {ward|approval} 동기화 완료`). 클라이언트 `_app.js` 는 자체 `trySignIn()` 결과만 사용 — 영향 없음 사전 확인됨
 - [x] **🟠 `apiFetch` stale token 자동 복구** (2026-04-26) — 401 응답 + 로그인 상태일 때만 1회 `getIdToken(true)` 강제 refresh 후 재시도. enforce 직후 노트북 절전·idle 후 첫 호출 실패 자동 복구. 무한루프 방지로 retry 1회 한정. (우선순위 🟡→🟠 격상: enforce 켜진 직후 가장 먼저 사용자 제보 가능성 있는 항목이라 선처리)
 
 ### 비상 절차

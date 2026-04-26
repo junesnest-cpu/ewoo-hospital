@@ -203,3 +203,4 @@ EMR 주문과 별개로 **치료실에서의 실시행** 여부를 검증한다.
 | 2026-04-26 | INTEGRATION.md 6장 보안 책임 분담 추가 — L1~L6 다층 방어 구조와 데이터 분류별 적용 레이어 정리 | |
 | 2026-04-26 | 코드 갭 패치 — `lib/firebaseAdmin.js` safeInit, `apiFetch` stale token 자동 복구, `/api/naver-works-send` rate limit + 길이 상한 | |
 | 2026-04-26 | **RTDB 룰 강화** — 서버 전용/읽기 전용/append-only/일반 4분류로 경로별 분리. `logs` append-only 전환 (`addLog` push 패턴), `_backup_*` 클라이언트 차단 | |
+| 2026-04-26 | `/api/inquiry` CORS 정확 매칭(URL 파싱 + `*.imweb.me` suffix), `/api/auth/migrate` 응답 정보 누출 제거(`{ok:true}` 단일화) | |

@@ -28,17 +28,41 @@ const TYPE_LABELS = {
   etc: '기타문의',
 };
 
+// CORS allowlist (2026-04-26 정확 매칭으로 강화)
+// 이전: origin.includes('imweb') 패턴이 imweb.attacker.com 도 통과 — 우회 가능했음.
+// 현재: 정확 호스트 매칭 + 'https://*.imweb.me' 만 suffix 매칭 (아임웹 표준 호스팅).
+// origin 없는 호출(서버-서버, CURL): CORS 헤더 부여 안 함. 처리는 하되 브라우저 CORS 차단됨.
+//   봇 spam 은 rate limit + dedup 으로 방어.
+const ALLOWED_EXACT_ORIGINS = new Set([
+  'https://www.ewoohospital.com',
+  'https://ewoohospital.com',
+  'https://ewoo-hospital.vercel.app',
+]);
+const ALLOWED_HOST_SUFFIXES = ['.imweb.me'];
+
+function resolveAllowedOrigin(origin) {
+  if (!origin) return null;
+  if (ALLOWED_EXACT_ORIGINS.has(origin)) return origin;
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'https:') return null;
+    // hostname 이 정확히 ".imweb.me" 가 아니라 그 아래 서브도메인이어야 함 (예: foo.imweb.me)
+    if (ALLOWED_HOST_SUFFIXES.some(s => url.hostname.endsWith(s) && url.hostname.length > s.length)) {
+      return origin;
+    }
+  } catch {}
+  return null;
+}
+
 export default async function handler(req, res) {
-  // CORS — 아임웹 도메인 허용
   const origin = req.headers.origin || '';
-  const allowed = ['https://www.ewoohospital.com', 'https://ewoohospital.com', 'https://ewoo-hospital.vercel.app'];
-  if (allowed.some(o => origin.startsWith(o)) || origin.includes('imweb')) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else if (!origin) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+  const allowedOrigin = resolveAllowedOrigin(origin);
+  if (allowedOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   }
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Vary', 'Origin');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
