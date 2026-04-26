@@ -16,6 +16,21 @@
       }
     },
 
+    "incomingCalls": {
+      ".read": "auth != null",
+      ".indexOn": ["ts"],
+      "$callId": {
+        ".write": false
+      }
+    },
+
+    "userSettings": {
+      "$ek": {
+        ".read":  "auth != null",
+        ".write": "auth != null && auth.token.email.replace('.', ',').replace('@', '_at_') == $ek"
+      }
+    },
+
     "$node": {
       ".read":  "auth != null && !$node.beginsWith('_backup_')",
       ".write": "auth != null && !$node.beginsWith('_backup_')"

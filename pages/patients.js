@@ -71,10 +71,11 @@ export default function PatientsPage() {
   const [linkResults,  setLinkResults]  = useState(null);
   const [linkSearching,setLinkSearching]= useState(false);
 
-  // URL에서 patientId 또는 이름 로드
+  // URL에서 patientId / 이름 / 전화번호 로드 (전화: IncomingCallToast 의 "환자목록에서 보기" 진입)
   useEffect(() => {
-    const { id, name } = router.query;
+    const { id, name, phone } = router.query;
     if (id) loadPatientById(id);
+    else if (phone) { setQuery(String(phone)); doSearch(String(phone)); }
     else if (name) { setQuery(name); doSearch(name); }
   }, [router.query]);
 

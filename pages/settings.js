@@ -1,7 +1,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { ref, onValue, set } from "firebase/database";
-import { db } from "../lib/firebaseConfig";
+import { onAuthStateChanged } from "firebase/auth";
+import { db, auth } from "../lib/firebaseConfig";
+
+function encodeEmail(e) {
+  return (e || "").replace(/\./g, ",").replace(/@/g, "_at_");
+}
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -11,6 +16,11 @@ export default function SettingsPage() {
   const [hyperOp, setHyperOp] = useState("");
   const [saved, setSaved] = useState(false);
 
+  // 본인 사용자 설정
+  const [userEmail, setUserEmail] = useState("");
+  const [notifyIncomingCall, setNotifyIncomingCall] = useState(false);
+  const [notifySaved, setNotifySaved] = useState(false);
+
   useEffect(() => {
     const unsub = onValue(ref(db, "settings"), snap => {
       const v = snap.val() || {};
@@ -18,6 +28,19 @@ export default function SettingsPage() {
       setT1(v.therapist1 || "");
       setT2(v.therapist2 || "");
       setHyperOp(v.hyperOperator || "");
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, u => {
+      if (!u?.email) return;
+      setUserEmail(u.email);
+      const ek = encodeEmail(u.email);
+      const off = onValue(ref(db, `userSettings/${ek}/notifyIncomingCall`), snap => {
+        setNotifyIncomingCall(snap.val() === true);
+      });
+      return () => off();
     });
     return () => unsub();
   }, []);
@@ -33,6 +56,21 @@ export default function SettingsPage() {
     setSettings(updated);
     setSaved(true);
     setTimeout(() => setSaved(false), 2200);
+  };
+
+  const handleToggleNotify = async () => {
+    if (!userEmail) return;
+    const next = !notifyIncomingCall;
+    setNotifyIncomingCall(next);
+    const ek = encodeEmail(userEmail);
+    try {
+      await set(ref(db, `userSettings/${ek}/notifyIncomingCall`), next);
+      setNotifySaved(true);
+      setTimeout(() => setNotifySaved(false), 1800);
+    } catch (e) {
+      setNotifyIncomingCall(!next);
+      alert("저장 실패: " + e.message);
+    }
   };
 
   return (
@@ -66,6 +104,32 @@ export default function SettingsPage() {
         >
           {saved ? "✓ 저장됐습니다" : "저장"}
         </button>
+
+        <div style={S.card}>
+          <div style={S.cardTitle}>📞 전화 수신 알림 (본인 설정)</div>
+          <div style={S.cardDesc}>
+            병원 전용 핸드폰에 전화가 오면 화면 우상단에 환자 정보 토스트가 표시됩니다.
+            로그인된 모든 페이지에서 작동하며, 다른 직원이 "내가 받음" 클릭하면 동시에 닫힙니다.
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "8px 0" }}>
+            <input
+              type="checkbox"
+              checked={notifyIncomingCall}
+              onChange={handleToggleNotify}
+              disabled={!userEmail}
+              style={{ width: 18, height: 18, cursor: "pointer" }}
+            />
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#334155" }}>
+              {userEmail ? "전화 수신 알림 받기" : "로그인 후 사용 가능"}
+            </span>
+            {notifySaved && <span style={{ fontSize: 12, color: "#16a34a", fontWeight: 700 }}>✓ 저장됨</span>}
+          </label>
+          {userEmail && (
+            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
+              현재 사용자: {userEmail.replace("@ewoo.com", "")}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

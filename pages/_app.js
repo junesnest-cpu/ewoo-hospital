@@ -7,6 +7,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged, signOut, updatePassword
 import { ref, onValue, set } from "firebase/database";
 import AppSidebar from "../components/AppSidebar";
 import AvailPanel from "../components/AvailPanel";
+import IncomingCallToast from "../components/IncomingCallToast";
 import useIsMobile from "../lib/useismobile";
 import { WardDataProvider } from "../lib/WardDataContext";
 
@@ -268,6 +269,7 @@ export default function App({ Component, pageProps }) {
       </div>
       {showChangePw && <ChangePasswordModal user={user} onClose={()=>setShowChangePw(false)} />}
       {showAvailPanel && <AvailPanel onClose={() => setShowAvailPanel(false)} />}
+      <IncomingCallToast/>
       {isApproval ? (
         <Component {...pageProps}/>
       ) : (

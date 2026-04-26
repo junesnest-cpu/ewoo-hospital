@@ -106,7 +106,9 @@
 - `dailyBoards/{YYYY-MM-DD}`: 일일 현황판
 - `physicalSchedule/`, `hyperthermiaSchedule/`: 치료실 일정
 - `logs`: 변경 이력 (최대 200건)
-- `settings`: 치료사 이름 등
+- `settings`: 치료사 이름 등 (전역)
+- `userSettings/{ek}/notifyIncomingCall`: 본인용 — 전화 수신 토스트 ON/OFF
+- `incomingCalls/{pushId}`: 전화 수신 이벤트 — `{phone, ts, claimedBy, claimedAt}`. Android 앱이 push, 1h cleanup. ts indexOn
 
 ## 병동 구조 (WARD_ROOMS)
 - 2병동: 201(4인), 202(1인), 203(4인), 204(2인), 205(6인), 206(6인)
@@ -131,9 +133,12 @@
 
 | 엔드포인트 | 용도 | 인증 | 추가 보호 |
 |---|---|---|---|
-| `POST /api/naver-works-send` | 봇 메시지 단방향 발송 | `requireAuth` (enforce) | ⚠️ rate limit 미적용 (TODO) |
-| `POST /api/inquiry` | 외부 홈페이지 문의 접수 | **없음 (의도적 공개)** | rate limit (IP/h 10), dedup (phone+content 1h), CORS allowlist |
+| `POST /api/naver-works-send` | 봇 메시지 단방향 발송 | `requireAuth` (enforce) | rate limit (uid/IP, 1분 10회), 메시지 2000자 제한 |
+| `POST /api/inquiry` | 외부 홈페이지 문의 접수 | **없음 (의도적 공개)** | rate limit (IP/h 10), dedup (phone+content 1h), CORS allowlist, honeypot |
 | `POST /api/auth/migrate` | approval↔ward 양방향 Auth 동기화 | 자체 인증 (이메일+비밀번호) | rate limit (IP+email 5분 5회) |
+| `POST /api/incoming-call` | Android 앱이 전화 수신 시 호출 | **shared secret** (`X-Incoming-Secret` 헤더, env `INCOMING_CALL_SECRET`) | 1h cleanup (fire-and-forget) |
+| `POST /api/incoming-call/claim` | "내가 받음" 클릭 시 race-free claim | `requireAuth` (enforce) | RTDB transaction (이미 claim 됐으면 409) |
+| `GET /api/patients-sync` | Android 앱이 환자 주소록 동기화용 호출 | **shared secret** (`INCOMING_CALL_SECRET`) | 환자 phone 기준 평탄화. patients + 최신 consultations 결합 |
 
 **전체 정책**:
 - `AUTH_ENFORCE=true` 활성 (2026-04-25 `f173b61`) — 토큰 없는 `/api/*` 호출은 401
@@ -164,3 +169,10 @@
 ## 인증
 - Email/Password (이름@ewoo.com 형식)
 - 비밀번호 변경 시 모든 기기 강제 로그아웃 (userPwChangedAt)
+
+## Android 앱 (`android-app/`)
+병원 전용 핸드폰에 설치하는 보조 앱. Kotlin + WorkManager.
+- **전화 수신 감지** — `CallReceiver` 가 PHONE_STATE RINGING → CallLog 에서 최근 INCOMING 번호 → `POST /api/incoming-call`
+- **환자 주소록 동기화** — `SyncWorker` 가 15분마다 `GET /api/patients-sync` → ContactsContract 의 "이우병원" Account 에 wipe+insert. 전화 올 때 표준 통화 화면에 환자 이름·진단 native 표시
+- 인증: `INCOMING_CALL_SECRET` shared secret (앱 설정 화면에서 입력)
+- 빌드: `.github/workflows/android-build.yml` 가 push 마다 자동 빌드 → APK artifact. Android Studio 불필요
