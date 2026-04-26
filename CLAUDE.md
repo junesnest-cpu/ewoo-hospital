@@ -145,8 +145,9 @@
 1. **인증 필요한가?** — 기본은 YES. handler 초입에 `const a = await requireAuth(req, res); if (!a.ok && !a.audited) return;` 의무. 외부 공개 폼 등 예외만 명시적 사유와 함께 인증 생략
 2. **클라이언트 호출은 `apiFetch` 로** — `lib/apiFetch.js` 사용. 직접 `fetch('/api/...')` 쓰면 enforce 환경에서 401
 3. **외부 입력 처리하면 rate limit** — `lib/rateLimit.js` 의 `checkRateLimit` 적용. fail-open 이라 RTDB 장애에도 lockout 없음
-4. **PII/PHI 다루면 INTEGRATION.md 6장 데이터 분류 표 갱신**
-5. **이 표(`API 엔드포인트`) 와 INTEGRATION.md 7장 변경 이력에 기재
+4. **Admin SDK 는 `lib/firebaseAdmin.js` named export 만 사용** — `wardAdminDb`, `approvalAdminDb`, `wardAdminAuth`, `approvalAdminAuth`. 자체 `admin.initializeApp()` 호출 금지(HOTFIX 2026-04-26 inquiry 회귀 참조). null 가드 + 503 fallback 의무
+5. **PII/PHI 다루면 INTEGRATION.md 6장 데이터 분류 표 갱신**
+6. **이 표(`API 엔드포인트`) 와 INTEGRATION.md 7장 변경 이력에 기재**
 
 ## 주요 규칙
 - 입원 예약 자동 승격: admitDate < today (당일 미포함, 과거만) — index.js, room.js 양쪽 동일 로직

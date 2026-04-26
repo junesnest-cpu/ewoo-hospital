@@ -215,3 +215,8 @@ EMR 주문과 별개로 **치료실에서의 실시행** 여부를 검증한다.
 | 2026-04-26 | clinical/approval 사전 안전 패치 — safeInit·apiFetch refresh·verifyAuth null·migrate 정보 누출 (clinical `c1e61ba`, approval `3849a7b`) | |
 | 2026-04-26 | approval RTDB 룰 강화 — hospital 패턴 4분류 적용. cascading 함정 제거로 기존에 무력했던 `approvals/.write:false`·`role/.write:false` 가 진짜 작동 (`890d521`) | |
 | 2026-04-26 | clinical Firestore 룰 점검 — 이미 `match /{document=**} { allow read,write: if false }` 최강 룰. 모든 I/O 가 서버 API 경유. 강화 불필요 | |
+| 2026-04-26 | **clinical/approval enforce 전환** — `AUTH_ENFORCE=true` 등록 + 빈 commit redeploy. 원 일정 4/29~30 → 4/26 일 동시 완료. POST /api/* (no token) → 401 검증 ✅ | |
+| 2026-04-26 | dependabot critical 0 달성 — Next.js 14.2.35 patch (3프로젝트), protobufjs critical audit fix (clinical/approval). 메이저 업그레이드 회피 | |
+| 2026-04-26 | **firebase 10 → 12.12.1 메이저 (3프로젝트 통일)** — approval/hospital lock 동기화. inquiry default-app 회귀 발견 즉시 hotfix(`021fec5`, `wardAdminDb` 사용으로 전환). HOTFIX 등재 | |
+| 2026-04-26 | **mssql 12.5 patch + npm overrides uuid 14 (3프로젝트)** — mssql 체인 + firebase-admin 체인의 transitive uuid 통일. RPi runtime 검증 (syncEMR lightweight 전 phase 정상). hospital 16→10, clinical 16→10, approval 13→11 vuln 감소 | |
+| 2026-04-26 | **Stage 3 종결** — TODO-STAGE3.md 참조. 잔여: Next.js 14→16 메이저(별도 작업), 5/3 1주 모니터링 | |

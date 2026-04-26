@@ -13,6 +13,78 @@
 
 ---
 
+## 2026-04-26 — `/api/inquiry` 500 (firebase 12 업그레이드 직후 default-app 회귀 표면화)
+
+### 증상
+- firebase ^10.11 → ^12.12 메이저 업그레이드(`b776e5e`) production 배포 직후 외부 홈페이지 폼 제출 시 500.
+- runtime logs: `문의 접수 오류: FirebaseAppError:...` (메시지 truncated).
+- enforce/honeypot/index 등 다른 라우트는 모두 정상.
+
+### 근본 원인
+- `pages/api/inquiry.js` 가 자체적으로 `admin.initializeApp()` (default app) 시도.
+- `if (!admin.apps.length)` 체크는 default + named app **모두** 카운트.
+- `lib/firebaseAdmin.js` 가 named app (`approval-admin`, `ward-admin`) 만 init → import 만 해도 `admin.apps.length === 2`.
+- warm lambda 에서 다른 라우트(예: `/api/naver-works-send` → `wardAdminDb` import)가 먼저 호출되면 named app 들이 init 되고 inquiry 가 그 후 호출 → `admin.apps.length > 0` 으로 default app init **skip** → `admin.database()` 호출 시 default app 없어 throw.
+- **이전부터 잠재 버그였음.** firebase 10 시절엔 cold/warm lambda 패턴이 우연히 비껴가서 표면화 안 됐던 것. firebase 12 의 lambda 동작 변화로 폭로됨.
+
+### 수정 (커밋 `021fec5`)
+- `pages/api/inquiry.js` 의 자체 `admin.initializeApp` 코드 제거.
+- `lib/firebaseAdmin.js` 의 `wardAdminDb` (named app, `safeInit` 패턴) 직접 import 사용.
+- null 가드 + 503 fallback (`safeInit` 호환).
+- 운영 동작 동일 (같은 ward RTDB `consultations/` push), cold/warm 무관하게 일관 동작.
+
+### 재발 방지 가드
+- **`if (!admin.apps.length)` 패턴은 기본적으로 위험**: default + named 모두 카운트. 다른 모듈이 named app 으로 admin 을 사용하면 default app init 건너뛰어 `admin.database()` 가 깨짐.
+- **권장 패턴**: 자체 `admin.initializeApp` 호출 금지. `lib/firebaseAdmin.js` 의 named export 사용 (`wardAdminDb`, `approvalAdminDb`, `adminDb` 등). safeInit 으로 null 가드 일관 처리.
+- 새 `/api/*` 라우트 추가 시 CLAUDE.md 의 "신규 API 추가 시 보안 체크리스트" 에 이 항목 추가됨.
+
+### 검증·복구 도구
+- `curl -X POST https://ewoo-hospital.vercel.app/api/inquiry -d '{}'` 로 enforce 후 정상 동작 확인. 200(success) 또는 400(필수값) 또는 401(enforce) 가 아니라 500 이면 이 부류.
+- Vercel runtime logs 에 `[firebaseAdmin] ... init 실패` 또는 `FirebaseAppError` 검색.
+- 롤백: 직전 커밋으로 git revert + push (Vercel 자동 재배포 ~3분).
+
+### 연관 관찰
+- firebase 메이저 업그레이드(특히 11+) 시 lambda lifecycle/dynamic import 동작이 미묘하게 바뀔 수 있음. 잠재 버그가 갑자기 표면화될 수 있어 **메이저 업그레이드 직후 모든 외부 호출 라우트 한 번씩 smoke test 권장**.
+- 같은 패턴이 의심되는 라우트: 자체 `admin.initializeApp` 호출 코드. grep `'admin.initializeApp\\|admin.apps.length'` 로 잔존 여부 확인.
+
+---
+
+## 2026-04-26 — Vercel CLI `env add` 가 production/preview 에 default sensitive 처리 → `env pull` 시 빈 값 표시 (검증 함정)
+
+### 증상
+- 사용자가 `vercel env add AUTH_ENFORCE production` 으로 값 등록.
+- 후속 검증 `vercel env pull --environment production .env` 결과 `AUTH_ENFORCE=""` 빈 값.
+- 등록이 실패한 줄 알고 재시도하지만 결과 동일.
+- Vercel Dashboard 에서는 "Encrypted" 로 표시되어 값을 직접 확인 불가.
+
+### 근본 원인
+- Vercel CLI v52+ 의 `env add` 가 production/preview 환경에는 **기본적으로 sensitive** 로 처리.
+- sensitive env 는 `vercel env pull` 시 평문 노출 방지 차원에서 빈 값으로 다운로드됨.
+- 결과: 값이 정상 등록되어 있어도 사용자/agent 가 검증할 방법이 사라짐.
+
+### 수정 (운영 절차)
+- enforce env 같이 deployment 동작에 영향이 큰 값은 **`--no-sensitive` 플래그로 등록**:
+  ```
+  vercel env add AUTH_ENFORCE production --value=true --no-sensitive --yes
+  ```
+- 이미 등록된 sensitive 값은:
+  ```
+  vercel env rm AUTH_ENFORCE production --yes
+  vercel env add AUTH_ENFORCE production --value=true --no-sensitive --yes
+  vercel env pull --environment production .env.check  # 값 검증
+  ```
+
+### 재발 방지 가드
+- **PEM/PRIVATE_KEY 같은 진짜 비밀**은 sensitive 유지. **AUTH_ENFORCE/feature flag 같은 동작 토글**은 `--no-sensitive` 로 등록해 검증성 확보.
+- env 등록 후 새 deployment 트리거 필수 (env 변경만으로 기존 build 갱신 안 됨). 빈 commit 으로 가능: `git commit --allow-empty -m "deploy: pick up X env" && git push`.
+- 검증성이 떨어져도 sensitive 등록할 비밀은 deployment 동작으로 검증 (예: `curl ... → 401` 같은 흑상자 테스트).
+
+### 연관 관찰
+- 4/26 clinical/approval enforce 전환 시 사용자가 14h 전에 등록한 `AUTH_ENFORCE` 가 빈 값이라 효과가 없었음. `--no-sensitive` 재등록 + 빈 commit redeploy 후 정상 enforce 적용.
+- 다른 Vercel CLI 함정: TODO-STAGE3.md "학습한 함정" 참조 (multi-line PEM, agent-detection prompt 등).
+
+---
+
 ## 2026-04-26 — RTDB 룰 강화 시 logs `set(전체 배열)` 패턴이 룰에 막힘
 
 ### 증상
