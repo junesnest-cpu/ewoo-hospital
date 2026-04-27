@@ -28,9 +28,14 @@ export default async function handler(req, res) {
     const debug = {
       got: { len: secret.length, prefix: secret.slice(0, 4), suffix: secret.slice(-4) },
       expected: { len: expected.length, prefix: expected.slice(0, 4), suffix: expected.slice(-4) },
+      ts: Date.now(),
+      ua: String(req.headers['user-agent'] || '').slice(0, 80),
     };
     console.warn(`[incoming-call] secret mismatch ${JSON.stringify(debug)}`);
-    // 디버그 응답 (2026-04-27 회전 후 제거)
+    // RTDB 에도 push — Vercel logs 가 truncate 되어 못 읽을 때 우회
+    if (wardAdminDb) {
+      wardAdminDb.ref('debug/incomingCallMismatch').push().set(debug).catch(() => {});
+    }
     return res.status(401).json({ error: 'unauthorized', debug });
   }
 
