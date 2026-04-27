@@ -61,7 +61,7 @@
 - WorkManager 짤 때 unique name 격리 + KEEP 만으로 충분하다고 가정 금지. **wipe+rewrite 같은 destructive 동작은 항상 worker 안에 idempotency guard (debounce/checksum/lastRun timestamp)** 두기.
 - `Result.retry()` 사용 시 항상 `runAttemptCount` cap 같이 두기. 기본 WorkManager 는 무한 retry.
 
-### 추가 후속 — debounce 만으론 부족 (커밋 ` ` <- 채워질 예정)
+### 추가 후속 — debounce 만으론 부족 (커밋 `e12568b`)
 - `dea0a88` 의 60초 debounce 로도 oscillation 잔존. 사용자 보고: 새 APK 설치 + 1회 press → 여전히 늘었다 줄었다.
 - **근본 원인:** debounce check 가 race-prone. 여러 worker 가 동시에 시작하면 모두 같은 `Prefs.lastSync` (오래된 값) 를 읽고 debounce 통과 → 병렬로 wipe+insert 실행. Prefs check-then-set 은 atomic 이 아님.
 - **수정:** `kotlinx.coroutines.sync.Mutex` 를 SyncWorker companion object 에 두고 `doWork()` 전체를 `syncMutex.withLock { }` 로 감쌈.
