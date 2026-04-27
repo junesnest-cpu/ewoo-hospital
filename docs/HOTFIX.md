@@ -61,6 +61,19 @@
 - WorkManager 짤 때 unique name 격리 + KEEP 만으로 충분하다고 가정 금지. **wipe+rewrite 같은 destructive 동작은 항상 worker 안에 idempotency guard (debounce/checksum/lastRun timestamp)** 두기.
 - `Result.retry()` 사용 시 항상 `runAttemptCount` cap 같이 두기. 기본 WorkManager 는 무한 retry.
 
+### 추가 후속 — debounce 만으론 부족 (커밋 ` ` <- 채워질 예정)
+- `dea0a88` 의 60초 debounce 로도 oscillation 잔존. 사용자 보고: 새 APK 설치 + 1회 press → 여전히 늘었다 줄었다.
+- **근본 원인:** debounce check 가 race-prone. 여러 worker 가 동시에 시작하면 모두 같은 `Prefs.lastSync` (오래된 값) 를 읽고 debounce 통과 → 병렬로 wipe+insert 실행. Prefs check-then-set 은 atomic 이 아님.
+- **수정:** `kotlinx.coroutines.sync.Mutex` 를 SyncWorker companion object 에 두고 `doWork()` 전체를 `syncMutex.withLock { }` 로 감쌈.
+  - 같은 프로세스의 worker 들이 lock 을 순차로 획득 → 한 번에 하나만 실행
+  - 첫 worker 가 sync 끝내고 lastSync 갱신 → 두번째 worker 가 lock 잡으면 lastSync recent 보고 debounce skip
+  - 모든 worker 가 결국 1회 sync 만 트리거 (oscillation 차단)
+- 트레이드오프: 여러 worker 가 lock 대기 → 첫 worker 가 fetchPatients(~수초) + ContactsSync.syncAll(~수십초) 동안 대기. CoroutineWorker 의 10분 timeout 안에는 충분.
+
+### 추가 재발 방지 가드
+- "공유 상태에 대한 check-then-set 은 race 가능" 일반 원칙. 동기 lock (Mutex/AtomicReference) 으로만 진짜 보호 가능.
+- WorkManager 의 `enqueueUniqueWork` 는 같은 unique name 안에서만 직렬화 보장. **다른 unique name (periodic vs once) 의 worker 는 병렬 실행 가능** — 공유 자원 (DB/file/ContentResolver) 다루면 별도 lock 필요.
+
 ---
 
 ## 2026-04-26 — `/api/inquiry` 500 (firebase 12 업그레이드 직후 default-app 회귀 표면화)

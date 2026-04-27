@@ -15,51 +15,53 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     companion object {
         private const val TAG = "EwooSyncWorker"
-        // 직전 sync 후 이 간격 안에 다시 trigger 되면 즉시 success 로 종료 — 실제 wipe+insert
-        // 는 1회만 일어나서 visible oscillation 차단. periodic+manual+retry 가 동시에 떠도 안전.
         private const val DEBOUNCE_MS = 60_000L
-        // fetchPatients 가 null 반환 시 무한 retry 방지. 3회까지만 retry, 이후 success 로 종료
-        // 해서 다음 periodic 주기를 기다림.
         private const val MAX_RETRY = 3
+        // 같은 프로세스 내 모든 SyncWorker 인스턴스를 순차 실행. periodic/once/retry 가 동시에
+        // 떠도 wipe+insert 는 한 번에 하나만 — 병렬 worker 가 같은 lastSync 를 읽고 모두
+        // debounce 를 통과해 동시에 ContactsSync 를 돌리는 race 차단.
+        private val syncMutex = Mutex()
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        // 권한 체크 — 없으면 success 로 조용히 종료 (failure 면 retry 안 하지만 향후 schedule 도
-        // 안 한다는 보장이 없어 일관성 위해 success).
         if (ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.WRITE_CONTACTS)
             != PackageManager.PERMISSION_GRANTED) {
             Log.w(TAG, "WRITE_CONTACTS 미부여 — sync 스킵")
             return@withContext Result.success()
         }
 
-        // Debounce — 직전 성공 sync 후 60초 이내면 no-op.
-        val sinceLast = System.currentTimeMillis() - Prefs.lastSync(applicationContext)
-        if (sinceLast in 0..DEBOUNCE_MS) {
-            Log.i(TAG, "직전 sync 후 ${sinceLast / 1000}s 경과 — debounce 스킵")
-            return@withContext Result.success()
-        }
-
-        val patients = Api.fetchPatients(applicationContext)
-        if (patients == null) {
-            return@withContext if (runAttemptCount < MAX_RETRY) {
-                Log.w(TAG, "fetch 실패 — retry (attempt ${runAttemptCount + 1}/$MAX_RETRY)")
-                Result.retry()
-            } else {
-                Log.w(TAG, "fetch 실패 ${MAX_RETRY}회 — 다음 periodic 까지 대기")
-                Result.success()
+        syncMutex.withLock {
+            // Debounce 는 lock 안에서 — 직전 worker 가 방금 끝났으면 lastSync 가 recent 라서 skip
+            val sinceLast = System.currentTimeMillis() - Prefs.lastSync(applicationContext)
+            if (sinceLast in 0..DEBOUNCE_MS) {
+                Log.i(TAG, "직전 sync 후 ${sinceLast / 1000}s 경과 — debounce 스킵")
+                return@withLock Result.success()
             }
-        }
 
-        ContactsSync.syncAll(applicationContext, patients)
-        Prefs.setLastSync(applicationContext, System.currentTimeMillis())
-        Log.i(TAG, "sync 완료: ${patients.size}건")
-        Result.success()
+            val patients = Api.fetchPatients(applicationContext)
+            if (patients == null) {
+                return@withLock if (runAttemptCount < MAX_RETRY) {
+                    Log.w(TAG, "fetch 실패 — retry (attempt ${runAttemptCount + 1}/$MAX_RETRY)")
+                    Result.retry()
+                } else {
+                    Log.w(TAG, "fetch 실패 ${MAX_RETRY}회 — 다음 periodic 까지 대기")
+                    Result.success()
+                }
+            }
+
+            ContactsSync.syncAll(applicationContext, patients)
+            Prefs.setLastSync(applicationContext, System.currentTimeMillis())
+            Log.i(TAG, "sync 완료: ${patients.size}건")
+            Result.success()
+        }
     }
 }
 
