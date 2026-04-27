@@ -83,6 +83,15 @@
 ### 또 다른 가드
 - 폰 주소록 통합 작업할 때 Account 등록만 하고 끝내지 말고 **Group + GroupMembership 까지 같이 고려**. 사용자가 원하는 UX 는 보통 "그룹" 단위 표시.
 
+### 세 번째 후속 — wipe URI 누락으로 7644건 누적 (커밋 ` ` <- 채워질 예정)
+- e12568b (Mutex) + 577733f (Group) 둘 다 적용 후에도 사용자 보고: **7644건 누적** (정상 1188 의 6.4배). 6번 sync 가 wipe 없이 누적된 형태.
+- **근본 원인:** ContactsContract `CALLER_IS_SYNCADAPTER=true` 만 URI 에 붙이고 `ACCOUNT_NAME`/`ACCOUNT_TYPE` 은 selection clause 에만 둠. Android ContactsProvider 는 syncAdapter 호출 검증 시 **URI 에 account params 까지 같이 명시되어 있어야** hard delete 를 정상 수행. 누락되면 silently fail 또는 0건 처리 → wipe 가 0건이 되고 매 sync 마다 1188 건이 새로 누적.
+- **수정:** `syncAdapterRawContactsUri` 로 URI 에 `CALLER_IS_SYNCADAPTER` + `ACCOUNT_NAME` + `ACCOUNT_TYPE` 셋 다 명시. delete + insert 모두 이 URI 사용 (insert 도 함께 사용해 DIRTY=0 으로 마킹돼 향후 동작 일관).
+
+### 세 번째 가드
+- ContactsContract sync adapter URI 사용 시 `CALLER_IS_SYNCADAPTER` 단독 사용 금지. **반드시 ACCOUNT_NAME + ACCOUNT_TYPE 도 같이 URI 에 명시**. (selection clause 는 별개 — selection 만으론 syncAdapter 검증 통과 X.)
+- ContactsContract delete 작업은 try/catch 안에 있으면 silent fail 가능. **반환값(deleted count) 을 로그로 남기고**, 0 건이면 의심.
+
 ---
 
 ## 2026-04-26 — `/api/inquiry` 500 (firebase 12 업그레이드 직후 default-app 회귀 표면화)

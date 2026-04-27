@@ -31,12 +31,19 @@ object ContactsSync {
         //    RawContact 의 GroupMembership Data 행 둘 다 필요.
         ensureAccount(ctx, resolver)
         val groupId = ensureGroup(resolver)
-        // 1) 기존 이우병원 Account RawContact 모두 삭제
+        // 1) 기존 이우병원 Account RawContact 모두 삭제 (hard delete).
+        //    CALLER_IS_SYNCADAPTER 만으론 부족 — Android ContactsProvider 가 hard delete 를
+        //    수행하려면 URI 에 ACCOUNT_NAME + ACCOUNT_TYPE 도 같이 명시해야 함. selection 만
+        //    으로 매칭해도 syncAdapter 검증 실패 시 silently 0건 처리 → 누적 폭증의 원인
+        //    (2026-04-27 7644건 누적 hotfix).
+        val syncAdapterRawContactsUri = ContactsContract.RawContacts.CONTENT_URI.buildUpon()
+            .appendQueryParameter(ContactsContract.CALLER_IS_SYNCADAPTER, "true")
+            .appendQueryParameter(ContactsContract.RawContacts.ACCOUNT_NAME, ACCOUNT_NAME)
+            .appendQueryParameter(ContactsContract.RawContacts.ACCOUNT_TYPE, ACCOUNT_TYPE)
+            .build()
         try {
             val deleted = resolver.delete(
-                ContactsContract.RawContacts.CONTENT_URI.buildUpon()
-                    .appendQueryParameter(ContactsContract.CALLER_IS_SYNCADAPTER, "true")
-                    .build(),
+                syncAdapterRawContactsUri,
                 "${ContactsContract.RawContacts.ACCOUNT_TYPE}=? AND ${ContactsContract.RawContacts.ACCOUNT_NAME}=?",
                 arrayOf(ACCOUNT_TYPE, ACCOUNT_NAME),
             )
@@ -57,7 +64,8 @@ object ContactsSync {
 
             val rawContactIdx = ops.size
             ops.add(
-                ContentProviderOperation.newInsert(ContactsContract.RawContacts.CONTENT_URI)
+                // syncAdapter URI 로 insert — DIRTY=0 으로 들어가서 향후 wipe/sync 시 일관 동작
+                ContentProviderOperation.newInsert(syncAdapterRawContactsUri)
                     .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, ACCOUNT_TYPE)
                     .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, ACCOUNT_NAME)
                     .build()
