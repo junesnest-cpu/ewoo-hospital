@@ -30,60 +30,77 @@ class CallReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        // [DEBUG 2026-04-27] 화면이 좁아 상세 잘림 → state 값만 짧게 별도 토스트
-        val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: "(null)"
-        Toast.makeText(context, "1/ state=$state", Toast.LENGTH_LONG).show()
+        val appCtx = try { context.applicationContext } catch (e: Throwable) { context }
+        // 전체를 try/catch — onReceive 어디서 throw 해도 폰 화면에 정확한 예외 표시
+        try {
+            val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: "(null)"
+            safeToast(appCtx, "1/ state=$state")
 
-        if (intent.action != "android.intent.action.PHONE_STATE") {
-            Toast.makeText(context, "2/ wrong action", Toast.LENGTH_LONG).show()
-            return
-        }
-        if (state != TelephonyManager.EXTRA_STATE_RINGING) {
-            Toast.makeText(context, "2/ skip (not RINGING)", Toast.LENGTH_LONG).show()
-            return
-        }
-        Toast.makeText(context, "3/ RINGING ok, perm 체크", Toast.LENGTH_LONG).show()
-
-        if (!hasPerm(context, Manifest.permission.READ_CALL_LOG)) {
-            Toast.makeText(context, "4/ NO READ_CALL_LOG", Toast.LENGTH_LONG).show()
-            return
-        }
-        Toast.makeText(context, "4/ perm ok, 600ms 후", Toast.LENGTH_LONG).show()
-
-        val appCtx = context.applicationContext
-        Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                val phone = readLatestIncomingNumber(appCtx)
-                if (phone.isNullOrBlank()) {
-                    Toast.makeText(appCtx, "5/ CallLog empty", Toast.LENGTH_LONG).show()
-                    return@postDelayed
-                }
-                val digits = phone.replace(Regex("\\D"), "")
-                if (digits.isBlank()) {
-                    Toast.makeText(appCtx, "5/ digits empty", Toast.LENGTH_LONG).show()
-                    return@postDelayed
-                }
-                Toast.makeText(appCtx, "5/ phone=$digits", Toast.LENGTH_LONG).show()
-
-                val now = System.currentTimeMillis()
-                if (lastReportedNumber == digits && now - lastReportedAt < 5_000) {
-                    Toast.makeText(appCtx, "6/ dedup skip", Toast.LENGTH_SHORT).show()
-                    return@postDelayed
-                }
-                lastReportedNumber = digits
-                lastReportedAt = now
-
-                Toast.makeText(appCtx, "6/ POST start", Toast.LENGTH_LONG).show()
-                GlobalScope.launch(Dispatchers.IO) {
-                    val ok = try { Api.postIncomingCall(appCtx, digits) } catch (e: Exception) { false }
-                    Handler(Looper.getMainLooper()).post {
-                        Toast.makeText(appCtx, if (ok) "7/ ok" else "7/ POST fail", Toast.LENGTH_LONG).show()
-                    }
-                }
-            } catch (e: Exception) {
-                Toast.makeText(appCtx, "ERR: ${e.message?.take(50)}", Toast.LENGTH_LONG).show()
+            if (intent.action != "android.intent.action.PHONE_STATE") {
+                safeToast(appCtx, "2/ wrong action")
+                return
             }
-        }, 600)
+            if (state != TelephonyManager.EXTRA_STATE_RINGING) {
+                safeToast(appCtx, "2/ skip (not RINGING)")
+                return
+            }
+            safeToast(appCtx, "3/ RINGING ok")
+
+            if (!hasPerm(appCtx, Manifest.permission.READ_CALL_LOG)) {
+                safeToast(appCtx, "4/ NO READ_CALL_LOG")
+                return
+            }
+            safeToast(appCtx, "4/ perm ok")
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    val phone = readLatestIncomingNumber(appCtx)
+                    if (phone.isNullOrBlank()) {
+                        safeToast(appCtx, "5/ CallLog empty")
+                        return@postDelayed
+                    }
+                    val digits = phone.replace(Regex("\\D"), "")
+                    if (digits.isBlank()) {
+                        safeToast(appCtx, "5/ digits empty")
+                        return@postDelayed
+                    }
+                    safeToast(appCtx, "5/ phone=$digits")
+
+                    val now = System.currentTimeMillis()
+                    if (lastReportedNumber == digits && now - lastReportedAt < 5_000) {
+                        safeToast(appCtx, "6/ dedup skip")
+                        return@postDelayed
+                    }
+                    lastReportedNumber = digits
+                    lastReportedAt = now
+
+                    safeToast(appCtx, "6/ POST start")
+                    GlobalScope.launch(Dispatchers.IO) {
+                        val ok = try { Api.postIncomingCall(appCtx, digits) } catch (e: Throwable) {
+                            Handler(Looper.getMainLooper()).post {
+                                safeToast(appCtx, "ERR post: ${e.javaClass.simpleName}: ${e.message?.take(40)}")
+                            }
+                            false
+                        }
+                        Handler(Looper.getMainLooper()).post {
+                            safeToast(appCtx, if (ok) "7/ ok" else "7/ POST fail")
+                        }
+                    }
+                } catch (e: Throwable) {
+                    safeToast(appCtx, "ERR delayed: ${e.javaClass.simpleName}: ${e.message?.take(40)}")
+                }
+            }, 600)
+        } catch (e: Throwable) {
+            safeToast(appCtx, "ERR onReceive: ${e.javaClass.simpleName}: ${e.message?.take(40)}")
+        }
+    }
+
+    private fun safeToast(ctx: Context, msg: String) {
+        try {
+            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+        } catch (e: Throwable) {
+            Log.w(TAG, "Toast 실패: ${e.message} (msg=$msg)")
+        }
     }
 
     private fun hasPerm(ctx: Context, perm: String): Boolean =
