@@ -231,6 +231,19 @@ export default function TreatmentPage() {
   const monthData = plan[monthKey] || {};
   const dischargeDate = parseDateStr(discharge);
 
+  // 2026-04-21 마이그레이션 leak 가드: treatmentPlans/{slotKey} 전체가 그대로
+  //   {pid}/{aKey} 아래로 복사되어, 같은 병상에 누적된 과거 환자들의 plan 까지
+  //   현재 환자의 admit 이전 달에 잔존. 화면/총계에서 admit 이전 날짜는 무시.
+  //   원본 데이터는 보존 (cleanup 스크립트로 별도 정리).
+  const admitParsedRef = parseDateStr(admitDate);
+  const admitDayOnly = admitParsedRef ? dateOnly(admitParsedRef) : null;
+  const isOutsideAdmission = (day) => {
+    if (!admitDayOnly) return false; // admit 모르면 가드 미적용 (구 동작 유지)
+    const d = dateOnly(new Date(year, month, day));
+    return d < admitDayOnly;
+  };
+  const itemsForDay = (day) => isOutsideAdmission(day) ? [] : (monthData[String(day)] || []);
+
   // 네이버 웍스 공지 발송
   const sendNotification = useCallback(async () => {
     if (sending) return;
@@ -385,12 +398,16 @@ export default function TreatmentPage() {
   const dischargeMedInfo = (() => {
     const admit = parseDateStr(admitDate);
     if (!admit) return null;
-    // 전체 plan에서 퇴원약 항목 찾기
+    const admitDO = dateOnly(admit);
+    // 전체 plan에서 퇴원약 항목 찾기 — admit 이전 leak 데이터는 무시
     let dmEntry = null, dmMonthKey = null, dmDay = null;
     for (const [mk, mdata] of Object.entries(plan)) {
       if (!mdata || typeof mdata !== 'object') continue;
       for (const [d, items] of Object.entries(mdata)) {
         if (!Array.isArray(items)) continue;
+        const [mY, mM] = mk.split('-').map(Number);
+        const cellDate = new Date(mY, mM - 1, parseInt(d));
+        if (dateOnly(cellDate) < admitDO) continue;
         const found = items.find(e => ALL_ITEMS.find(i => i.id === e.id)?.dischargeMed);
         if (found) { dmEntry = found; dmMonthKey = mk; dmDay = d; break; }
       }
@@ -484,7 +501,7 @@ export default function TreatmentPage() {
 
   // ── dayTotal / dayTreatTotal (퇴원약은 자동계산 금액 사용) ──
   const dayTotal = (day) => {
-    const treatTotal = (monthData[String(day)] || []).filter(e => e.emr !== "removed" && e.room !== "removed").reduce((s, e) => {
+    const treatTotal = itemsForDay(day).filter(e => e.emr !== "removed" && e.room !== "removed").reduce((s, e) => {
       const item = ALL_ITEMS.find(i => i.id === e.id);
       if (item?.dischargeMed) return s + (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0);
       return s + calcPrice(item, e.qty);
@@ -494,7 +511,7 @@ export default function TreatmentPage() {
 
   const dayTreatTotal = (day) => {
     const dateObj = new Date(year, month, day);
-    return (monthData[String(day)] || []).filter(e => e.emr !== "removed" && e.room !== "removed").reduce((s, e) => {
+    return itemsForDay(day).filter(e => e.emr !== "removed" && e.room !== "removed").reduce((s, e) => {
       const item = ALL_ITEMS.find(i => i.id === e.id);
       if (item?.dischargeMed) return s + (dischargeMedInfo?.itemId === e.id ? (dischargeMedInfo.total || 0) : 0);
       return s + calcPrice(item, e.qty, dateObj);
@@ -506,7 +523,9 @@ export default function TreatmentPage() {
   const monthRoomTotal = chargePerNight > 0
     ? allDaysInMonth.filter(d => hasRoomCharge(d)).length * chargePerNight
     : 0;
-  const monthTreatTotal = Object.keys(monthData).reduce((s, d) => s + dayTreatTotal(parseInt(d)), 0);
+  const monthTreatTotal = Object.keys(monthData)
+    .filter(d => !isOutsideAdmission(parseInt(d)))
+    .reduce((s, d) => s + dayTreatTotal(parseInt(d)), 0);
   const monthTotal = monthTreatTotal + monthRoomTotal;
 
   const daysInMonth = getDaysInMonth(year, month);
@@ -517,7 +536,7 @@ export default function TreatmentPage() {
   for (let d = 1; d <= daysInMonth; d++) calCells.push(d);
   while (calCells.length % 7 !== 0) calCells.push(null);
 
-  const modalItems = modalDay ? (monthData[String(modalDay)] || []) : [];
+  const modalItems = modalDay ? itemsForDay(modalDay) : [];
 
   const toggleItem = (item) => {
     setSelection(prev => {
@@ -823,7 +842,7 @@ export default function TreatmentPage() {
             const isDisch   = dischargeDate && dateOnly(dischargeDate).getTime()===dateOnly(thisDate).getTime();
             const admitParsed = parseDateStr(admitDate);
             const isAdmit   = admitParsed && dateOnly(admitParsed).getTime()===dateOnly(thisDate).getTime();
-            const items     = monthData[String(day)] || [];
+            const items     = itemsForDay(day);
             const total     = dayTotal(day);
             const isCopied  = copiedDay && copiedDay.monthKey===monthKey && copiedDay.day===day;
             const wkNum     = admitDate ? getWeekNumber(admitDate, thisDate) : null;
@@ -883,7 +902,7 @@ export default function TreatmentPage() {
       {/* 요약 테이블 */}
       <div style={TS.summaryWrap}>
         <div style={TS.summaryTitle}>📋 {month+1}월 치료 요약</div>
-        {Object.keys(monthData).length === 0
+        {Object.keys(monthData).filter(d => !isOutsideAdmission(parseInt(d))).length === 0
           ? <div style={{ color:"#94a3b8", fontSize:14 }}>등록된 치료가 없습니다.</div>
           : (
             <table style={TS.table}>
@@ -894,7 +913,9 @@ export default function TreatmentPage() {
                 <th style={{ ...TS.th, textAlign:"right" }}>금액</th>
               </tr></thead>
               <tbody>
-                {Object.entries(monthData).sort((a,b)=>parseInt(a[0])-parseInt(b[0])).map(([day, items]) =>
+                {Object.entries(monthData)
+                  .filter(([day]) => !isOutsideAdmission(parseInt(day)))
+                  .sort((a,b)=>parseInt(a[0])-parseInt(b[0])).map(([day, items]) =>
                   items?.length > 0 && (
                     <tr key={day} style={{ cursor:"pointer" }} onClick={() => { setModalDay(parseInt(day)); setSelection({}); }}>
                       <td style={TS.td}>{month+1}/{day} ({DAY_KO[(firstDow+parseInt(day)-1)%7]})</td>

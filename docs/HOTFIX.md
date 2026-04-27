@@ -13,6 +13,46 @@
 
 ---
 
+## 2026-04-27 — 치료계획표에 입원 이전 달의 과거 환자 plan 잔존 (2026-04-21 마이그레이션 leak)
+
+### 증상
+- 치료계획표(`pages/treatment.js`) 에서 월 네비를 입원일 이전 달로 옮기면, 같은 병상에 이전에 입원했던 다른 환자들의 치료 항목이 현재 환자 페이지에 표시됨.
+- 17개 admission 에 걸쳐 198개 item / 114 day-cell 잔존 확인.
+
+### 근본 원인
+- 2026-04-21 마이그레이션 스크립트 `scripts/migratePlansToPatient.js` 가 `treatmentPlans/{slotKey}` **전체 subtree** 를 현재 입원환자의 `treatmentPlansV2/{pid}/{aKey}` 아래로 그대로 복사 (line 137: `updates[\`treatmentPlansV2/${pid}/${aKey}\`] = tp[slotKey]`).
+- `tp[slotKey]` 에는 그 병상에 누적된 과거 환자들의 plan 까지 같이 들어 있었음 (구 스키마는 slot-keyed 라 patient 분리 없음). 결과: `treatmentPlansV2/{currentPid}/{currentAKey}/{monthBeforeAdmit}/...` 에 다른 사람 데이터가 옮겨감.
+- 이후 마이그레이션을 이후 cycle 의 새 current 환자에게도 다시 돌리면(또는 같은 slot 재진입) 같은 leak 이 새 환자에게도 적용됨 — 그래서 2026-04-21 이후 admit 인 17명도 영향.
+- 치료계획표 렌더링 로직이 `monthData` 를 admit 범위 가드 없이 그대로 표시하여 leak 데이터가 화면에 노출.
+
+### 수정 (커밋 — 이 변경)
+1. **데이터 청소**: `scripts/cleanupPreAdmitTreatPlans.js --apply` — 각 (pid, aKey) 별로 admit 월 미만의 month 노드 제거. 백업: `_backup_cleanupPreAdmitTreatPlans_<ts>/treatmentPlansV2/{pid}/{aKey}/{mk}`.
+   - 결과: 17 admissions / 198 items / 114 day-cells 제거 → audit 0건 확인.
+2. **렌더링 가드**: `pages/treatment.js` 에 `isOutsideAdmission(day)` + `itemsForDay(day)` 도입. admit 이전 날짜는:
+   - 캘린더 cell 의 item tag 표시 안 함
+   - `dayTotal`/`dayTreatTotal`/`monthTreatTotal` 계산에서 제외
+   - 모달 열 때 빈 목록
+   - 요약 테이블에서 제외
+   - `dischargeMedInfo` 의 dischargeMed 항목 검색에서도 admit 이전 cell 무시
+   - admit 이 모르면 가드 미적용 (구 동작 유지)
+   - 원본 데이터는 안 건드림 — 가드는 표시/계산 레이어만 (write 경로 영향 없음)
+
+### 재발 방지 가드
+- **마이그레이션 시 source subtree 전체 복사 금지**: slot-keyed → patient-keyed 같은 식 변환에서 source 가 누적·공유 노드면 그대로 옮기면 안 됨. 시간 범위(admit~discharge) 로 잘라서 옮겨야 함. 향후 유사 마이그레이션은 month-key 필터를 의무화.
+- **렌더링은 항상 admit 범위로 클립**: 치료계획·치료실 일정 등 plan 관련 표시 코드는 admit 미설정이면 가드 미적용, admit 있으면 admit 이전 날짜를 무시. `pages/daily.js`, `pages/therapy.js` 도 향후 점검 (현재는 day key 단일 조회라 문제 없지만, 같은 패턴 도입 시 가드 잊지 말 것).
+- **migration 후엔 audit script 필수**: 마이그레이션 직후 source/dest 상태 비교 audit 가 routine 이어야 함. 본 건은 마이그 후 6일째에 사용자가 수동 발견.
+
+### 검증·복구 도구
+- `scripts/auditPreAdmitTreatPlans.js` — `treatmentPlansV2/{pid}/{aKey}/` 아래 admit 월 미만 month 노드 검색. 환자 수·admission 수·day·item 합계 + 샘플 출력. 향후 정기 audit 가능.
+- `scripts/cleanupPreAdmitTreatPlans.js [--apply]` — leak 노드 제거 + 백업. dry-run 기본.
+- 백업 복원: `_backup_cleanupPreAdmitTreatPlans_<ts>/treatmentPlansV2/{pid}/{aKey}/{mk}` 에 원본 보존되어 필요 시 `db.ref(원본경로).set(백업값)` 으로 복원 가능.
+
+### 연관 관찰
+- 같은 패턴이 `weeklyPlansV2`, `admissionPlansV2` 에도 있을 수 있는지 확인 필요 — 현재 audit 은 daily 만 봄. 다만 weekly/admission 은 month-grid 가 없어 leak 가 표시 영향 적음.
+- 마이그레이션 source `treatmentPlans/{slotKey}` 자체는 보존 중. 같은 slot 에 향후 새 환자가 들어와 마이그를 다시 돌리면 또 leak 가능 — 마이그 스크립트는 재실행 안 하기로 한 one-shot 이지만, 안전을 위해 source 도 admit 월 이전을 trim 한 백업으로 옮기는 것이 더 깔끔. (이번 변경 범위에는 미포함.)
+
+---
+
 ## 2026-04-27 — 동일인 중복 상담일지 — 활성 예약 있는 환자의 과거 상담 카드가 "병실 배정 필요" 로 오표시
 
 ### 증상
