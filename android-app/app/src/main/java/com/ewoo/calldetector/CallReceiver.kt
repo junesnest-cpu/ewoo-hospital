@@ -31,65 +31,60 @@ class CallReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val appCtx = try { context.applicationContext } catch (e: Throwable) { context }
-        // 전체를 try/catch — onReceive 어디서 throw 해도 폰 화면에 정확한 예외 표시
         try {
             val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: "(null)"
             safeToast(appCtx, "1/ state=$state")
 
-            if (intent.action != "android.intent.action.PHONE_STATE") {
-                safeToast(appCtx, "2/ wrong action")
-                return
-            }
+            if (intent.action != "android.intent.action.PHONE_STATE") return
             if (state != TelephonyManager.EXTRA_STATE_RINGING) {
-                safeToast(appCtx, "2/ skip (not RINGING)")
+                safeToast(appCtx, "2/ not RINGING")
                 return
             }
-            safeToast(appCtx, "3/ RINGING ok")
+            safeToast(appCtx, "3/ RINGING")
 
             if (!hasPerm(appCtx, Manifest.permission.READ_CALL_LOG)) {
-                safeToast(appCtx, "4/ NO READ_CALL_LOG")
+                safeToast(appCtx, "4/ NO perm")
                 return
             }
             safeToast(appCtx, "4/ perm ok")
 
-            Handler(Looper.getMainLooper()).postDelayed({
+            // goAsync — receiver 수명 연장 (최대 ~10초). postDelayed/coroutine 이 안전하게 완료.
+            val pending = goAsync()
+            GlobalScope.launch(Dispatchers.IO) {
                 try {
+                    kotlinx.coroutines.delay(600)
                     val phone = readLatestIncomingNumber(appCtx)
                     if (phone.isNullOrBlank()) {
-                        safeToast(appCtx, "5/ CallLog empty")
-                        return@postDelayed
+                        toastOnMain(appCtx, "5/ CallLog empty")
+                        return@launch
                     }
                     val digits = phone.replace(Regex("\\D"), "")
                     if (digits.isBlank()) {
-                        safeToast(appCtx, "5/ digits empty")
-                        return@postDelayed
+                        toastOnMain(appCtx, "5/ digits empty")
+                        return@launch
                     }
-                    safeToast(appCtx, "5/ phone=$digits")
+                    toastOnMain(appCtx, "5/ phone=$digits")
 
                     val now = System.currentTimeMillis()
                     if (lastReportedNumber == digits && now - lastReportedAt < 5_000) {
-                        safeToast(appCtx, "6/ dedup skip")
-                        return@postDelayed
+                        toastOnMain(appCtx, "6/ dedup")
+                        return@launch
                     }
                     lastReportedNumber = digits
                     lastReportedAt = now
 
-                    safeToast(appCtx, "6/ POST start")
-                    GlobalScope.launch(Dispatchers.IO) {
-                        val ok = try { Api.postIncomingCall(appCtx, digits) } catch (e: Throwable) {
-                            Handler(Looper.getMainLooper()).post {
-                                safeToast(appCtx, "ERR post: ${e.javaClass.simpleName}: ${e.message?.take(40)}")
-                            }
-                            false
-                        }
-                        Handler(Looper.getMainLooper()).post {
-                            safeToast(appCtx, if (ok) "7/ ok" else "7/ POST fail")
-                        }
+                    toastOnMain(appCtx, "6/ POST")
+                    val ok = try { Api.postIncomingCall(appCtx, digits) } catch (e: Throwable) {
+                        toastOnMain(appCtx, "ERR post: ${e.javaClass.simpleName}: ${e.message?.take(40)}")
+                        false
                     }
+                    toastOnMain(appCtx, if (ok) "7/ OK ✅" else "7/ POST fail ❌")
                 } catch (e: Throwable) {
-                    safeToast(appCtx, "ERR delayed: ${e.javaClass.simpleName}: ${e.message?.take(40)}")
+                    toastOnMain(appCtx, "ERR async: ${e.javaClass.simpleName}: ${e.message?.take(40)}")
+                } finally {
+                    try { pending.finish() } catch (_: Throwable) {}
                 }
-            }, 600)
+            }
         } catch (e: Throwable) {
             safeToast(appCtx, "ERR onReceive: ${e.javaClass.simpleName}: ${e.message?.take(40)}")
         }
@@ -97,10 +92,14 @@ class CallReceiver : BroadcastReceiver() {
 
     private fun safeToast(ctx: Context, msg: String) {
         try {
-            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
         } catch (e: Throwable) {
             Log.w(TAG, "Toast 실패: ${e.message} (msg=$msg)")
         }
+    }
+
+    private fun toastOnMain(ctx: Context, msg: String) {
+        Handler(Looper.getMainLooper()).post { safeToast(ctx, msg) }
     }
 
     private fun hasPerm(ctx: Context, perm: String): Boolean =
