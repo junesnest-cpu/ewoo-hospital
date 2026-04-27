@@ -10,6 +10,7 @@ import android.os.Looper
 import android.provider.CallLog
 import android.telephony.TelephonyManager
 import android.util.Log
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -29,12 +30,16 @@ class CallReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        // [DEBUG 2026-04-27] receiver 발화 자체 확인용 Toast — 폰 화면에 즉시 노출
+        Toast.makeText(context, "📞 receiver: ${intent.action} state=${intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: "(null)"}", Toast.LENGTH_LONG).show()
+
         if (intent.action != "android.intent.action.PHONE_STATE") return
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
         if (state != TelephonyManager.EXTRA_STATE_RINGING) return
 
         // 권한 체크 — 거부 시 조용히 스킵 (UI 측 안내가 별도)
         if (!hasPerm(context, Manifest.permission.READ_CALL_LOG)) {
+            Toast.makeText(context, "❌ READ_CALL_LOG 권한 없음", Toast.LENGTH_LONG).show()
             Log.w(TAG, "READ_CALL_LOG 권한 없음 — 스킵")
             return
         }
@@ -43,22 +48,27 @@ class CallReceiver : BroadcastReceiver() {
         Handler(Looper.getMainLooper()).postDelayed({
             val phone = readLatestIncomingNumber(context)
             if (phone.isNullOrBlank()) {
+                Toast.makeText(context, "❌ CallLog 에서 number 못 찾음", Toast.LENGTH_LONG).show()
                 Log.w(TAG, "incoming number 못 찾음")
                 return@postDelayed
             }
             val digits = phone.replace(Regex("\\D"), "")
             if (digits.isBlank()) return@postDelayed
 
-            // 같은 번호 5초 내 중복 호출 방지 (PHONE_STATE 가 여러 번 발화됨)
             val now = System.currentTimeMillis()
             if (lastReportedNumber == digits && now - lastReportedAt < 5_000) {
+                Toast.makeText(context, "⏭️ dedup skip ($digits)", Toast.LENGTH_SHORT).show()
                 return@postDelayed
             }
             lastReportedNumber = digits
             lastReportedAt = now
 
+            Toast.makeText(context, "📤 POST $digits", Toast.LENGTH_LONG).show()
             GlobalScope.launch(Dispatchers.IO) {
-                Api.postIncomingCall(context, digits)
+                val ok = Api.postIncomingCall(context, digits)
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, if (ok) "✅ POST 성공" else "❌ POST 실패", Toast.LENGTH_LONG).show()
+                }
             }
         }, 600)
     }
