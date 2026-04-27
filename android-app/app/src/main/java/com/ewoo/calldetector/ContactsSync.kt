@@ -22,12 +22,15 @@ object ContactsSync {
     private const val TAG = "EwooContactsSync"
     const val ACCOUNT_TYPE = "com.ewoo.hospital"
     const val ACCOUNT_NAME = "이우병원"
+    private const val GROUP_TITLE = "이우병원"
 
     fun syncAll(ctx: Context, patients: List<Api.Patient>): Int {
         val resolver = ctx.contentResolver
-        // 0) "이우병원" Account 등록 보장 — phantom Account 였으면 표준 연락처 앱에
-        //    "그룹 지정없음" 으로 흩어졌던 contact 들이 이제 정식 그룹으로 묶여 표시됨
+        // 0) "이우병원" Account + Group 등록 보장.
+        //    Account 만으론 Samsung 연락처 앱의 "그룹" 보기에서 안 보임 — Groups 행 + 각
+        //    RawContact 의 GroupMembership Data 행 둘 다 필요.
         ensureAccount(ctx, resolver)
+        val groupId = ensureGroup(resolver)
         // 1) 기존 이우병원 Account RawContact 모두 삭제
         try {
             val deleted = resolver.delete(
@@ -87,6 +90,16 @@ object ContactsSync {
                         .build()
                 )
             }
+            // GroupMembership — "이우병원" 그룹에 묶이도록. groupId<=0 이면 (생성 실패) skip.
+            if (groupId > 0) {
+                ops.add(
+                    ContentProviderOperation.newInsert(ContactsContract.Data.CONTENT_URI)
+                        .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, rawContactIdx)
+                        .withValue(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.GroupMembership.CONTENT_ITEM_TYPE)
+                        .withValue(ContactsContract.CommonDataKinds.GroupMembership.GROUP_ROW_ID, groupId)
+                        .build()
+                )
+            }
             inserted++
             // 200건 단위로 batch flush (provider 한도 회피)
             if (ops.size >= 400) {
@@ -130,6 +143,46 @@ object ContactsSync {
             // 이미 행이 있으면 insert 가 실패할 수 있음 (ContactsContract.Settings 는 update 권장).
             // 무시해도 첫 등록 시점에 만들어졌으면 충분.
             Log.d(TAG, "Settings insert skipped: ${e.message}")
+        }
+    }
+
+    /**
+     * "이우병원" Group 행 보장 후 _ID 반환. 이미 있으면 기존 _ID, 없으면 신규 insert.
+     * 실패 시 -1 반환 (호출 측에서 GroupMembership 추가 skip).
+     */
+    private fun ensureGroup(resolver: ContentResolver): Long {
+        try {
+            resolver.query(
+                ContactsContract.Groups.CONTENT_URI,
+                arrayOf(ContactsContract.Groups._ID),
+                "${ContactsContract.Groups.ACCOUNT_TYPE}=? AND ${ContactsContract.Groups.ACCOUNT_NAME}=? AND ${ContactsContract.Groups.TITLE}=?",
+                arrayOf(ACCOUNT_TYPE, ACCOUNT_NAME, GROUP_TITLE),
+                null,
+            )?.use { c ->
+                if (c.moveToFirst()) return c.getLong(0)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Group 조회 실패: ${e.message}")
+        }
+        return try {
+            val values = ContentValues().apply {
+                put(ContactsContract.Groups.ACCOUNT_TYPE, ACCOUNT_TYPE)
+                put(ContactsContract.Groups.ACCOUNT_NAME, ACCOUNT_NAME)
+                put(ContactsContract.Groups.TITLE, GROUP_TITLE)
+                put(ContactsContract.Groups.GROUP_VISIBLE, 1)
+            }
+            val uri = resolver.insert(
+                ContactsContract.Groups.CONTENT_URI.buildUpon()
+                    .appendQueryParameter(ContactsContract.CALLER_IS_SYNCADAPTER, "true")
+                    .build(),
+                values,
+            )
+            val id = uri?.lastPathSegment?.toLongOrNull() ?: -1L
+            Log.i(TAG, "Group 신규 등록: id=$id")
+            id
+        } catch (e: Exception) {
+            Log.w(TAG, "Group 등록 실패: ${e.message}")
+            -1L
         }
     }
 

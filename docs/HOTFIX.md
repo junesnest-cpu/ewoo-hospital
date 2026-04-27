@@ -74,6 +74,15 @@
 - "공유 상태에 대한 check-then-set 은 race 가능" 일반 원칙. 동기 lock (Mutex/AtomicReference) 으로만 진짜 보호 가능.
 - WorkManager 의 `enqueueUniqueWork` 는 같은 unique name 안에서만 직렬화 보장. **다른 unique name (periodic vs once) 의 worker 는 병렬 실행 가능** — 공유 자원 (DB/file/ContentResolver) 다루면 별도 lock 필요.
 
+### 또 다른 후속 — Account != Group (커밋 ` ` <- 채워질 예정)
+- AccountAuthenticator 등록 후에도 사용자 보고: "폰 설정 → 계정 에 이우병원 보이는데, 연락처 앱 → 그룹 에는 안 보임".
+- **원인:** Account 와 Group 은 다른 개념. Account 는 ownership/sync 단위, Group 은 사용자가 보는 ContactsContract.Groups 테이블 행. AccountAuthenticator 만으론 Group 안 만들어짐.
+- **수정:** `ContactsSync.ensureGroup()` 추가 — `ContactsContract.Groups` 테이블에 `TITLE="이우병원"`, `ACCOUNT_TYPE/NAME` 매칭 행 보장 후 `_ID` 반환. 그 후 각 RawContact insert 시 `GroupMembership` Data 행을 `GROUP_ROW_ID=groupId` 로 추가.
+- 결과: Samsung 표준 연락처 앱의 "그룹" 보기에 "이우병원" 그룹 + 환자 명단 표시.
+
+### 또 다른 가드
+- 폰 주소록 통합 작업할 때 Account 등록만 하고 끝내지 말고 **Group + GroupMembership 까지 같이 고려**. 사용자가 원하는 UX 는 보통 "그룹" 단위 표시.
+
 ---
 
 ## 2026-04-26 — `/api/inquiry` 500 (firebase 12 업그레이드 직후 default-app 회귀 표면화)
