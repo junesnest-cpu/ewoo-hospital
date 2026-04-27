@@ -38,9 +38,12 @@ export default async function handler(req, res) {
   const secret = req.headers['x-incoming-secret'] || '';
   const expected = process.env.INCOMING_CALL_SECRET || '';
   if (!expected || secret !== expected) {
-    // 디버그 로깅 (2026-04-27)
-    console.warn(`[patients-sync] secret mismatch (got len=${secret.length} prefix=${secret.slice(0,4)} suffix=${secret.slice(-4)} | expected len=${expected.length} prefix=${expected.slice(0,4)} suffix=${expected.slice(-4)})`);
-    return res.status(401).json({ error: 'unauthorized' });
+    const debug = {
+      got: { len: secret.length, prefix: secret.slice(0, 4), suffix: secret.slice(-4) },
+      expected: { len: expected.length, prefix: expected.slice(0, 4), suffix: expected.slice(-4) },
+    };
+    console.warn(`[patients-sync] secret mismatch ${JSON.stringify(debug)}`);
+    return res.status(401).json({ error: 'unauthorized', debug });
   }
 
   if (!wardAdminDb) return res.status(503).json({ error: 'admin not initialized' });
