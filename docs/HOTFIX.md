@@ -49,7 +49,7 @@
 - WorkManager `enqueue()` 사용처가 또 있으면 같은 부류일 수 있음. grep `WorkManager.*\.enqueue\(` 로 잔존 점검.
 - ContactsContract 외에도 SQLite/SharedPreferences 에 wipe+rewrite 패턴 있는 worker 는 같은 racing 위험.
 
-### 후속 — 같은 날 추가 발견 (커밋 ` ` <- 채워질 예정)
+### 후속 — 같은 날 추가 발견 (커밋 `dea0a88`)
 - `enqueueUniqueWork(KEEP)` 만으로는 부족했음. 새 APK 설치 후 사용자 1회 press 임에도 8분간 `/api/patients-sync` 6회 호출 (간격 ~30s/60s/120s 패턴, exponential backoff 처럼).
 - 가설: periodic worker (별도 unique name `ewoo_patient_sync`) 가 첫 interval window 안에 즉시 fire + manual once worker 가 동시에 fire → 별도로 진행. 또는 fetchPatients 가 200 받고 client-side parse 실패 시 `Result.retry()` 가 무한 backoff 루프.
 - 정확한 원인은 logcat 없이 단언 어렵지만 **증상 차단** 으로 해결:
