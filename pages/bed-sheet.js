@@ -11,8 +11,9 @@ const ROOM_SECTIONS = [
     beds: [{room:"202",n:1},{room:"302",n:1},{room:"502",n:1},{room:"602",n:1}] },
   { type: "2인실", rowSize: 4, hasTypeMemo: true,
     beds: [
-      {room:"204",n:1},{room:"204",n:2},{room:"304",n:1},{room:"304",n:2},
-      {room:"305",n:1},{room:"305",n:2},{room:"504",n:1},{room:"504",n:2},
+      // 1번 침대 한 줄, 2번 침대 한 줄로 모아 표시 (요청 2026-04-27)
+      {room:"204",n:1},{room:"304",n:1},{room:"305",n:1},{room:"504",n:1},
+      {room:"204",n:2},{room:"304",n:2},{room:"305",n:2},{room:"504",n:2},
     ] },
   { type: "4인실", rowSize: 4, hasTypeMemo: true,
     beds: ["201","203","301","303","501","503"].flatMap(r => [1,2,3,4].map(n => ({room:r, n}))) },
@@ -102,7 +103,7 @@ function PatientCard({ person, type, slotKey, resIndex, onClick, onDragStart, on
 }
 
 // ── 단일 병상 컬럼 ─────────────────────────────────────────────────────────
-function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, onDragEnd, draggingInfo, isOver, setDragOver, newPatientNames, today }) {
+function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, onDragEnd, draggingInfo, isOver, setDragOver, newPatientNames, today, bedRefs, isHighlighted }) {
   const slotKey = `${roomId}-${bedN}`;
   const current = slot?.current?.name ? slot.current : null;
   const reservations = (slot?.reservations || [])
@@ -127,6 +128,7 @@ function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, on
 
   return (
     <div
+      ref={el => { if (bedRefs) bedRefs.current[slotKey] = el; }}
       onDragOver={(e) => { e.preventDefault(); setDragOver(slotKey); }}
       onDrop={(e) => { e.preventDefault(); onDrop(slotKey); setDragOver(null); }}
       style={{
@@ -134,11 +136,12 @@ function BedColumn({ roomId, bedN, slot, type, openEdit, onDrop, onDragStart, on
         width: COL_W,
         flexShrink: 0,
         background: isOver ? "#fef3c7" : "#fff",
-        border: `1.5px solid ${isOver ? "#f59e0b" : "#e2e8f0"}`,
+        border: `${isHighlighted ? "2.5px" : "1.5px"} solid ${isHighlighted ? "#ef4444" : isOver ? "#f59e0b" : "#e2e8f0"}`,
         borderRadius: 10,
         display: "flex",
         flexDirection: "column",
-        transition: "background 0.15s",
+        transition: "background 0.15s, border-color 0.2s",
+        boxShadow: isHighlighted ? "0 0 0 3px rgba(239,68,68,0.35)" : "none",
       }}
     >
       <div
@@ -234,7 +237,7 @@ function TypeMemoCell({ type, value, onChange }) {
 
 // ── 메인 페이지 ────────────────────────────────────────────────────────────
 export default function BedSheet() {
-  const { slots, saveSlots, syncConsultationOnSlotChange, slotsLoaded, consultations } = useWardData();
+  const { slots, saveSlots, syncConsultationOnSlotChange, slotsLoaded, consultations, newPatientFlags } = useWardData();
   const [editModal, setEditModal] = useState(null);
   const [dragging, setDragging]   = useState(null);  // { slotKey, type, resIndex, person }
   const [dragOver, setDragOver]   = useState(null);
@@ -243,7 +246,14 @@ export default function BedSheet() {
   const [memoDouble, setMemoDouble] = useState("");
   const [memoQuad,   setMemoQuad]   = useState("");
 
+  // 사이드바 검색 → 병상 카드 스크롤 + 점멸 하이라이트
+  const bedRefs = useRef({}); // slotKey → DOM
+  const [highlightSlotKey, setHighlightSlotKey] = useState(null);
+  const highlightTimer = useRef(null);
+
   const today = useMemo(() => dateOnly(new Date()), []);
+  // 신환 이름: consultation.isNewPatient + 공유 newPatientFlags 둘 다 인정
+  // (다른 페이지의 ★ 토글로 저장된 newPatientFlags 도 여기서 표시)
   const newPatientNames = useMemo(() => {
     const set = new Set();
     Object.values(consultations || {}).forEach(c => {
@@ -253,8 +263,52 @@ export default function BedSheet() {
       if (c.status === "취소" || c.status === "입원완료") return;
       set.add(normName(c.name));
     });
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    Object.entries(newPatientFlags || {}).forEach(([nk, flag]) => {
+      if (!flag?.admitDate) { set.add(nk); return; }
+      const m = String(flag.admitDate).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (!m) { set.add(nk); return; }
+      const ad = new Date(+m[1], +m[2]-1, +m[3]); ad.setHours(0,0,0,0);
+      if (today.getTime() - ad.getTime() < weekMs) set.add(nk);
+    });
     return set;
-  }, [consultations]);
+  }, [consultations, newPatientFlags, today]);
+
+  const scrollToBed = useCallback((slotKey, name) => {
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    setTimeout(() => {
+      const el = bedRefs.current[slotKey];
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+    // 4회 점멸
+    const BLINK_MS = 300, TOTAL = 8;
+    let tick = 0;
+    setHighlightSlotKey(slotKey);
+    const doBlink = () => {
+      tick++;
+      if (tick >= TOTAL) { setHighlightSlotKey(null); return; }
+      setHighlightSlotKey(tick % 2 === 0 ? slotKey : null);
+      highlightTimer.current = setTimeout(doBlink, BLINK_MS);
+    };
+    highlightTimer.current = setTimeout(doBlink, BLINK_MS);
+  }, []);
+
+  // 사이드바 검색 이벤트 수신 (병상현황·타임라인과 동일 방식)
+  useEffect(() => {
+    const handler = (e) => {
+      const q = (e.detail?.q || "").trim();
+      if (!q) return;
+      let hit = null;
+      for (const [slotKey, slot] of Object.entries(slots || {})) {
+        if (slot?.current?.name?.includes(q)) { hit = { slotKey, name: slot.current.name }; break; }
+        const r = (slot?.reservations || []).find(r => r?.name?.includes(q));
+        if (r) { hit = { slotKey, name: r.name }; break; }
+      }
+      if (hit) scrollToBed(hit.slotKey, hit.name);
+    };
+    window.addEventListener("sidebar-search", handler);
+    return () => { window.removeEventListener("sidebar-search", handler); if (highlightTimer.current) clearTimeout(highlightTimer.current); };
+  }, [slots, scrollToBed]);
 
   // 룸타입 메모 구독 (타임라인과 동일 경로)
   useEffect(() => {
@@ -393,6 +447,8 @@ export default function BedSheet() {
                               setDragOver={setDragOver}
                               newPatientNames={newPatientNames}
                               today={today}
+                              bedRefs={bedRefs}
+                              isHighlighted={highlightSlotKey === slotKey}
                             />
                           );
                         })}

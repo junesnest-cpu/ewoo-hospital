@@ -1,6 +1,10 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useMemo } from "react";
+import { ref as dbRef, set as dbSet } from "firebase/database";
+import { db } from "../lib/firebaseConfig";
 import { searchPatientsByName } from "../lib/patientSearch";
 import { useWardData } from "../lib/WardDataContext";
+
+const normName = (n) => (n || "").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
 
 // 색상 팔레트 — 카드 배경으로 사용 (bg: 옅은 배경, dot: 팔레트에 표시되는 점 색)
 export const CARD_COLORS = [
@@ -35,7 +39,7 @@ function dateOnly(d) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
 // onClose: () => void
 // onSaved?: () => void (저장/삭제/전환 후 추가 처리가 필요한 경우)
 export default function SlotEditModal({ modal, onClose, onSaved }) {
-  const { slots, saveSlots, recordDischarge, syncConsultationOnSlotChange, cleanupDailyBoards } = useWardData();
+  const { slots, saveSlots, recordDischarge, syncConsultationOnSlotChange, cleanupDailyBoards, newPatientFlags } = useWardData();
   const [saving, setSaving] = useState(false);
 
   const initialData = modal?.data || {};
@@ -51,6 +55,21 @@ export default function SlotEditModal({ modal, onClose, onSaved }) {
     preserveSeat:  initialData.preserveSeat  || false,
     color:         initialData.color         || "",
   });
+  // 신환 표시 — 모든 페이지 공유 (newPatientFlags/{normName}). 이름 입력 즉시 반영
+  const isNewPatientNow = useMemo(() => !!newPatientFlags?.[normName(form.name)], [newPatientFlags, form.name]);
+  const toggleNewPatient = useCallback(async () => {
+    const nm = form.name?.trim();
+    if (!nm) { alert("이름이 입력되어 있어야 신환 표시를 변경할 수 있습니다."); return; }
+    const nk = normName(nm);
+    if (isNewPatientNow) {
+      await dbSet(dbRef(db, `newPatientFlags/${nk}`), null);
+    } else {
+      await dbSet(dbRef(db, `newPatientFlags/${nk}`), {
+        admitDate: form.admitDate || new Date().toISOString().slice(0, 10),
+        markedAt: new Date().toISOString(),
+      });
+    }
+  }, [form.name, form.admitDate, isNewPatientNow]);
   const [suggestions,     setSuggestions]     = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [searching,       setSearching]       = useState(false);
@@ -285,10 +304,23 @@ export default function SlotEditModal({ modal, onClose, onSaved }) {
           </div>
         </div>
 
-        <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:showPreserveSeat?8:20, cursor:"pointer", fontSize:13, color:"#64748b" }}>
-          <input type="checkbox" checked={form.scheduleAlert} onChange={e=>setForm(p=>({...p,scheduleAlert:e.target.checked}))} />
-          ⚠ 스케줄 확인 필요
-        </label>
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:showPreserveSeat?8:20, flexWrap:"wrap" }}>
+          <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:13, color:"#64748b" }}>
+            <input type="checkbox" checked={form.scheduleAlert} onChange={e=>setForm(p=>({...p,scheduleAlert:e.target.checked}))} />
+            ⚠ 스케줄 확인 필요
+          </label>
+          <button type="button" onClick={toggleNewPatient}
+            title="모든 페이지에 공유되는 신환 표시 (newPatientFlags)"
+            style={{
+              fontSize:12, fontWeight:800, border:"1.5px solid",
+              borderColor: isNewPatientNow ? "#f59e0b" : "#d1d5db",
+              background:  isNewPatientNow ? "#fef08a" : "#f8fafc",
+              color:       isNewPatientNow ? "#713f12" : "#9ca3af",
+              borderRadius:6, padding:"4px 10px", cursor:"pointer"
+            }}>
+            ★ 신환{isNewPatientNow ? "" : " (아님)"}
+          </button>
+        </div>
 
         {showPreserveSeat && (
           <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20, cursor:"pointer", fontSize:13, color:"#92400e", background:"#fef3c7", borderRadius:8, padding:"10px 12px" }}>

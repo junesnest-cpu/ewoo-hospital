@@ -110,7 +110,7 @@ function getOverlaps(bars, totalDays) {
 // ── 편집 모달은 components/SlotEditModal.js 공용 컴포넌트로 분리됨 ────────────
 
 // ── 팝오버 ────────────────────────────────────────────────────────────────────
-function Popover({ popover, onClose, onEdit, onDelete, onConvert }) {
+function Popover({ popover, onClose, onEdit, onDelete, onConvert, isNewPatient, onToggleNewPatient }) {
   const { bar, slotKey, x, y } = popover;
   const p    = bar.person;
   const isRes = bar.type === "reservation";
@@ -134,6 +134,19 @@ function Popover({ popover, onClose, onEdit, onDelete, onConvert }) {
           {p.note && <div style={{ marginTop:6, color:"#475569", fontSize:12, lineHeight:1.6, borderTop:"1px solid #e2e8f0", paddingTop:6 }}>{p.note}</div>}
           {p.scheduleAlert && <div style={{ marginTop:6, background:"#fef3c7", borderRadius:5, padding:"3px 7px", fontSize:12, color:"#92400e", fontWeight:700 }}>⚠ 스케줄 확인 필요</div>}
         </div>
+        <div style={{ display:"flex", justifyContent:"flex-start", marginBottom:10 }}>
+          <button type="button" onClick={onToggleNewPatient}
+            title="모든 페이지에 공유되는 신환 표시 (newPatientFlags)"
+            style={{
+              fontSize:12, fontWeight:800, border:"1.5px solid",
+              borderColor: isNewPatient ? "#f59e0b" : "#d1d5db",
+              background:  isNewPatient ? "#fef08a" : "#f8fafc",
+              color:       isNewPatient ? "#713f12" : "#9ca3af",
+              borderRadius:6, padding:"4px 10px", cursor:"pointer"
+            }}>
+            ★ 신환{isNewPatient ? "" : " (아님)"}
+          </button>
+        </div>
         <div style={{ display:"flex", gap:7, flexWrap:"wrap" }}>
           <button onClick={onEdit}    style={pBtn("#0f2744")}>✏️ 수정</button>
           {isRes && <button onClick={onConvert} style={pBtn("#059669")}>🛏 입원 전환</button>}
@@ -150,7 +163,7 @@ export default function WardTimeline() {
   const router   = useRouter();
   const isMobile = useIsMobile();
 
-  const { slots, consultations, saveSlots, recordDischarge, syncConsultationOnSlotChange, cleanupDailyBoards } = useWardData();
+  const { slots, consultations, newPatientFlags, saveSlots, recordDischarge, syncConsultationOnSlotChange, cleanupDailyBoards } = useWardData();
   const [roomMemos,     setRoomMemos]     = useState({});
   const [syncing,    setSyncing]    = useState(true);
   const [lastSync,   setLastSync]   = useState(null);
@@ -554,7 +567,8 @@ export default function WardTimeline() {
     resHighlightTimer.current = setTimeout(() => setResHighlight(null), 3000);
   }, [today, weekOffset]);
 
-  // 신환 이름 집합 (isNewPatient 우선, 없으면 patientId 없음 = 신환)
+  // 신환 이름 집합 — consultation.isNewPatient + 공유 newPatientFlags(1주일 윈도우)
+  // (다른 페이지의 ★ 토글로 저장된 newPatientFlags 도 여기서 표시)
   const newPatientNames = useMemo(() => {
     const normName = n => (n || "").replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
     const set = new Set();
@@ -565,8 +579,17 @@ export default function WardTimeline() {
       if (c.status === "취소" || c.status === "입원완료") return;
       set.add(normName(c.name));
     });
+    const todayMs = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    Object.entries(newPatientFlags || {}).forEach(([nk, flag]) => {
+      if (!flag?.admitDate) { set.add(nk); return; }
+      const m = String(flag.admitDate).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (!m) { set.add(nk); return; }
+      const ad = new Date(+m[1], +m[2]-1, +m[3]); ad.setHours(0,0,0,0);
+      if (todayMs - ad.getTime() < weekMs) set.add(nk);
+    });
     return set;
-  }, [consultations]);
+  }, [consultations, newPatientFlags]);
 
   // saveSlots, syncConsultationOnSlotChange → WardDataContext에서 공급
 
@@ -1246,20 +1269,35 @@ export default function WardTimeline() {
       )}
 
       {/* 팝오버 */}
-      {popover && !dragging && (
-        <Popover
-          popover={popover}
-          onClose={() => setPopover(null)}
-          onEdit={() => {
-            const { bar, slotKey } = popover;
-            const currentPat = bar.type !== "current" ? (slots[slotKey]?.current?.name ? slots[slotKey].current : null) : null;
-            setEditModal({ slotKey, mode:bar.type==="current"?"current":"reservation", data:{...bar.person}, resIndex:bar.resIndex, currentPatient: currentPat });
-            setPopover(null);
-          }}
-          onDelete={handlePopoverDelete}
-          onConvert={handlePopoverConvert}
-        />
-      )}
+      {popover && !dragging && (() => {
+        const popName = popover.bar?.person?.name || "";
+        const popNk = popName.replace(/^신\)\s*/,"").replace(/\s/g,"").toLowerCase();
+        const isPopNew = !!(newPatientFlags && newPatientFlags[popNk]);
+        return (
+          <Popover
+            popover={popover}
+            isNewPatient={isPopNew}
+            onToggleNewPatient={async () => {
+              if (!popName) return;
+              if (isPopNew) {
+                await set(ref(db, `newPatientFlags/${popNk}`), null);
+              } else {
+                const ad = popover.bar?.person?.admitDate || new Date().toISOString().slice(0, 10);
+                await set(ref(db, `newPatientFlags/${popNk}`), { admitDate: ad, markedAt: new Date().toISOString() });
+              }
+            }}
+            onClose={() => setPopover(null)}
+            onEdit={() => {
+              const { bar, slotKey } = popover;
+              const currentPat = bar.type !== "current" ? (slots[slotKey]?.current?.name ? slots[slotKey].current : null) : null;
+              setEditModal({ slotKey, mode:bar.type==="current"?"current":"reservation", data:{...bar.person}, resIndex:bar.resIndex, currentPatient: currentPat });
+              setPopover(null);
+            }}
+            onDelete={handlePopoverDelete}
+            onConvert={handlePopoverConvert}
+          />
+        );
+      })()}
 
       {/* 편집 모달 (공용 SlotEditModal) */}
       {editModal && (
