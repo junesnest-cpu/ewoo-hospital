@@ -92,6 +92,16 @@
 - ContactsContract sync adapter URI 사용 시 `CALLER_IS_SYNCADAPTER` 단독 사용 금지. **반드시 ACCOUNT_NAME + ACCOUNT_TYPE 도 같이 URI 에 명시**. (selection clause 는 별개 — selection 만으론 syncAdapter 검증 통과 X.)
 - ContactsContract delete 작업은 try/catch 안에 있으면 silent fail 가능. **반환값(deleted count) 을 로그로 남기고**, 0 건이면 의심.
 
+### 네 번째 후속 — Vercel env 같은 key 환경별 다중 entry 함정 (커밋 `03d3f14`)
+- 사용자 보고: 본인 폰 → 병원 폰 테스트 전화 시 `/api/incoming-call` 401 가 5초마다 반복. 같은 시점 `/api/patients-sync` 는 200. **같은 env key, 같은 server 코드, 같은 phone secret** — 논리적으로 불가능한 상황.
+- **근본 원인:** Vercel Dashboard 의 `INCOMING_CALL_SECRET` entry 가 **3개 공존** 했음 (Production, Preview, Development 각자 다른 값). 사용자가 어제 한 번, 오늘 한 번 등록하면서 환경 다른 entry 로 따로 만들어진 것. Lambda cold start 시점·환경 매칭에 따라 endpoint 별로 다른 값 read → 한 endpoint 만 phone secret 과 매칭, 다른 endpoint 는 401.
+- **수정:** Dashboard 에서 3개 entry 모두 삭제 → 단일 entry (Production+Preview, Development 는 plan 잠금) 로 폰 시크릿과 동일한 값 1개 등록 → 빈 커밋(`03d3f14`)로 lambda 재배포 트리거.
+
+### 네 번째 가드
+- Vercel env 등록 시 **같은 key 가 여러 환경에 다른 값으로 공존 가능**. UI 가 "key 는 같지만 환경 별로 별도 entry" 로 자유 등록 허용. 로컬 검증으론 발견 어려움 (cold start 시점에만 표면화).
+- env 등록 후 Dashboard 에서 **해당 key 항목 수 한번 확인** 권장. 단일 entry + 모든 환경 체크 가 표준 패턴.
+- "patients-sync 200 인데 incoming-call 401" 같이 같은 env key 두 endpoint 가 다른 결과 나오면 즉시 Dashboard 환경별 entry 중복 의심.
+
 ---
 
 ## 2026-04-26 — `/api/inquiry` 500 (firebase 12 업그레이드 직후 default-app 회귀 표면화)
