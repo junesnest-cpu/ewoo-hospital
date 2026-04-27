@@ -258,6 +258,62 @@ export default function ConsultationPage() {
     return map;
   }, [slots, consultations]);
 
+  // 같은 사람(chartNo / phone) + 같은 admitDate 인 다른 상담이 이미 활성 예약(reservedSlot)
+  // 을 갖고 있으면, slot 없는 이쪽 상담은 "stale 중복" 으로 표시.
+  //   증상 (2026-04-27, 조주원): 2월 import_1207 (admitDate=4/27, slot=null) 과
+  //     4월 신규 상담 (admitDate=4/27, slot=205-4) 공존 — 양쪽 카드 모두 노란색
+  //     + "병실 배정 필요" 버튼이 떠 두 번 배정 유도.
+  //   가드: stale 측은 (a) "예약완료" 톤 안 입힘 (b) 배정 버튼 숨김 (c) 회색 경고
+  //     배지로 어느 slot 에 이미 잡혀있는지 보여줌. 데이터는 안 건드림.
+  const staleDupSet = useMemo(() => {
+    const set = new Set();
+    const fmtMD = (s) => {
+      if (!s) return "";
+      const t = String(s).trim();
+      const iso = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (iso) return `${+iso[2]}/${+iso[3]}`;
+      const md = t.match(/^(\d{1,2})\/(\d{1,2})$/);
+      if (md) return `${+md[1]}/${+md[2]}`;
+      return t;
+    };
+    // 활성 예약 보유 상담 인덱스 — 월 필터 무관하게 전체(allConsultations) 에서 수집
+    //   (filterMonth=2월 카드에서도 4월의 활성 예약을 인지해야 stale 판정 가능)
+    const activeByChart = new Map();
+    const activeByPhone = new Map();
+    Object.entries(allConsultations).forEach(([cid, c]) => {
+      if (!c) return;
+      if (c.status === "취소" || c.status === "입원완료") return;
+      if (!c.reservedSlot) return; // allConsultations 에는 slotOverrides 미반영 — c.reservedSlot 직접 사용
+      const md = fmtMD(c.admitDate);
+      if (c.chartNo) {
+        if (!activeByChart.has(c.chartNo)) activeByChart.set(c.chartNo, []);
+        activeByChart.get(c.chartNo).push({ cid, slot: c.reservedSlot, md });
+      }
+      const p = normPhone(c.phone);
+      if (p) {
+        if (!activeByPhone.has(p)) activeByPhone.set(p, []);
+        activeByPhone.get(p).push({ cid, slot: c.reservedSlot, md });
+      }
+    });
+    Object.entries(allConsultations).forEach(([cid, c]) => {
+      if (!c?.admitDate) return;
+      if (c.status === "취소" || c.status === "입원완료") return;
+      const eff = slotOverrides[cid] || {};
+      if (eff.reservedSlot || c.reservedSlot) return;
+      const md = fmtMD(c.admitDate);
+      let actives = [];
+      if (c.chartNo && activeByChart.has(c.chartNo)) {
+        actives = activeByChart.get(c.chartNo);
+      } else {
+        const p = normPhone(c.phone);
+        if (p && activeByPhone.has(p)) actives = activeByPhone.get(p);
+      }
+      const sibling = actives.find(a => a.cid !== cid && a.md && a.md === md);
+      if (sibling) set.add(cid);
+    });
+    return set;
+  }, [allConsultations, slotOverrides]);
+
   // 불일치 자동 보정: slots 데이터를 consultation에 반영
   // 가드 (2026-04-24): finalized(입원완료/취소) consultation은 덮어쓰기 금지.
   //   과거 상담의 admitDate/reservedSlot이 다른 예약의 값으로 오염되는 것 방지.
@@ -578,7 +634,9 @@ export default function ConsultationPage() {
   const filtered = allList.filter(c => {
     if (filterStatus !== "전체") {
       // admitDate가 있고 입원완료/취소가 아니면 예약완료로 간주
-      const effectiveStatus = (c.admitDate && c.status !== "입원완료" && c.status !== "취소")
+      // 단, 동일인 중복(stale) 카드는 실제 예약이 아니므로 status 그대로 분류
+      const isStaleDup = staleDupSet.has(c.id);
+      const effectiveStatus = (c.admitDate && c.status !== "입원완료" && c.status !== "취소" && !isStaleDup)
         ? "예약완료" : c.status;
       if (effectiveStatus !== filterStatus) return false;
     }
@@ -622,6 +680,7 @@ export default function ConsultationPage() {
       if (c.reservedSlot) return false;
       if (!c._normAdmit) return false;
       if (c._normAdmit < today()) return false; // 오늘 이전 제외
+      if (staleDupSet.has(c.id)) return false;  // 동일인 중복 카드는 배정 대상 아님
       return true;
     })
     .sort((a, b) => a._normAdmit.localeCompare(b._normAdmit));
@@ -1093,12 +1152,15 @@ export default function ConsultationPage() {
           const ov = slotOverrides[raw.id] || {};
           const c = { ...raw, ...( ov.reservedSlot ? { reservedSlot: ov.reservedSlot } : {}), ...( ov.admitDate ? { admitDate: ov.admitDate } : {}), ...( ov.dischargeDate ? { dischargeDate: ov.dischargeDate } : {}) };
           const hasAdmit = !!(c.admitDate);
-          const isReserved = c.status === "예약완료" || c.reservedSlot || (c.admitDate && c.status !== "입원완료" && c.status !== "취소");
+          const isStaleDup = staleDupSet.has(raw.id);
+          const isReserved = !isStaleDup && (c.status === "예약완료" || c.reservedSlot || (c.admitDate && c.status !== "입원완료" && c.status !== "취소"));
           const isAdmitted = c.status === "입원완료";
 
           let cardStyle = { ...S.card };
           if (isAdmitted) {
             cardStyle = { ...cardStyle, background:"#f0fdf4", border:"1.5px solid #86efac", boxShadow:"0 2px 10px rgba(16,185,129,0.12)" };
+          } else if (isStaleDup) {
+            cardStyle = { ...cardStyle, background:"#f8fafc", border:"1.5px solid #e2e8f0", opacity:0.85 };
           } else if (hasAdmit) {
             cardStyle = { ...cardStyle, background:"#fefce8", border:"1.5px solid #fde68a", boxShadow:"0 2px 8px rgba(245,158,11,0.1)" };
           }
@@ -1166,16 +1228,18 @@ export default function ConsultationPage() {
               {c.memo && <div style={{marginTop:6, fontSize:12, color:"#475569", background:"rgba(0,0,0,0.03)", borderRadius:6, padding:"5px 8px", lineHeight:1.5}}>{c.memo}</div>}
               {c.reservedSlot
                 ? <div style={{marginTop:4, fontSize:11, color:"#059669", fontWeight:700}}>✅ {c.reservedSlot} 병상 배정완료</div>
-                : c.admitDate && c.status !== "취소" && c.status !== "입원완료" && (
-                  <div style={{marginTop:6}} onClick={e=>e.stopPropagation()}>
-                    <button
-                      style={{fontSize:11, fontWeight:700, background:"#fef3c7", color:"#92400e",
-                        border:"1.5px solid #fcd34d", borderRadius:6, padding:"3px 10px", cursor:"pointer"}}
-                      onClick={()=>{ setReserveModal({id:c.id, consultation:c}); setReserveSlot(""); }}>
-                      🏥 병실 배정 필요 — 클릭하여 배정
-                    </button>
-                  </div>
-                )
+                : isStaleDup
+                  ? <div style={{marginTop:4, fontSize:11, color:"#64748b", fontWeight:600}}>↗ 동일 환자의 다른 상담에서 이미 예약 — 중복 카드</div>
+                  : c.admitDate && c.status !== "취소" && c.status !== "입원완료" && (
+                    <div style={{marginTop:6}} onClick={e=>e.stopPropagation()}>
+                      <button
+                        style={{fontSize:11, fontWeight:700, background:"#fef3c7", color:"#92400e",
+                          border:"1.5px solid #fcd34d", borderRadius:6, padding:"3px 10px", cursor:"pointer"}}
+                        onClick={()=>{ setReserveModal({id:c.id, consultation:c}); setReserveSlot(""); }}>
+                        🏥 병실 배정 필요 — 클릭하여 배정
+                      </button>
+                    </div>
+                  )
               }
             </div>
           );

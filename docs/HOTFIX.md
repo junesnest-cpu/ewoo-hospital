@@ -13,6 +13,49 @@
 
 ---
 
+## 2026-04-27 — 동일인 중복 상담일지 — 활성 예약 있는 환자의 과거 상담 카드가 "병실 배정 필요" 로 오표시
+
+### 증상
+- 조주원 (chartNo 0000007083, phone 010-4400-0593) 의 상담일지가 2건 공존:
+  - `import_1207` (createdAt=2026-02-06) — status="상담중", admitDate="4/27", reservedSlot=null, updatedAt 없음 (한 번도 폼에서 갱신 안 된 레거시 import).
+  - `-OqijM4sjFPQPUALHhMm` (createdAt=2026-04-21) — status="예약완료", admitDate="4/27", reservedSlot="205-4" (정식 예약).
+- 4월 카드는 "✅ 205-4 병상 배정완료" 정상 표시.
+- 2월 카드는 status="상담중" 인데도 노란 카드 + "📅 4/27 입원예정" + "🏥 병실 배정 필요" 버튼이 떠 두 번째 배정 유도.
+
+### 근본 원인
+- `pages/consultation.js` 의 카드 표시 조건이 `c.admitDate` 단독으로 "예약완료처럼" 처리:
+  ```js
+  const isReserved = c.status === "예약완료" || c.reservedSlot
+                   || (c.admitDate && c.status !== "입원완료" && c.status !== "취소");
+  ```
+- 동일 환자의 다른 상담이 같은 admitDate 로 이미 정식 예약(reservedSlot) 을 잡았어도, 이 stale 한 쪽 상담을 "예약 대기" 로 오해석.
+- 2월 import_1207 의 admitDate="4/27" 은 한참 전 import 시 들어간 값(updatedAt 비어있음 = 폼 저장 거치지 않음). 일반 sync 경로(syncEMR Phase 2.5/2.6, slotOverrides) 는 모두 status='입원완료' 로만 정리하지 'admitDate 비우기' 는 안 함 → 레거시 admitDate 가 영구 잔존.
+
+### 수정 (커밋 — 이 변경)
+1. **데이터 보정**: `scripts/repairJoJuwon.js --apply` — import_1207 의 status 를 "취소" 로 변경 (백업: `_backup_repairJoJuwon_<ts>/import_1207`).
+2. **렌더링 가드**: `pages/consultation.js` 에 `staleDupSet` (useMemo) 도입. 동일 chartNo / phone + 동일 admitDate(M/D 정규화) 를 가진 다른 상담이 활성 reservedSlot 을 갖고 있으면 이쪽을 stale 로 표시.
+   - 노란/녹색 카드 톤 안 입힘 (회색 + opacity 0.85)
+   - "병실 배정 필요" 버튼 숨김 → "↗ 동일 환자의 다른 상담에서 이미 예약 — 중복 카드" 표시
+   - `filterStatus` 의 effective "예약완료" 분류에서 제외
+   - 상단 `pendingAdmits` 배너에서도 제외
+   - 활성예약 인덱스는 `allConsultations` (월필터 무관) 로 빌드해야 다른 월 상담 카드도 stale 로 인지.
+
+### 재발 방지 가드
+- **동일 chartNo/phone + 동일 admitDate 인 두 상담이 모두 "예약 대기" 로 표시되는 조합은 금지**. 향후 list 빌딩 단계에 가드를 추가할 때 이 패턴(`staleDupSet`) 을 재사용.
+- **레거시 import 데이터의 admitDate** 는 폼 저장을 거치지 않아 어떤 sync 도 비우지 않음. 비슷한 증상 발견 시 inspect 스크립트로 createdAt + updatedAt + reservedSlot 조합 먼저 확인.
+- **신규 예약 등록 시점에 동일인 + 동일 admitDate stale 후보를 자동 취소** 하는 옵션도 검토 가능 (현재는 수동 — `repairXxx.js` 패턴).
+
+### 검증·복구 도구
+- `scripts/inspectJoJuwon.js` — baseName=조주원 인 모든 consultation/slot 덤프 (inspectJomijeong 패턴 복제, 향후 다른 환자도 같은 패턴으로 복제).
+- `scripts/repairJoJuwon.js [--apply]` — import_1207 status 를 "취소" 로 보정. dry-run 기본, `--apply` 로 적용. 원본은 `_backup_repairJoJuwon_<ts>/` 에 저장.
+- 새 stale 후보 탐지 자동화하려면 inspectJoJuwon 패턴을 일반화한 `auditStaleDupConsults.js` 를 만들어 chartNo+admitDate 기준 클러스터링 → 예약 없는 쪽 보고.
+
+### 연관 관찰
+- 2026-04-24 강영희 케이스 (slotOverrides fallback 오염) 와는 다른 경로. 강영희는 "과거 상담의 reservedSlot/admitDate 가 새 예약 값으로 덮어써지는" 데이터 오염, 이번 건은 "데이터는 그대로인데 UI 가 두 카드 모두 활성 예약처럼 보여주는" 표시 문제.
+- staleDupSet 가드는 표시 레이어만 영향 → 데이터 자체에 stale 카드가 누적되는 것은 그대로. 누적 추세가 보이면 일반화된 audit/repair 스크립트 도입 시점.
+
+---
+
 ## 2026-04-27 — Android 앱 환자 동기화 worker 병렬 누적 → 폰 연락처 중복 폭증
 
 ### 증상
