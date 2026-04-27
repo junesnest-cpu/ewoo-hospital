@@ -49,6 +49,18 @@
 - WorkManager `enqueue()` 사용처가 또 있으면 같은 부류일 수 있음. grep `WorkManager.*\.enqueue\(` 로 잔존 점검.
 - ContactsContract 외에도 SQLite/SharedPreferences 에 wipe+rewrite 패턴 있는 worker 는 같은 racing 위험.
 
+### 후속 — 같은 날 추가 발견 (커밋 ` ` <- 채워질 예정)
+- `enqueueUniqueWork(KEEP)` 만으로는 부족했음. 새 APK 설치 후 사용자 1회 press 임에도 8분간 `/api/patients-sync` 6회 호출 (간격 ~30s/60s/120s 패턴, exponential backoff 처럼).
+- 가설: periodic worker (별도 unique name `ewoo_patient_sync`) 가 첫 interval window 안에 즉시 fire + manual once worker 가 동시에 fire → 별도로 진행. 또는 fetchPatients 가 200 받고 client-side parse 실패 시 `Result.retry()` 가 무한 backoff 루프.
+- 정확한 원인은 logcat 없이 단언 어렵지만 **증상 차단** 으로 해결:
+  - `SyncWorker.doWork()` 안 60초 debounce — 직전 `Prefs.lastSync` 후 60초 이내면 즉시 success. periodic+manual+retry 가 어떻게 떠도 wipe+insert 1회만.
+  - `runAttemptCount < 3` cap — fetch 실패 시 3회 retry 후 success 로 종료해 무한 backoff 방지.
+  - 권한 미부여 시 failure → success 로 변경 (failure 도 retry 안 하지만 일관성).
+
+### 후속 재발 방지 가드
+- WorkManager 짤 때 unique name 격리 + KEEP 만으로 충분하다고 가정 금지. **wipe+rewrite 같은 destructive 동작은 항상 worker 안에 idempotency guard (debounce/checksum/lastRun timestamp)** 두기.
+- `Result.retry()` 사용 시 항상 `runAttemptCount` cap 같이 두기. 기본 WorkManager 는 무한 retry.
+
 ---
 
 ## 2026-04-26 — `/api/inquiry` 500 (firebase 12 업그레이드 직후 default-app 회귀 표면화)
