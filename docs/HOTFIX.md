@@ -29,10 +29,10 @@
   - B 의 INSERT 가 위에 추가 → 환자수 배수로 RawContact 누적
 - 결과: 5200+ 의 부정확한 contact + 시스템 부하로 저장 지연.
 
-### 수정 (커밋 ` ` <- 채워질 예정)
+### 수정 (커밋 `836ec7a`)
 - `SyncScheduler.runOnce()` → `enqueueUniqueWork(WORK_NAME_ONCE, ExistingWorkPolicy.KEEP, req)` 로 변경.
 - 이미 enqueue/실행 중이면 새 요청 무시. 버튼 연타에 idempotent.
-- 같은 핫픽스에서 AccountAuthenticator 도 추가 — phantom Account 라 표준 연락처 앱에서 그룹 표시 안 되던 문제 동시 해결.
+- 같은 핫픽스에서 AccountAuthenticator 도 추가 (`EwooAuthenticator` + `EwooAuthenticatorService` + `xml/authenticator.xml` + AndroidManifest service 등록 + `ContactsSync.ensureAccount()` 의 `AccountManager.addAccountExplicitly` + `ContactsContract.Settings.UNGROUPED_VISIBLE=1`) — phantom Account 라 표준 연락처 앱에서 그룹 표시 안 되던 문제 동시 해결.
 
 ### 재발 방지 가드
 - WorkManager 의 OneTimeWorkRequest 는 **기본 병렬 허용**. 같은 시점에 여러 인스턴스가 충돌할 가능성이 있는 작업(특히 ContentResolver 같은 공유 리소스 변경)은 **반드시 `enqueueUniqueWork` + KEEP/REPLACE 정책** 으로 직렬화.
