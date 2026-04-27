@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">이우 전화 감지기</string>
+    <string name="account_label">이우병원</string>
 </resources>

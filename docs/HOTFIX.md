@@ -13,6 +13,44 @@
 
 ---
 
+## 2026-04-27 — Android 앱 환자 동기화 worker 병렬 누적 → 폰 연락처 중복 폭증
+
+### 증상
+- 폰 앱 첫 설정 후 "지금 환자 동기화" 버튼을 결과 안 보여서 여러 번 연타.
+- 폰 연락처 수가 환자수의 2~3배 (5200+) 까지 증가했다 줄어들었다 진동.
+- 저장이 점점 느려짐. Vercel 로그에 4분간 `/api/patients-sync` 11회 호출 (같은 초에 중복 호출 다수).
+
+### 근본 원인
+- `android-app/app/src/main/java/com/ewoo/calldetector/SyncWorker.kt` 의 `SyncScheduler.runOnce()` 가 `WorkManager.enqueue()` (uniqueWork 아님) 사용.
+- 사용자가 버튼 누를 때마다 독립 OneTimeWorkRequest 큐잉 → WorkManager 가 **병렬 실행**.
+- 각 worker 가 `ContactsSync.syncAll()` 안에서 DELETE(전체 wipe) → INSERT(~3000건 batch) 사이클 실행.
+- 병렬 worker 들이 서로 경합:
+  - Worker A 가 INSERT 중일 때 Worker B 가 DELETE 시작 → A 의 일부만 남고
+  - B 의 INSERT 가 위에 추가 → 환자수 배수로 RawContact 누적
+- 결과: 5200+ 의 부정확한 contact + 시스템 부하로 저장 지연.
+
+### 수정 (커밋 ` ` <- 채워질 예정)
+- `SyncScheduler.runOnce()` → `enqueueUniqueWork(WORK_NAME_ONCE, ExistingWorkPolicy.KEEP, req)` 로 변경.
+- 이미 enqueue/실행 중이면 새 요청 무시. 버튼 연타에 idempotent.
+- 같은 핫픽스에서 AccountAuthenticator 도 추가 — phantom Account 라 표준 연락처 앱에서 그룹 표시 안 되던 문제 동시 해결.
+
+### 재발 방지 가드
+- WorkManager 의 OneTimeWorkRequest 는 **기본 병렬 허용**. 같은 시점에 여러 인스턴스가 충돌할 가능성이 있는 작업(특히 ContentResolver 같은 공유 리소스 변경)은 **반드시 `enqueueUniqueWork` + KEEP/REPLACE 정책** 으로 직렬화.
+- 새 WorkManager job 추가 시: enqueue() 보다 enqueueUniqueWork() 를 디폴트로 검토.
+- 버튼 트리거 IO 작업은 UI 측에서도 재진입 방어 (debounce / disable) 하면 더 안전.
+
+### 검증·복구 도구
+- Vercel 로그: `/api/patients-sync` 호출 빈도가 분당 1건 이하인지 확인 (정상은 15분 주기 + 사용자 수동 트리거).
+- 같은 초에 중복 호출이 보이면 racing 의심.
+- 폰 측 cleanup: 새 APK 설치 후 sync 한 번 → wipe 단계가 ACCOUNT_TYPE 필터로 누적된 RawContact 다 잡아냄. 앱 제거만으로는 phantom Account contacts 가 OS 에 잔존.
+- 로컬 디버깅: `adb logcat | grep -E 'EwooContactsSync|EwooApi'` — INSERT/DELETE 카운트 추적.
+
+### 연관 관찰
+- WorkManager `enqueue()` 사용처가 또 있으면 같은 부류일 수 있음. grep `WorkManager.*\.enqueue\(` 로 잔존 점검.
+- ContactsContract 외에도 SQLite/SharedPreferences 에 wipe+rewrite 패턴 있는 worker 는 같은 racing 위험.
+
+---
+
 ## 2026-04-26 — `/api/inquiry` 500 (firebase 12 업그레이드 직후 default-app 회귀 표면화)
 
 ### 증상

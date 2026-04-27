@@ -7,6 +7,7 @@ import androidx.core.content.ContextCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
@@ -31,6 +32,7 @@ class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, 
 
 object SyncScheduler {
     private const val WORK_NAME = "ewoo_patient_sync"
+    private const val WORK_NAME_ONCE = "ewoo_patient_sync_once"
 
     fun schedulePeriodic(ctx: Context) {
         val constraints = Constraints.Builder()
@@ -52,6 +54,13 @@ object SyncScheduler {
         val req = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(constraints)
             .build()
-        WorkManager.getInstance(ctx).enqueue(req)
+        // KEEP — 이미 enqueue/실행 중이면 새 요청 무시.
+        // 버튼 연타로 worker 가 병렬 누적되어 ContactsContract DELETE/INSERT 가
+        // 서로 경합, 환자수 배수로 RawContact 중복 쌓이는 사고 방지 (2026-04-27 핫픽스).
+        WorkManager.getInstance(ctx).enqueueUniqueWork(
+            WORK_NAME_ONCE,
+            ExistingWorkPolicy.KEEP,
+            req,
+        )
     }
 }
