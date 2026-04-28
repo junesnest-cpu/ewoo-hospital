@@ -1184,6 +1184,13 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
   const allItems = TREATMENT_GROUPS.flatMap(g => g.items);
   const admitParsed = parseDateStr(admitDate);
   const dischargeParsed = parseDateStr(discharge);
+  // admit 이전 날짜는 표시 안 함 (화면 렌더링과 동일 가드 — leak 데이터 인쇄 차단)
+  const admitDayOnlyP = admitParsed ? dateOnly(admitParsed) : null;
+  const isOutsideAdmissionP = (day) => {
+    if (!admitDayOnlyP) return false;
+    const d = dateOnly(new Date(year, month, day));
+    return d < admitDayOnlyP;
+  };
 
   const calCells = [];
   for (let i = 0; i < firstDow; i++) calCells.push(null);
@@ -1264,7 +1271,7 @@ function PrintView({ name, roomId, bedNum, year, month, monthData, firstDow, day
                     <td key={di} style={{ border:"1px solid #ddd", background:"#f9f9f9" }} />
                   );
                   const dow   = (firstDow + day - 1) % 7;
-                  const items = monthData[String(day)] || [];
+                  const items = isOutsideAdmissionP(day) ? [] : (monthData[String(day)] || []);
                   const thisDate = new Date(year, month, day);
                   const isAdmit = admitParsed && dateOnly(admitParsed).getTime()===dateOnly(thisDate).getTime();
                   const isDisch = dischargeParsed && dateOnly(dischargeParsed).getTime()===dateOnly(thisDate).getTime();

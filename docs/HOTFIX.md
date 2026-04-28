@@ -13,6 +13,37 @@
 
 ---
 
+## 2026-04-28 — 치료계획표 인쇄 시 입원 이전 달 leak 데이터가 그대로 인쇄 (PrintView 가드 누락)
+
+### 증상
+- 치료계획표 페이지에서 🖨 인쇄 버튼을 누르면, 화면에는 안 보이던 "해당 병상에서 이전 환자가 받았던 치료" 가 인쇄물에 모두 표시됨.
+- 화면 렌더링은 admit 이전 날짜를 비웠지만 인쇄 결과만 leak 데이터를 노출.
+
+### 근본 원인
+- 2026-04-27 수정에서 `pages/treatment.js` 의 화면 렌더 경로에는 `isOutsideAdmission(day)` + `itemsForDay(day)` 가드를 도입했지만, **`PrintView` 컴포넌트(같은 파일 1182~1319 라인)는 별도 함수**라 가드가 적용되지 않음.
+- `PrintView` 의 캘린더 셀(line 1267) 이 `monthData[String(day)] || []` 를 직접 조회 → admit 월 미만의 leak month 노드가 cleanup 전이거나 cleanup 후 다시 들어오면 그대로 인쇄.
+- cleanup 스크립트(`scripts/cleanupPreAdmitTreatPlans.js`) 가 데이터를 비웠어도, 같은 slot 으로 새 환자가 들어오면 마이그레이션 재현 가능성 있고, 무엇보다 **표시 레이어 가드가 화면/인쇄 두 경로에 모두 있어야 한다**는 가드 원칙을 위반.
+
+### 수정 (커밋 — 이 변경)
+- `pages/treatment.js > PrintView` 에 `admitDayOnlyP` + `isOutsideAdmissionP(day)` 헬퍼 추가 (화면 가드와 동일 정의, props 로 들어오는 `admitDate` 만 사용).
+- 캘린더 cell 의 `items` 계산을 `isOutsideAdmissionP(day) ? [] : (monthData[String(day)] || [])` 로 변경.
+- admit 모르면 가드 미적용 (구 동작 유지) — 화면과 일관.
+
+### 재발 방지 가드
+- **표시 레이어 가드는 "화면+인쇄+모달+요약" 모든 view 경로에 동시 적용**해야 함. 한 곳만 막으면 다른 경로로 새어나감 (이번 건이 정확히 그 케이스).
+- `PrintView` 처럼 같은 데이터를 별도 컴포넌트가 다시 렌더링하는 패턴은 props 로 헬퍼 자체(`itemsForDay`)를 넘기거나, 컴포넌트 내부에서 동일 가드를 재정의해야 함. 향후 plan 류 페이지 인쇄 기능 추가 시 동일 체크 의무.
+- 같은 파일에 화면용 헬퍼와 인쇄용 헬퍼가 중복 정의된 상태 — 추후 리팩토링 여지(`itemsForDay` 를 모듈 상위로 끌어올리고 양쪽이 공유). 이번 변경은 최소 패치만.
+
+### 검증·복구 도구
+- 별도 신규 도구 없음. 기존 `scripts/auditPreAdmitTreatPlans.js` / `scripts/cleanupPreAdmitTreatPlans.js` 그대로 사용.
+- 인쇄물 회귀 확인: admit 이전 달로 월 네비 후 🖨 인쇄 → 미리보기에서 빈 셀로 표시되어야 함.
+
+### 연관 관찰
+- `pages/daily.js`, `pages/therapy.js` 도 인쇄/PDF 추가 시 동일 패턴 점검 필요. 현재는 인쇄 미구현이라 영향 없음.
+- 같은 파일에 `name`/`year`/`month`/`monthData`/`firstDow`/`daysInMonth` 등 props 가 9개 이상 → 향후 view 가드까지 더해지면 props 폭증. context 또는 hook 으로 묶는 리팩토링이 적절(별도 작업).
+
+---
+
 ## 2026-04-27 — 치료계획표에 입원 이전 달의 과거 환자 plan 잔존 (2026-04-21 마이그레이션 leak)
 
 ### 증상
