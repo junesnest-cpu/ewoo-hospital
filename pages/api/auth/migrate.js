@@ -10,9 +10,15 @@
  * ewoo-hospital은 approval(로그인)과 ward(RTDB 접근) 양쪽 세션이 필요하므로
  * 이 엔드포인트 호출 후 클라이언트는 두 auth에 signInWithEmailAndPassword 재시도.
  */
+import crypto from "crypto";
 import { approvalAdminAuth, approvalAdminDb, wardAdminAuth } from "../../../lib/firebaseAdmin";
 import publicConfig from "../../../lib/firebasePublicConfig.json";
 import { checkRateLimit, getClientIp, sanitizeKey } from "../../../lib/rateLimit";
+import { logSecurityEvent } from "../../../lib/securityLog";
+
+function emailHash(email) {
+  return crypto.createHash("sha256").update(String(email || "")).digest("hex").slice(0, 12);
+}
 
 const APPROVAL_API_KEY = publicConfig.approval.apiKey;
 const WARD_API_KEY     = publicConfig.ward.apiKey;
@@ -97,7 +103,10 @@ export default async function handler(req, res) {
 
     // 응답 정보 누출 방지(2026-04-26): approvalOk/wardOk 제거.
     // 어느 쪽이 동기화됐는지는 서버 로그에만 남겨 enumeration 차단.
-    if (synced) console.log(`[migrate] ${email}: ${synced} 동기화 완료`);
+    if (synced) {
+      console.log(`[migrate] ${email}: ${synced} 동기화 완료`);
+      logSecurityEvent({ type: 'migrate-sync', synced, emailHash: emailHash(email) });
+    }
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error("sync error:", e.message);

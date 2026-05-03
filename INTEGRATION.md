@@ -220,3 +220,5 @@ EMR 주문과 별개로 **치료실에서의 실시행** 여부를 검증한다.
 | 2026-04-26 | **firebase 10 → 12.12.1 메이저 (3프로젝트 통일)** — approval/hospital lock 동기화. inquiry default-app 회귀 발견 즉시 hotfix(`021fec5`, `wardAdminDb` 사용으로 전환). HOTFIX 등재 | |
 | 2026-04-26 | **mssql 12.5 patch + npm overrides uuid 14 (3프로젝트)** — mssql 체인 + firebase-admin 체인의 transitive uuid 통일. RPi runtime 검증 (syncEMR lightweight 전 phase 정상). hospital 16→10, clinical 16→10, approval 13→11 vuln 감소 | |
 | 2026-04-26 | **Stage 3 종결** — TODO-STAGE3.md 참조. 잔여: Next.js 14→16 메이저(별도 작업), 5/3 1주 모니터링 | |
+| 2026-05-03 | Stage 3 1주 모니터링 — 무사고 종결. Vercel runtime logs API 가 retention 한계(1h 도 빈 응답)로 회고 점검 불가능 함을 확인 | |
+| 2026-05-03 | **보안 이벤트 self-host 인프라 도입 (3프로젝트)** — `lib/securityLog.js` 신설, `verifyAuth`/`rateLimit`/`inquiry` honeypot/`auth/migrate` 인스트루먼트. ward RTDB `securityEvents/{YYYY-MM-DD}/{push-id}` 단일 노드에 통합 저장 (project 메타로 hospital/approval/clinical 구분). retention: hospital functions `scheduledSecurityEventCleanup` 매일 03:00 KST 30일 cutoff. 다음 점검부터 회고 가능 | |

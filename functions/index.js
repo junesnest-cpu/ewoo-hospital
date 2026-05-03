@@ -70,6 +70,48 @@ function resolveSlotKey(rawKey, slots) {
   return rawKey;
 }
 
+/**
+ * scheduledSecurityEventCleanup:
+ *   매일 03:00 KST 에 securityEvents/{YYYY-MM-DD}/ 노드 중 30일 이전 일자를 삭제한다.
+ *   ward RTDB 의 `securityEvents` 는 3프로젝트(hospital/approval/clinical) 의 보안 이벤트가
+ *   통합 누적되는 곳 (lib/securityLog.js). retention 없으면 무한 증가.
+ *
+ *   ymd 키가 YYYY-MM-DD 사전순 == 시간순 이므로 단순 문자열 비교로 cutoff 식별.
+ */
+exports.scheduledSecurityEventCleanup = onSchedule(
+  {
+    schedule: "0 3 * * *",
+    timeZone: "Asia/Seoul",
+    region: "asia-northeast3",
+    memory: "256MiB",
+    timeoutSeconds: 60,
+  },
+  async () => {
+    const db = getDatabase();
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const cutoffYMD = cutoff.toISOString().slice(0, 10);
+
+    const snap = await db.ref("securityEvents").once("value");
+    const all = snap.val() || {};
+    const toDelete = Object.keys(all).filter((ymd) => ymd < cutoffYMD);
+    if (toDelete.length === 0) {
+      logger.info(`securityEvents cleanup: 삭제 대상 없음 (cutoff=${cutoffYMD})`);
+      return;
+    }
+
+    const updates = {};
+    let totalEvents = 0;
+    for (const ymd of toDelete) {
+      updates[`securityEvents/${ymd}`] = null;
+      totalEvents += Object.keys(all[ymd] || {}).length;
+    }
+    await db.ref("/").update(updates);
+    logger.info(
+      `securityEvents cleanup: ${toDelete.length} 일 (${totalEvents} events) 삭제 (cutoff=${cutoffYMD})`,
+    );
+  },
+);
+
 exports.scheduledTreatmentRoomSync = onSchedule(
   {
     schedule: "0 20 * * *",

@@ -4,6 +4,7 @@
     "dedupKeys":        { ".read": false, ".write": false },
     "pendingChanges":   { ".read": false, ".write": false },
     "migrationReports": { ".read": false, ".write": false },
+    "securityEvents":   { ".read": false, ".write": false },
 
     "monthlyBoards":    { ".read": "auth != null", ".write": false },
     "emrSyncLog":       { ".read": "auth != null", ".write": false },

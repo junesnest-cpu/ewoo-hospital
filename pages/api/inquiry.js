@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { checkRateLimit, checkDedup, getClientIp } from '../../lib/rateLimit';
 import { wardAdminDb } from '../../lib/firebaseAdmin';
+import { logSecurityEvent } from '../../lib/securityLog';
 
 // ── 회귀 fix (2026-04-26 firebase 12 업그레이드 직후 표면화) ─────────────────
 // 이전: 자체 admin.initializeApp default app 호출. lib/firebaseAdmin 이 named app
@@ -67,6 +68,13 @@ export default async function handler(req, res) {
     const ip = getClientIp(req);
     if (typeof website === 'string' && website.trim()) {
       console.warn(`[inquiry][honeypot] 봇 의심 제출 from IP=${ip}, hp_value="${website.slice(0, 80)}"`);
+      logSecurityEvent({
+        type: 'inquiry-honeypot',
+        ip,
+        hpValue: String(website).slice(0, 80),
+        ua: (req.headers['user-agent'] || '').slice(0, 200) || null,
+        origin: origin || null,
+      });
       // 200 + fake id — 봇이 "성공"으로 인식하지만 DB 저장 안 됨
       return res.status(200).json({ success: true, id: `hp-${Date.now()}` });
     }
