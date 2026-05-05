@@ -13,6 +13,44 @@
 
 ---
 
+## 2026-05-05 — 핸드폰에서 `ewoo-hospital.vercel.app` 접속 시 간헐 "403 Forbidden" 전체화면 (Vercel Deployment Protection 의심, 미수정)
+
+### 증상
+- 핸드폰 브라우저에서 `https://ewoo-hospital.vercel.app/consultation` 진입 시 Vercel 표준 "403 Forbidden" 전체화면 표시.
+- 같은 계정으로 PC 에서는 정상, **핸드폰에서만**, **간헐적**(재접속 시 다시 정상 진입 가능).
+- 코드 변경 없음, 다른 페이지(병동 현황 등) 도 같은 도메인이라 영향 가능.
+
+### 원인 가설 (확정 아님 — 현재까지 정황 증거)
+- **Vercel runtime logs 에 403 status 0건** (`mcp__vercel__get_runtime_logs ... statusCode=403, since=24h`) — 요청이 서버리스 함수까지 도달하지 못하고 Vercel **edge 레이어에서 차단**됨. 즉 앱 코드(`requireAuth` 401 등)가 만든 403 이 아님.
+- 프로젝트 도메인은 `.vercel.app` 전용 (`get_project` 결과 `ewoo-hospital.vercel.app` 외 2개 alias, custom domain 미연결). `ewoohospital.com` 은 `pages/api/inquiry.js` CORS allowlist 에는 있으나 Vercel 프로젝트에는 연결 안 됨.
+- `.vercel.app` 도메인은 기본적으로 **Vercel Deployment Protection (Vercel Authentication)** 대상. 배포자 본인이 로그인된 PC 는 Vercel SSO 쿠키 보유 → 통과. 핸드폰은 쿠키 없음/만료 → 403. 첫 진입 redirect 로 쿠키가 잡히는 사이클이 있어 "재접속 시 통과" 와도 정합.
+- 대안 가설: Vercel **Firewall / Bot Protection** 의 mobile UA 챌린지. 이쪽이면 같은 모바일 IP 에서 다른 앱·페이지도 비슷한 빈도로 걸렸을 것 — 추후 재발 시 다른 페이지 동시 발생 여부로 구분 가능.
+
+### 수정
+- **현재까지 미수정.** 1회 단발 증상이라 즉시 적용은 보류. 재발 시 아래 옵션 중 택일:
+  - **A (권장) — Custom domain 연결**: Vercel Settings → Domains 에 `ewoohospital.com` 또는 `app.ewoohospital.com` 등록. Custom domain 은 Deployment Protection 대상 아님. 환자 안내·안드로이드 앱 노출 URL 도 깔끔.
+  - **B (즉효) — Deployment Protection 비활성화 (Production)**: Vercel Settings → Deployment Protection → "Vercel Authentication" 을 **Disabled** 또는 **Only Preview Deployments** 로. `.vercel.app` URL 이 공개되는 위험은 있으나 앱이 `requireAuth` 로 보호되어 실질 손실 적음. `/api/inquiry` 등 익명 라우트는 rate-limit 만 남음.
+  - **C — Protection Bypass for Automation**: 사용자 브라우저용으로는 부적합 (자동화 토큰 방식).
+
+### 재발 시 진단 순서
+1. 다른 페이지(예: `/consultation` → `/`, `/treatment`) 도 같이 403 인지 확인 — yes 면 도메인 전체 차단(=A·B 시나리오).
+2. PC 에서 **Vercel 로그아웃 상태로** `.vercel.app` URL 접근 시 동일 403 재현 여부 — 재현되면 Deployment Protection 확정.
+3. `mcp__vercel__get_runtime_logs ... statusCode=403, since=1h` — edge 차단이면 0건, 앱 차단이면 기록 보임.
+4. Vercel Dashboard → Project → Settings → Deployment Protection 현재 설정 캡처 (어느 등급으로 켜져 있는지).
+
+### 재발 방지 가드 (현 시점 미적용)
+- 운영 URL 을 `.vercel.app` 로 두는 한 같은 증상이 반복될 가능성 있음 — 1회 더 발견되면 **A (custom domain 연결)** 적용 우선.
+- 환자/직원에게 안내된 URL, 카카오톡/포스터/안드로이드 앱 설정값 등은 모두 동일 호스트를 가리키므로, 도메인 변경 시 일괄 갱신 필요 (안드로이드 앱 `Prefs.kt` baseUrl 포함).
+
+### 검증·복구 도구
+- 별도 도구 없음. Vercel MCP (`mcp__vercel__get_runtime_logs`, `mcp__vercel__get_project`) 로 진단 가능.
+
+### 연관 관찰
+- 같은 사용자가 PC 에서 정상이지만 핸드폰에서 간헐 차단되는 다른 증상이 있으면 동일 원인일 가능성 높음 — 위 진단 순서 1~3 으로 확인.
+- `live: false` 플래그가 `get_project` 응답에 떠 있음 (의미는 Vercel 내부 메타, 직접 영향 미상). 추후 도메인 정리할 때 같이 점검.
+
+---
+
 ## 2026-04-28 — 치료계획표 인쇄 시 입원 이전 달 leak 데이터가 그대로 인쇄 (PrintView 가드 누락)
 
 ### 증상
