@@ -13,6 +13,73 @@
 
 ---
 
+## 2026-05-07 — 정수현 상담(4/14 홈페이지)·환자목록이 박명순4 로 표시 (Phase 2.5 phone 매칭 baseName 미검증)
+
+### 증상
+- 4/14 홈페이지 inquiry 로 등록되어 5/7 입원한 정수현 환자.
+- **상담일지 카드** 가 본인이 아닌 박명순4 로 표시.
+- **환자목록** 검색 시에도 정수현 정보가 박명순4 로 표시.
+- 정수현 본인의 phone(010-7788-4424)·birthYear(1961)·diagnosis(췌장암)·hospital(신촌세브) 같은 폼 입력 데이터는 보존됨.
+
+### 근본 원인 — 다단계 (입력 실수 1회 → sync 가드 부재 → 영구 잔존)
+
+**증거**:
+- consultations/`-OqBEQTFHwpKsAE7RKxS`: source="website", createdAt=2026-04-14T13:45:48Z. **chartNo=0000007092 (박명순4 의 차트), patientId=P08175 (박명순4 의 internalId), name="박명순4"** 로 변경된 상태.
+- patients/0000007092 = 박명순4, phone=010-9194-0053 (정수현과 다름), birthYear=1959 (정수현 1961 과 다름).
+- emrSyncLog/consultationLinking/suspects 에 이미 **severity="high"** 로 phone/birthYear mismatch 가 기록됨 — 즉 sync 가 의심 매칭임을 인지했지만 자동 변경은 그대로 진행했음.
+- chartNo 자동 부여 경로 grep 결과 단 두 곳: `pages/patients.js:592` (사용자 클릭 모달, 사용자 부정) / `scripts/syncEMR.js:839` (Phase 2 reservation matching, baseName 다른 정수현↔박명순4 는 매칭 불가). 따라서 남은 경로는 **Phase 2.5 매칭**.
+
+**원인**:
+- `scripts/syncEMR.js:1278-1283` Phase 2.5 ② phone 매칭 — `extractPhones(c.phone) ∪ extractPhones(c.phone2)` 중 하나라도 `patByPhone` 에 있으면 매칭. **baseName 검증 없음**.
+- 정수현 상담의 phone 이 한때 박명순4 의 phone (010-9194-0053) 으로 잘못 입력됐던 사이클이 있었던 것으로 추정 (직원 입력 실수).
+- 그 사이클의 RPi sync 가 phone 매칭 → matched=박명순4 → line 1300-1306 의 `updates.name/chartNo/patientId` 을 박명순4 의 것으로 일괄 부여.
+- 이후 phone 이 정수현 본인 번호로 정정됐지만, 한번 부여된 chartNo·patientId·name 은 그대로 잔존. 다음 sync 사이클에선 chartNo 직접 매칭 ① 으로 박명순4 와 다시 일치, 자가 치유 안 됨.
+
+### 수정 (커밋 — 이 변경)
+
+**1. 데이터 보정** — `scripts/repairJeongSuhyun.js --apply`:
+- name: 박명순4 → 정수현
+- chartNo: 0000007092 → null
+- patientId: P08175 → null
+- isNewPatient: false → true (신규 환자 복원)
+- reservedSlot: 204-1 → 304-1 (실제 reservation 위치)
+- emrSyncLog/consultationLinking/suspects 에서 해당 항목 제거
+- 백업: `_backup_repairJeongSuhyun_<ts>/-OqBEQTFHwpKsAE7RKxS`
+
+**2. 재발 방지 가드** — `scripts/syncEMR.js` Phase 2.5:
+- 모든 매칭 경로(chart/phone/birthDate/birthYear)에 **baseName 검증** 추가. `acceptOrReject(cand)` 헬퍼가 `baseName(c.name) ≠ baseName(cand.name)` 인 경우 매칭 거부 + `baseNameRejected` 플래그 set.
+- 매칭 후 `updates.name` 덮어쓰기는 `baseName(c.name) === baseName(matched.name)` 인 경우에만 (이중 가드, 동명이인 disambiguator 부착 케이스 "김은정" → "김은정4" 같은 정상 변형은 허용).
+- **suspect 자동 unlink**: baseName 가드에 걸려 매칭 실패한 consultation 중 **이미 chartNo·patientId 가 부여된 것** 은 자동으로 `chartNo=null, patientId=null, isNewPatient=true` 로 되돌림. name 은 사용자가 정정했을 수 있어 보존.
+- 통계 `stats.baseNameReject` 추가 + 자동 unlink 건 콘솔 로깅 (운영 가시성).
+
+**3. 신규 audit 도구** — `scripts/auditChartNameMismatch.js`:
+- chartNo 가 부여된 consultations 중 `baseName(c.name) ≠ baseName(patients[c.chartNo].name)` 검출.
+- phone/birthYear mismatch 추가 신호로 severity 산출 (high/medium).
+- 자동 수정 안 함 — 점검만. 자가 치유는 syncEMR Phase 2.5 의 가드가 처리.
+- 정기 cron 또는 수동 확인용 (`node scripts/auditChartNameMismatch.js`).
+
+### 재발 방지 가드 (요약)
+
+- **Phase 2.5 모든 매칭 경로에 baseName 일치 검증**: 동일 phone(가족 공용·오타·동일번호 변경) / 동일 chartNo(사용자 입력 오타) 만으로는 환자 매칭 금지. 인적사항(이름 baseName) 도 일치해야.
+- **자동 매칭이 high severity suspect 를 만든 경우 다음 sync 사이클에 자가 치유**: baseName 가드가 매칭을 거부 + chartNo·patientId 자동 unlink. name 보존 (사용자 정정 가능성).
+- **새 sync 가드 도입 시 통계·로그 노출 필수**: stats.baseNameReject 가 콘솔에 노출되어 운영자가 자동 unlink 추세를 모니터링 가능. RPi cron 출력에서 baseName 가드 활동 추적 가능.
+
+### 검증·복구 도구
+
+- `scripts/inspectJeongSuhyun.js` — 정수현·박명순 baseName consultations + patients + 인덱스 + slots + logs 종합 덤프. 동일 패턴 다른 환자 진단 시 baseName/내부 ID 만 바꿔 재사용.
+- `scripts/repairJeongSuhyun.js [--apply]` — 정수현 상담 본인 데이터 복원. 백업 자동.
+- `scripts/auditChartNameMismatch.js` — baseName mismatch 환자 검출. 점검만, 자동 수정 X.
+- 자가 치유 검증: RPi cron 다음 사이클 후 `emrSyncLog/consultationLinking/suspects` 가 0건이면 OK. baseName 가드 자동 unlink 건수는 sync 콘솔 출력 `⚠ baseName 가드로 자동 unlink: N건` 으로 확인.
+
+### 연관 관찰
+
+- 동일 패턴이 다른 환자에 잠재했는지 audit 결과 **0건** (2026-05-07 시점). 정수현이 단발성 케이스로 추정.
+- 입력 실수 → 자동 sync 영구 잔존 패턴은 본 사건이 처음 발견. 비슷한 증상(상담일지 환자 정보가 본인 아닌 다른 사람으로 보임 / 환자목록 검색 결과가 잘못 나옴) 발견 시 audit 스크립트로 1차 점검.
+- Phase 2.5 ① chartNo 매칭에도 baseName 가드를 적용한 부수효과: 사용자가 chartNo 필드에 오타 입력해도 name 베이스가 다르면 자동 매칭 금지. 사용자 입력 오류 보호 효과.
+- name 덮어쓰기는 향후에도 baseName 일치 시에만 허용 — "김은정" → "김은정4" 같은 EMR 동명이인 disambiguator 부착은 정상 동작 유지.
+
+---
+
 ## 2026-05-05 — 핸드폰에서 `ewoo-hospital.vercel.app` 접속 시 간헐 "403 Forbidden" 전체화면 (Vercel Deployment Protection 의심, 미수정)
 
 ### 증상

@@ -1259,46 +1259,89 @@ async function main() {
   }
 
   // 3) 매칭 루프 ───────────────────────────────────────────────────
+  //
+  //   [2026-05-07] baseName 가드 추가 — 정수현↔박명순4 데이터 혼선 재발 방지.
+  //     모든 매칭 경로(chart/phone/birthDate/birthYear)에서 c.name 과 matched.name 의
+  //     baseName(신) prefix·끝자리 숫자·whitespace 제거) 가 다르면 매칭 거부.
+  //     또한 매칭 후 updates.name 덮어쓰기는 baseName 일치 시에만(이중 가드).
+  //   배경: phone 매칭 후 c.name 까지 통째로 박명순4 로 덮어쓰던 사건. phone 이
+  //     한때 잘못 입력된 사이클에 chartNo·patientId·name 모두 박명순4 로 부여됐고
+  //     phone 정정 후에도 잔존. baseName 가드 1번이면 차단됨.
+  // ════════════════════════════════════════════════════════════════
   const conUpdates = {};
+  const reverted = []; // suspect 자동 unlink 기록
   let conLinkCount = 0;
-  const stats = { byChart: 0, byPhone: 0, byBirthDate: 0, byBirthYear: 0, skip: 0, noMatch: 0 };
+  const stats = { byChart: 0, byPhone: 0, byBirthDate: 0, byBirthYear: 0, skip: 0, noMatch: 0, baseNameReject: 0 };
 
   for (const [conId, c] of Object.entries(conAll)) {
     if (!c?.name || c.status === '취소') { stats.skip++; continue; }
 
+    const cBase = baseName(c.name);
+
     let matched = null;
     let matchBy = null;
+    let baseNameRejected = false;
 
-    // ① chartNo 직접
+    const acceptOrReject = (cand) => {
+      const pBase = baseName(cand?.name);
+      if (cBase && pBase && cBase !== pBase) {
+        baseNameRejected = true;
+        return false;
+      }
+      return true;
+    };
+
+    // ① chartNo 직접 — baseName 다르면 거부 (사용자 입력 chartNo 오타 또는 자동부여 회귀 방지)
     if (c.chartNo && patByChart.has(c.chartNo)) {
-      matched = patByChart.get(c.chartNo);
-      matchBy = 'byChart';
+      const cand = patByChart.get(c.chartNo);
+      if (acceptOrReject(cand)) { matched = cand; matchBy = 'byChart'; }
     }
-    // ② phone / phone2 — 보호자·본인 혼재 필드도 extractPhones 로 모두 시도
+    // ② phone / phone2 — 가족 공용·오타 phone 일치만으로 매칭 금지. baseName 도 일치해야.
     if (!matched) {
       const cands = [...extractPhones(c.phone), ...extractPhones(c.phone2)];
       for (const p of cands) {
-        if (patByPhone.has(p)) { matched = patByPhone.get(p); matchBy = 'byPhone'; break; }
+        if (!patByPhone.has(p)) continue;
+        const cand = patByPhone.get(p);
+        if (acceptOrReject(cand)) { matched = cand; matchBy = 'byPhone'; break; }
       }
     }
-    // ③ birthDate 전체 + baseName (유일)
+    // ③ birthDate 전체 + baseName (유일) — 본래 baseName 가드 있음
     if (!matched && c.birthDate) {
-      const bn = baseName(c.name);
-      const cands = patByBirthBase.get(`${c.birthDate}|${bn}`) || [];
+      const cands = patByBirthBase.get(`${c.birthDate}|${cBase}`) || [];
       if (cands.length === 1) { matched = cands[0]; matchBy = 'byBirthDate'; }
     }
-    // ④ birthYear + baseName (유일)
+    // ④ birthYear + baseName (유일) — 본래 baseName 가드 있음
     if (!matched && c.birthYear) {
-      const bn = baseName(c.name);
-      const cands = patByYearBase.get(`${c.birthYear}|${bn}`) || [];
+      const cands = patByYearBase.get(`${c.birthYear}|${cBase}`) || [];
       if (cands.length === 1) { matched = cands[0]; matchBy = 'byBirthYear'; }
     }
 
-    if (!matched) { stats.noMatch++; continue; }
+    if (!matched) {
+      // suspect 자동 unlink — baseName 가드에 걸려 매칭 실패한 consultation 중
+      // 이미 chartNo·patientId 가 부여된(=과거 sync 가 잘못 매칭한) 것은
+      // 자동으로 chartNo·patientId 비우고 isNewPatient=true 복원. name 은
+      // 사용자가 정정했을 수도 있으므로 보존.
+      if (baseNameRejected && (c.chartNo || c.patientId)) {
+        conUpdates[`consultations/${conId}/chartNo`] = null;
+        conUpdates[`consultations/${conId}/patientId`] = null;
+        conUpdates[`consultations/${conId}/isNewPatient`] = true;
+        reverted.push({ conId, name: c.name, prevChart: c.chartNo || null, prevPid: c.patientId || null });
+        stats.baseNameReject++;
+      } else {
+        stats.noMatch++;
+      }
+      continue;
+    }
 
     // 업데이트 필요 필드만 반영 (중복 쓰기 방지)
     const updates = {};
-    if (c.name !== matched.name && matched.name) updates.name = matched.name;
+    // name 덮어쓰기는 baseName 일치 + 형식 차이(신) prefix·끝자리 숫자) 가 있을 때만
+    // (예: 상담 "김은정" + EMR "김은정4" 같은 동명이인 disambiguator 부착).
+    // baseName 다르면 acceptOrReject 에서 이미 매칭 거부했으므로 여기 도달하지 않지만
+    // 이중 가드.
+    if (c.name !== matched.name && matched.name && baseName(c.name) === baseName(matched.name)) {
+      updates.name = matched.name;
+    }
     if (matched.chartNo && c.chartNo !== matched.chartNo) updates.chartNo = matched.chartNo;
     if (matched.internalId && c.patientId !== matched.internalId) {
       updates.patientId = matched.internalId;
@@ -1386,6 +1429,13 @@ async function main() {
   const totalCon    = Object.keys(conAll).length;
   console.log(`  ✅ 상담연결: 총 ${totalCon}건 중 ${conLinkCount}건 신규 매칭 (chart=${stats.byChart} phone=${stats.byPhone} birthDate=${stats.byBirthDate} birthYear=${stats.byBirthYear})`);
   console.log(`     미매칭 ${stats.noMatch}건 / 제외 ${stats.skip}건 / cache=${cacheStatus}`);
+  if (stats.baseNameReject > 0) {
+    console.log(`  ⚠ baseName 가드로 자동 unlink: ${stats.baseNameReject}건`);
+    reverted.slice(0, 10).forEach(r => {
+      console.log(`     - ${r.conId} "${r.name}"  chart=${r.prevChart || '-'}  pid=${r.prevPid || '-'}`);
+    });
+    if (reverted.length > 10) console.log(`     ... (+${reverted.length - 10}건 더)`);
+  }
   if (suspectCount > 0) {
     const highN = Object.values(suspects).filter(s => s.severity === 'high').length;
     console.log(`  ⚠ 의심 연결 ${suspectCount}건 (high=${highN}) — emrSyncLog/consultationLinking/suspects 참조`);
